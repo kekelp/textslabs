@@ -1,11 +1,15 @@
 use std::sync::Arc;
 use image::Rgba;
+use parley::{Alignment, AlignmentOptions, FontContext, FontStack, FontWeight, InlineBox, Layout, LayoutContext, StyleProperty, TextStyle};
 use wgpu::{
     CommandEncoderDescriptor, CompositeAlphaMode, DeviceDescriptor, Instance, InstanceDescriptor,
     LoadOp, MultisampleState, Operations, PresentMode, RenderPassColorAttachment,
     RenderPassDescriptor, RequestAdapterOptions, SurfaceConfiguration, TextureFormat,
     TextureUsages, TextureViewDescriptor,
 };
+use swash::scale::image::Content;
+use swash::scale::{Render, ScaleContext, Scaler, Source, StrikeWith};
+use swash::zeno;
 use winit::{dpi::LogicalSize, event::WindowEvent, event_loop::EventLoop, window::Window};
 
 fn main() {
@@ -56,9 +60,7 @@ impl State {
         };
         surface.configure(&device, &surface_config);
 
-        let text = String::from(
-            "Some text here. Let's make it a bit longer so that line wrapping kicks in 😊. And also some اللغة العربية arabic text.\nThis is underline and strikethrough text",
-        );
+        let text_layout = text_layout();
     
         // The display scale for HiDPI rendering
         let display_scale = 1.0;
@@ -163,4 +165,153 @@ impl winit::application::ApplicationHandler for Application {
             _ => {}
         }
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct ColorBrush {
+    color: Rgba<u8>,
+}
+impl Default for ColorBrush {
+    fn default() -> Self {
+        Self {
+            color: Rgba([0, 0, 0, 255]),
+        }
+    }
+}
+
+fn text_layout() -> Layout<ColorBrush> {
+    let text = String::from(
+        "Some text here. Let's make it a bit longer so that line wrapping kicks in 😊. And also some اللغة العربية arabic text.\nThis is underline and strikethrough text",
+    );
+
+    // The display scale for HiDPI rendering
+    let display_scale = 1.0;
+
+    // The width for line wrapping
+    let max_advance = Some(200.0 * display_scale);
+
+    // Colours for rendering
+    let text_color = Rgba([0, 0, 0, 255]);
+    let bg_color = Rgba([255, 255, 255, 255]);
+
+    // Padding around the output image
+    let padding = 20;
+
+    // Create a FontContext, LayoutContext and ScaleContext
+    //
+    // These are all intended to be constructed rarely (perhaps even once per app (or once per thread))
+    // and provide caches and scratch space to avoid allocations
+    let mut font_cx = FontContext::new();
+    let mut layout_cx = LayoutContext::new();
+    let mut scale_cx = ScaleContext::new();
+
+    // Setup some Parley text styles
+    let text_brush = ColorBrush { color: text_color };
+    let brush_style = StyleProperty::Brush(text_brush);
+    let font_stack = FontStack::from("system-ui");
+    let bold_style = StyleProperty::FontWeight(FontWeight::new(600.0));
+    let underline_style = StyleProperty::Underline(true);
+    let strikethrough_style = StyleProperty::Strikethrough(true);
+
+    let mut layout = if std::env::args().any(|arg| arg == "--tree") {
+        // TREE BUILDER
+        // ============
+
+        // TODO: cleanup API
+
+        let root_style = TextStyle {
+            brush: text_brush,
+            font_stack,
+            line_height: 1.3,
+            font_size: 16.0,
+            ..Default::default()
+        };
+
+        let mut builder = layout_cx.tree_builder(&mut font_cx, display_scale, &root_style);
+
+        builder.push_style_modification_span(&[bold_style]);
+        builder.push_text(&text[0..5]);
+        builder.pop_style_span();
+
+        builder.push_text(&text[5..40]);
+
+        builder.push_inline_box(InlineBox {
+            id: 0,
+            index: 0,
+            width: 50.0,
+            height: 50.0,
+        });
+
+        builder.push_text(&text[40..50]);
+
+        builder.push_inline_box(InlineBox {
+            id: 1,
+            index: 50,
+            width: 50.0,
+            height: 30.0,
+        });
+
+        builder.push_text(&text[50..141]);
+
+        // Set the underline style
+        builder.push_style_modification_span(&[underline_style]);
+        builder.push_text(&text[141..150]);
+
+        builder.pop_style_span();
+        builder.push_text(&text[150..155]);
+
+        // Set the strikethrough style
+        builder.push_style_modification_span(&[strikethrough_style]);
+        builder.push_text(&text[155..168]);
+
+        // Build the builder into a Layout
+        // let mut layout: Layout<ColorBrush> = builder.build(&text);
+        let (layout, _text): (Layout<ColorBrush>, String) = builder.build();
+        layout
+    } else {
+        // RANGE BUILDER
+        // ============
+
+        // Creates a RangedBuilder
+        let mut builder = layout_cx.ranged_builder(&mut font_cx, &text, display_scale);
+
+        // Set default text colour styles (set foreground text color)
+        builder.push_default(brush_style);
+
+        // Set default font family
+        builder.push_default(font_stack);
+        builder.push_default(StyleProperty::LineHeight(1.3));
+        builder.push_default(StyleProperty::FontSize(16.0));
+
+        // Set the first 4 characters to bold
+        builder.push(bold_style, 0..4);
+
+        // Set the underline & strikethrough style
+        builder.push(underline_style, 141..150);
+        builder.push(strikethrough_style, 155..168);
+
+        builder.push_inline_box(InlineBox {
+            id: 0,
+            index: 40,
+            width: 50.0,
+            height: 50.0,
+        });
+        builder.push_inline_box(InlineBox {
+            id: 1,
+            index: 50,
+            width: 50.0,
+            height: 30.0,
+        });
+
+        // Build the builder into a Layout
+        // let mut layout: Layout<ColorBrush> = builder.build(&text);
+        let layout: Layout<ColorBrush> = builder.build(&text);
+        layout
+    };
+
+    // Perform layout (including bidi resolution and shaping) with start alignment
+    layout.break_all_lines(max_advance);
+    layout.align(max_advance, Alignment::Start, AlignmentOptions::default());
+
+    return layout;
 }

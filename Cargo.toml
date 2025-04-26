@@ -9,6 +9,7 @@ wgpu = "25"
 etagere = "0.2.10"
 lru = { version = "0.12.1", default-features = false }
 rustc-hash = "2.0"
+swash = "0.2.2"
 
 
 [dev-dependencies]

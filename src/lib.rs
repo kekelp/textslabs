@@ -1,4 +1,5 @@
 mod text_atlas;
+mod swash_render;
 
 pub fn add(left: u64, right: u64) -> u64 {
     left + right

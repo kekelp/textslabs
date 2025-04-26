@@ -1632,6 +1632,7 @@ dependencies = [
  "parley",
  "pollster",
  "rustc-hash 2.1.1",
+ "swash",
  "wgpu",
  "winit",
 ]
