@@ -1,78 +1,16 @@
-use swash::scale::ScaleContext;
+use image::{Pixel, RgbaImage};
+use parley::{Glyph, GlyphRun};
+use swash::{scale::{image::Content, Render, ScaleContext, Scaler, Source, StrikeWith}, zeno::{Format, Vector}, FontRef};
+use image::Rgba;
 
-
-fn render_glyph_run(
-    context: &mut ScaleContext,
-    glyph_run: &GlyphRun<'_, ColorBrush>,
-    img: &mut RgbaImage,
-    padding: u32,
-) {
-    // Resolve properties of the GlyphRun
-    let mut run_x = glyph_run.offset();
-    let run_y = glyph_run.baseline();
-    let style = glyph_run.style();
-    let color = style.brush;
-
-    // Get the "Run" from the "GlyphRun"
-    let run = glyph_run.run();
-
-    // Resolve properties of the Run
-    let font = run.font();
-    let font_size = run.font_size();
-    let normalized_coords = run.normalized_coords();
-
-    // Convert from parley::Font to swash::FontRef
-    let font_ref = FontRef::from_index(font.data.as_ref(), font.index as usize).unwrap();
-
-    // Build a scaler. As the font properties are constant across an entire run of glyphs
-    // we can build one scaler for the run and reuse it for each glyph.
-    let mut scaler = context
-        .builder(font_ref)
-        .size(font_size)
-        .hint(true)
-        .normalized_coords(normalized_coords)
-        .build();
-
-    // Iterates over the glyphs in the GlyphRun
-    for glyph in glyph_run.glyphs() {
-        let glyph_x = run_x + glyph.x + (padding as f32);
-        let glyph_y = run_y - glyph.y + (padding as f32);
-        run_x += glyph.advance;
-
-        render_glyph(img, &mut scaler, color, glyph, glyph_x, glyph_y);
-    }
-
-    // Draw decorations: underline & strikethrough
-    let style = glyph_run.style();
-    let run_metrics = run.metrics();
-    if let Some(decoration) = &style.underline {
-        let offset = decoration.offset.unwrap_or(run_metrics.underline_offset);
-        let size = decoration.size.unwrap_or(run_metrics.underline_size);
-        render_decoration(img, glyph_run, decoration.brush, offset, size, padding);
-    }
-    if let Some(decoration) = &style.strikethrough {
-        let offset = decoration
-            .offset
-            .unwrap_or(run_metrics.strikethrough_offset);
-        let size = decoration.size.unwrap_or(run_metrics.strikethrough_size);
-        render_decoration(img, glyph_run, decoration.brush, offset, size, padding);
-    }
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ColorBrush {
+    pub color: Rgba<u8>,
 }
-
-fn render_decoration(
-    img: &mut RgbaImage,
-    glyph_run: &GlyphRun<'_, ColorBrush>,
-    brush: ColorBrush,
-    offset: f32,
-    width: f32,
-    padding: u32,
-) {
-    let y = glyph_run.baseline() - offset;
-    for pixel_y in y as u32..(y + width) as u32 {
-        for pixel_x in glyph_run.offset() as u32..(glyph_run.offset() + glyph_run.advance()) as u32
-        {
-            img.get_pixel_mut(pixel_x + padding, pixel_y + padding)
-                .blend(&brush.color);
+impl Default for ColorBrush {
+    fn default() -> Self {
+        Self {
+            color: Rgba([0, 0, 0, 255]),
         }
     }
 }
