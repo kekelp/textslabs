@@ -168,52 +168,29 @@ fn text_layout() -> Layout<ColorBrush> {
         "Some text here. Let's make it a bit longer so that line wrapping kicks in 😊. And also some اللغة العربية arabic text.\nThis is underline and strikethrough text",
     );
 
-    // The display scale for HiDPI rendering
     let display_scale = 1.0;
 
-    // The width for line wrapping
     let max_advance = Some(200.0 * display_scale);
 
-    // Colours for rendering
     let text_color = Rgba([0, 0, 0, 255]);
-    let bg_color = Rgba([255, 255, 255, 255]);
 
-    // Padding around the output image
-    let padding = 20;
 
-    // Create a FontContext, LayoutContext and ScaleContext
-    //
-    // These are all intended to be constructed rarely (perhaps even once per app (or once per thread))
-    // and provide caches and scratch space to avoid allocations
     let mut font_cx = FontContext::new();
     let mut layout_cx = LayoutContext::new();
-    let mut scale_cx = ScaleContext::new();
 
-    // Setup some Parley text styles
     let text_brush = ColorBrush { color: text_color };
-    let brush_style = StyleProperty::Brush(text_brush);
-    let font_stack = FontStack::from("system-ui");
-    let bold_style = StyleProperty::FontWeight(FontWeight::new(600.0));
-    let underline_style = StyleProperty::Underline(true);
-    let strikethrough_style = StyleProperty::Strikethrough(true);
-
-    // Creates a RangedBuilder
     let mut builder = layout_cx.ranged_builder(&mut font_cx, &text, display_scale);
 
-    // Set default text colour styles (set foreground text color)
-    builder.push_default(brush_style);
+    builder.push_default(StyleProperty::Brush(text_brush));
 
-    // Set default font family
-    builder.push_default(font_stack);
+    builder.push_default(FontStack::from("system-ui"));
     builder.push_default(StyleProperty::LineHeight(1.3));
     builder.push_default(StyleProperty::FontSize(16.0));
 
-    // Set the first 4 characters to bold
-    builder.push(bold_style, 0..4);
+    builder.push(StyleProperty::FontWeight(FontWeight::new(600.0)), 0..4);
 
-    // Set the underline & strikethrough style
-    builder.push(underline_style, 141..150);
-    builder.push(strikethrough_style, 155..168);
+    builder.push(StyleProperty::Underline(true), 141..150);
+    builder.push(StyleProperty::Strikethrough(true), 155..168);
 
     builder.push_inline_box(InlineBox {
         id: 0,
@@ -269,17 +246,15 @@ impl TextRenderer {
             for item in line.items() {
                 match item {
                     PositionedLayoutItem::GlyphRun(glyph_run) => {
-                        self.render_glyph_run(&glyph_run);
+                        self.prepare_glyph_run(&glyph_run);
                     }
-                    PositionedLayoutItem::InlineBox(inline_box) => {
-                        
-                    }
+                    PositionedLayoutItem::InlineBox(_inline_box) => {}
                 }
             }
         }
     }
 
-    fn render_glyph_run(
+    fn prepare_glyph_run(
         &mut self,
         glyph_run: &GlyphRun<'_, ColorBrush>,
     ) {
