@@ -1,15 +1,16 @@
 use parley_atlas_renderer::*;
 use swash::zeno::{Format, Vector};
 
+use wgpu::*;
+
+use std::borrow::Cow;
+use std::mem;
+use std::num::NonZeroU64;
 use std::sync::Arc;
 use image::{Pixel, Rgba, RgbaImage};
 use parley::{Alignment, AlignmentOptions, FontContext, FontStack, FontWeight, Glyph, GlyphRun, InlineBox, Layout, LayoutContext, PositionedLayoutItem, StyleProperty, TextStyle};
-use parley_atlas_renderer::swash_render::ColorBrush;
 use wgpu::{
-    CommandEncoderDescriptor, CompositeAlphaMode, DeviceDescriptor, Instance, InstanceDescriptor,
-    LoadOp, MultisampleState, Operations, PresentMode, RenderPassColorAttachment,
-    RenderPassDescriptor, RequestAdapterOptions, SurfaceConfiguration, TextureFormat,
-    TextureUsages, TextureViewDescriptor,
+    CommandEncoderDescriptor, CompositeAlphaMode, DeviceDescriptor, Instance, InstanceDescriptor, LoadOp, MultisampleState, Operations, PresentMode, RenderPassColorAttachment, RenderPassDescriptor, RequestAdapterOptions, SurfaceConfiguration, Texture, TextureFormat, TextureUsages, TextureView, TextureViewDescriptor
 };
 use swash::scale::image::Content;
 use swash::scale::{Render, ScaleContext, Scaler, Source, StrikeWith};
@@ -69,9 +70,10 @@ impl State {
 
         let layout = text_layout();
 
-        let mut text_renderer = TextRenderer::new();
+        let mut text_renderer = TextRenderer::new(&device, &queue);
 
         text_renderer.prepare(&layout);
+        text_renderer.gpu_load(&queue);
 
         Self {
             device,
@@ -224,18 +226,201 @@ struct TextRenderer {
     font_cx: FontContext,
     layout_cx: LayoutContext<ColorBrush>,
     scale_cx: ScaleContext,
+    texture: Texture,
+    texture_view: TextureView,
+
+    vertex_buffer: Buffer,
+    vertex_buffer_size: u64,
+    pipeline: RenderPipeline,
+    quads: Vec<Quad>,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Quad {
+    pos: [i32; 2],
+    dim: [u16; 2],
+    uv: [u16; 2],
+    color: u32,
+    content_type_with_srgb: [u16; 2],
+    depth: f32,
 }
 
 impl TextRenderer {
-    pub fn new() -> Self {
+    fn new(device: &Device, _queue: &Queue) -> Self {
         let bg_color = Rgba([255, 255, 255, 255]);
+        let size = 256;
+
+        let texture = device.create_texture(&TextureDescriptor {
+            label: Some("glyphon atlas"),
+            size: Extent3d {
+                width: size,
+                height: size,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format: TextureFormat::Rgba8Unorm,
+            usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+
+        let texture_view = texture.create_view(&TextureViewDescriptor::default());
+
+        let vertex_buffer_size = 4096;
+        let vertex_buffer = device.create_buffer(&BufferDescriptor {
+            label: Some("glyphon vertices"),
+            size: vertex_buffer_size,
+            usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let sampler = device.create_sampler(&SamplerDescriptor {
+            label: Some("glyphon sampler"),
+            min_filter: FilterMode::Nearest,
+            mag_filter: FilterMode::Nearest,
+            mipmap_filter: FilterMode::Nearest,
+            lod_min_clamp: 0f32,
+            lod_max_clamp: 0f32,
+            ..Default::default()
+        });
+
+        let shader = device.create_shader_module(ShaderModuleDescriptor {
+            label: Some("glyphon shader"),
+            source: ShaderSource::Wgsl(Cow::Borrowed(include_str!("shader.wgsl"))),
+        });
+
+        let vertex_buffer_layout = wgpu::VertexBufferLayout {
+            array_stride: mem::size_of::<Quad>() as wgpu::BufferAddress,
+            step_mode: wgpu::VertexStepMode::Instance,
+            attributes: &[
+                wgpu::VertexAttribute {
+                    format: VertexFormat::Sint32x2,
+                    offset: 0,
+                    shader_location: 0,
+                },
+                wgpu::VertexAttribute {
+                    format: VertexFormat::Uint32,
+                    offset: mem::size_of::<u32>() as u64 * 2,
+                    shader_location: 1,
+                },
+                wgpu::VertexAttribute {
+                    format: VertexFormat::Uint32,
+                    offset: mem::size_of::<u32>() as u64 * 3,
+                    shader_location: 2,
+                },
+                wgpu::VertexAttribute {
+                    format: VertexFormat::Uint32,
+                    offset: mem::size_of::<u32>() as u64 * 4,
+                    shader_location: 3,
+                },
+                wgpu::VertexAttribute {
+                    format: VertexFormat::Uint32,
+                    offset: mem::size_of::<u32>() as u64 * 5,
+                    shader_location: 4,
+                },
+                wgpu::VertexAttribute {
+                    format: VertexFormat::Float32,
+                    offset: mem::size_of::<u32>() as u64 * 6,
+                    shader_location: 5,
+                },
+            ],
+        };
+
+        let atlas_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            entries: &[
+                BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: ShaderStages::VERTEX | ShaderStages::FRAGMENT,
+                    ty: BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: TextureViewDimension::D2,
+                        sample_type: TextureSampleType::Float { filterable: true },
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: ShaderStages::VERTEX | ShaderStages::FRAGMENT,
+                    ty: BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: TextureViewDimension::D2,
+                        sample_type: TextureSampleType::Float { filterable: true },
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: ShaderStages::FRAGMENT,
+                    ty: BindingType::Sampler(SamplerBindingType::Filtering),
+                    count: None,
+                },
+            ],
+            label: Some("glyphon atlas bind group layout"),
+        });
+
+        let uniforms_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            entries: &[BindGroupLayoutEntry {
+                binding: 0,
+                visibility: ShaderStages::VERTEX,
+                ty: BindingType::Buffer {
+                    ty: BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: NonZeroU64::new(mem::size_of::<Params>() as u64),
+                },
+                count: None,
+            }],
+            label: Some("glyphon uniforms bind group layout"),
+        });
+
+        let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+            label: None,
+            bind_group_layouts: &[&atlas_layout, &uniforms_layout],
+            push_constant_ranges: &[],
+        });
+
+        let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+            label: Some("glyphon pipeline"),
+            layout: Some(&pipeline_layout),
+            vertex: VertexState {
+                module: &shader,
+                entry_point: Some("vs_main"),
+                buffers: &[vertex_buffer_layout],
+                compilation_options: PipelineCompilationOptions::default(),
+            },
+            fragment: Some(FragmentState {
+                module: &shader,
+                entry_point: Some("fs_main"),
+                targets: &[Some(ColorTargetState {
+                    format: TextureFormat::Bgra8Unorm,
+                    blend: Some(BlendState::ALPHA_BLENDING),
+                    write_mask: ColorWrites::default(),
+                })],
+                compilation_options: PipelineCompilationOptions::default(),
+            }),
+            primitive: PrimitiveState {
+                topology: PrimitiveTopology::TriangleStrip,
+                ..Default::default()
+            },
+            depth_stencil: None,
+            multisample: MultisampleState::default(),
+            multiview: None,
+            cache: None,
+        });
 
         Self {
-            atlas: RgbaImage::from_pixel(2000, 2000, bg_color),
+            atlas: RgbaImage::from_pixel(256, 256, bg_color),
             tmp_glyph: RgbaImage::from_pixel(100, 100, bg_color),
             font_cx: FontContext::new(),
             layout_cx: LayoutContext::new(),
-            scale_cx: ScaleContext::new(),   
+            scale_cx: ScaleContext::new(),
+            texture,
+            texture_view,
+            vertex_buffer,
+            vertex_buffer_size,
+            pipeline,
+            quads: Vec::with_capacity(300),
         }
     }
 
@@ -252,6 +437,32 @@ impl TextRenderer {
                 }
             }
         }
+    }
+
+    fn gpu_load(&mut self, queue: &Queue) {
+        queue.write_texture(
+            TexelCopyTextureInfo {
+                texture: &self.texture,
+                mip_level: 0,
+                origin: Origin3d {
+                    x: 0,
+                    y: 0,
+                    z: 0,
+                },
+                aspect: TextureAspect::All,
+            },
+            &self.atlas.as_raw(),
+            TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(self.atlas.width() * 4),
+                rows_per_image: None,
+            },
+            Extent3d {
+                width: self.atlas.width(),
+                height: self.atlas.height(),
+                depth_or_array_layers: 1,
+            },
+        );
     }
 
     fn prepare_glyph_run(
@@ -313,8 +524,11 @@ impl TextRenderer {
 
             let glyph_width = rendered_glyph.placement.width;
             let glyph_height = rendered_glyph.placement.height;
-            let glyph_x = (glyph_x.floor() as i32 + rendered_glyph.placement.left) as u32;
-            let glyph_y = (glyph_y.floor() as i32 - rendered_glyph.placement.top) as u32;
+            // let glyph_x = (glyph_x.floor() as i32 + rendered_glyph.placement.left) as u32;
+            // let glyph_y = (glyph_y.floor() as i32 - rendered_glyph.placement.top) as u32;
+
+            let glyph_x = 0;
+            let glyph_y = 0;
 
             match rendered_glyph.content {
                 Content::Mask => {
