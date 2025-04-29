@@ -226,13 +226,20 @@ struct TextRenderer {
     font_cx: FontContext,
     layout_cx: LayoutContext<ColorBrush>,
     scale_cx: ScaleContext,
-    texture: Texture,
-    texture_view: TextureView,
+    
+    mask_atlas: Atlas,
+    color_atlas: Atlas,
 
+    bind_group: BindGroup,
     vertex_buffer: Buffer,
     vertex_buffer_size: u64,
     pipeline: RenderPipeline,
     quads: Vec<Quad>,
+}
+
+struct Atlas {
+    texture: Texture,
+    texture_view: TextureView,
 }
 
 #[repr(C)]
@@ -251,7 +258,7 @@ impl TextRenderer {
         let bg_color = Rgba([255, 255, 255, 255]);
         let size = 256;
 
-        let texture = device.create_texture(&TextureDescriptor {
+        let mask_texture = device.create_texture(&TextureDescriptor {
             label: Some("glyphon atlas"),
             size: Extent3d {
                 width: size,
@@ -265,8 +272,34 @@ impl TextRenderer {
             usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
             view_formats: &[],
         });
+        let mask_texture_view = mask_texture.create_view(&TextureViewDescriptor::default());
 
-        let texture_view = texture.create_view(&TextureViewDescriptor::default());
+        let mask_atlas = Atlas {
+            texture: mask_texture,
+            texture_view: mask_texture_view,
+        };
+        
+        let color_texture = device.create_texture(&TextureDescriptor {
+            label: Some("glyphon atlas"),
+            size: Extent3d {
+                width: size,
+                height: size,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format: TextureFormat::Rgba8Unorm,
+            usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        let color_texture_view = color_texture.create_view(&TextureViewDescriptor::default());
+        
+        let color_atlas = Atlas {
+            texture: color_texture,
+            texture_view: color_texture_view,
+        };
+
 
         let vertex_buffer_size = 4096;
         let vertex_buffer = device.create_buffer(&BufferDescriptor {
@@ -328,6 +361,21 @@ impl TextRenderer {
             ],
         };
 
+        let uniforms_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            entries: &[BindGroupLayoutEntry {
+                binding: 0,
+                visibility: ShaderStages::VERTEX,
+                ty: BindingType::Buffer {
+                    ty: BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: NonZeroU64::new(mem::size_of::<Params>() as u64),
+                },
+                count: None,
+            }],
+            label: Some("glyphon uniforms bind group layout"),
+        });
+
+
         let atlas_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             entries: &[
                 BindGroupLayoutEntry {
@@ -360,18 +408,23 @@ impl TextRenderer {
             label: Some("glyphon atlas bind group layout"),
         });
 
-        let uniforms_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            entries: &[BindGroupLayoutEntry {
-                binding: 0,
-                visibility: ShaderStages::VERTEX,
-                ty: BindingType::Buffer {
-                    ty: BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: NonZeroU64::new(mem::size_of::<Params>() as u64),
+        let bind_group = device.create_bind_group(&BindGroupDescriptor {
+            layout: &atlas_layout,
+            entries: &[
+                BindGroupEntry {
+                    binding: 0,
+                    resource: BindingResource::TextureView(&mask_atlas.texture_view),
                 },
-                count: None,
-            }],
-            label: Some("glyphon uniforms bind group layout"),
+                BindGroupEntry {
+                    binding: 1,
+                    resource: BindingResource::TextureView(&color_atlas.texture_view),
+                },
+                BindGroupEntry {
+                    binding: 2,
+                    resource: BindingResource::Sampler(&sampler),
+                },
+            ],
+            label: Some("glyphon atlas bind group"),
         });
 
         let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
@@ -415,13 +468,29 @@ impl TextRenderer {
             font_cx: FontContext::new(),
             layout_cx: LayoutContext::new(),
             scale_cx: ScaleContext::new(),
-            texture,
-            texture_view,
+            color_atlas,
+            mask_atlas,
             vertex_buffer,
             vertex_buffer_size,
             pipeline,
+            bind_group,
             quads: Vec::with_capacity(300),
         }
+    }
+
+    pub fn render(
+        &self,
+        pass: &mut RenderPass<'_>,
+    ) {
+        if self.quads.is_empty() {
+            return;
+        }
+
+        pass.set_pipeline(&self.pipeline);
+        pass.set_bind_group(0, &self.bind_group, &[]);
+        // pass.set_bind_group(1, &self.viewport.bind_group, &[]);
+        pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+        pass.draw(0..4, 0..self.quads.len() as u32);
     }
 
     fn prepare(&mut self, layout: &Layout<ColorBrush>) {
@@ -442,7 +511,7 @@ impl TextRenderer {
     fn gpu_load(&mut self, queue: &Queue) {
         queue.write_texture(
             TexelCopyTextureInfo {
-                texture: &self.texture,
+                texture: &self.color_atlas.texture,
                 mip_level: 0,
                 origin: Origin3d {
                     x: 0,
