@@ -15,8 +15,8 @@ impl Default for ColorBrush {
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Params {
-    screen_resolution: Resolution,
-    _pad: [u32; 2],
+    pub screen_resolution: Resolution,
+    pub _pad: [u32; 2],
 }
 
 /// The screen resolution to use when rendering text.

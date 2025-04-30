@@ -20,7 +20,7 @@ use winit::{dpi::LogicalSize, event::WindowEvent, event_loop::EventLoop, window:
 fn main() {
     let event_loop = EventLoop::new().unwrap();
     event_loop
-        .run_app(&mut Application { window_state: None })
+        .run_app(&mut Application { state: None })
         .unwrap();
 }
 
@@ -34,6 +34,8 @@ struct State {
     // it is dropped after the wgpu surface is dropped, otherwise the
     // program may crash when closed. This is probably a bug in wgpu.
     window: Arc<Window>,
+
+    text_renderer: TextRenderer,
 
     text_layout: Layout<ColorBrush>,
 }
@@ -53,7 +55,7 @@ impl State {
         let surface = instance
             .create_surface(window.clone())
             .expect("Create surface");
-        let swapchain_format = TextureFormat::Bgra8UnormSrgb;
+        let swapchain_format = TextureFormat::Bgra8Unorm;
         let surface_config = SurfaceConfiguration {
             usage: TextureUsages::RENDER_ATTACHMENT,
             format: swapchain_format,
@@ -81,62 +83,34 @@ impl State {
             surface,
             surface_config,
             window,
+            text_renderer,
             text_layout: layout,
         }
     }
-}
 
-struct Application {
-    window_state: Option<State>,
-}
-
-impl winit::application::ApplicationHandler for Application {
-    fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
-        if self.window_state.is_some() {
-            return;
-        }
-
-        // Set up window
-        let (width, height) = (800, 600);
-        let window_attributes = Window::default_attributes()
-            .with_inner_size(LogicalSize::new(width as f64, height as f64))
-            .with_title("glyphon hello world");
-        let window = Arc::new(event_loop.create_window(window_attributes).unwrap());
-
-        self.window_state = Some(State::new(window));
-    }
-
-    fn window_event(
-        &mut self,
-        event_loop: &winit::event_loop::ActiveEventLoop,
-        _window_id: winit::window::WindowId,
-        event: WindowEvent,
-    ) {
-        let Some(state) = &mut self.window_state else {
-            return;
-        };
-
-        let State {
-            window,
-            device,
-            queue,
-            surface,
-            surface_config,
-            ..
-        } = state;
-
+    fn window_event(&mut self, event_loop: &winit::event_loop::ActiveEventLoop, event: WindowEvent) {
         match event {
             WindowEvent::Resized(size) => {
-                surface_config.width = size.width;
-                surface_config.height = size.height;
-                surface.configure(&device, &surface_config);
-                window.request_redraw();
+                self.surface_config.width = size.width;
+                self.surface_config.height = size.height;
+                self.surface.configure(&self.device, &self.surface_config);
+                self.window.request_redraw();
             }
             WindowEvent::RedrawRequested => {
-                let frame = surface.get_current_texture().unwrap();
+                let frame = self.surface.get_current_texture().unwrap();
                 let view = frame.texture.create_view(&TextureViewDescriptor::default());
+
+                self.text_renderer.quads = vec![Quad { 
+                    pos: [0, 0],
+                    dim: [100, 100],
+                    uv: [0, 1],
+                    color: 0,
+                    content_type_with_srgb: [0, 1],
+                    depth: 0.0,
+                 }];
+
                 let mut encoder =
-                    device.create_command_encoder(&CommandEncoderDescriptor { label: None });
+                    self.device.create_command_encoder(&CommandEncoderDescriptor { label: None });
                 {
                     let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
                         label: None,
@@ -152,9 +126,11 @@ impl winit::application::ApplicationHandler for Application {
                         timestamp_writes: None,
                         occlusion_query_set: None,
                     });
+
+                    self.text_renderer.render(&mut pass);
                 }
 
-                queue.submit(Some(encoder.finish()));
+                self.queue.submit(Some(encoder.finish()));
                 frame.present();
 
                 // atlas.trim();
@@ -162,6 +138,38 @@ impl winit::application::ApplicationHandler for Application {
             WindowEvent::CloseRequested => event_loop.exit(),
             _ => {}
         }
+    }
+}
+
+struct Application {
+    state: Option<State>,
+}
+
+impl winit::application::ApplicationHandler for Application {
+    fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
+        if self.state.is_some() {
+            return;
+        }
+
+        // Set up window
+        let (width, height) = (800, 600);
+        let window_attributes = Window::default_attributes()
+            .with_inner_size(LogicalSize::new(width as f64, height as f64))
+            .with_title("glyphon hello world");
+        let window = Arc::new(event_loop.create_window(window_attributes).unwrap());
+
+        self.state = Some(State::new(window));
+    }
+
+    fn window_event(
+        &mut self,
+        event_loop: &winit::event_loop::ActiveEventLoop,
+        _window_id: winit::window::WindowId,
+        event: WindowEvent,
+    ) {
+        if let Some(state) = &mut self.state {
+            state.window_event(event_loop, event);
+        };
     }
 }
 
@@ -221,7 +229,6 @@ fn text_layout() -> Layout<ColorBrush> {
 
 
 struct TextRenderer {
-    atlas: RgbaImage,
     tmp_glyph: RgbaImage,
     font_cx: FontContext,
     layout_cx: LayoutContext<ColorBrush>,
@@ -231,6 +238,11 @@ struct TextRenderer {
     color_atlas: Atlas,
 
     bind_group: BindGroup,
+
+    params: Params,
+    params_buffer: Buffer,
+    params_bind_group: BindGroup,
+
     vertex_buffer: Buffer,
     vertex_buffer_size: u64,
     pipeline: RenderPipeline,
@@ -238,6 +250,7 @@ struct TextRenderer {
 }
 
 struct Atlas {
+    image: RgbaImage,
     texture: Texture,
     texture_view: TextureView,
 }
@@ -275,6 +288,7 @@ impl TextRenderer {
         let mask_texture_view = mask_texture.create_view(&TextureViewDescriptor::default());
 
         let mask_atlas = Atlas {
+            image: RgbaImage::from_pixel(256, 256, bg_color),
             texture: mask_texture,
             texture_view: mask_texture_view,
         };
@@ -296,6 +310,7 @@ impl TextRenderer {
         let color_texture_view = color_texture.create_view(&TextureViewDescriptor::default());
         
         let color_atlas = Atlas {
+            image: RgbaImage::from_pixel(256, 256, bg_color),
             texture: color_texture,
             texture_view: color_texture_view,
         };
@@ -360,6 +375,44 @@ impl TextRenderer {
                 },
             ],
         };
+
+        let params = Params {
+            screen_resolution: Resolution {
+                width: 0,
+                height: 0,
+            },
+            _pad: [0, 0],
+        };
+
+        let params_buffer = device.create_buffer(&BufferDescriptor {
+            label: Some("glyphon params"),
+            size: mem::size_of::<Params>() as u64,
+            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let params_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            entries: &[BindGroupLayoutEntry {
+                binding: 0,
+                visibility: ShaderStages::VERTEX,
+                ty: BindingType::Buffer {
+                    ty: BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: NonZeroU64::new(mem::size_of::<Params>() as u64),
+                },
+                count: None,
+            }],
+            label: Some("glyphon uniforms bind group layout"),
+        });
+
+        let params_bind_group = device.create_bind_group(&BindGroupDescriptor {
+            layout: &params_layout,
+            entries: &[BindGroupEntry {
+                binding: 0,
+                resource: params_buffer.as_entire_binding(),
+            }],
+            label: Some("glyphon uniforms bind group"),
+        }); 
 
         let uniforms_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             entries: &[BindGroupLayoutEntry {
@@ -463,7 +516,6 @@ impl TextRenderer {
         });
 
         Self {
-            atlas: RgbaImage::from_pixel(256, 256, bg_color),
             tmp_glyph: RgbaImage::from_pixel(100, 100, bg_color),
             font_cx: FontContext::new(),
             layout_cx: LayoutContext::new(),
@@ -474,6 +526,10 @@ impl TextRenderer {
             vertex_buffer_size,
             pipeline,
             bind_group,
+
+            params,
+            params_buffer,
+            params_bind_group,
             quads: Vec::with_capacity(300),
         }
     }
@@ -488,9 +544,9 @@ impl TextRenderer {
 
         pass.set_pipeline(&self.pipeline);
         pass.set_bind_group(0, &self.bind_group, &[]);
-        // pass.set_bind_group(1, &self.viewport.bind_group, &[]);
+        pass.set_bind_group(1, &self.params_bind_group, &[]);
         pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-        pass.draw(0..4, 0..self.quads.len() as u32);
+        pass.draw(0..4, 0..1 as u32);
     }
 
     fn prepare(&mut self, layout: &Layout<ColorBrush>) {
@@ -511,7 +567,7 @@ impl TextRenderer {
     fn gpu_load(&mut self, queue: &Queue) {
         queue.write_texture(
             TexelCopyTextureInfo {
-                texture: &self.color_atlas.texture,
+                texture: &self.mask_atlas.texture,
                 mip_level: 0,
                 origin: Origin3d {
                     x: 0,
@@ -520,15 +576,15 @@ impl TextRenderer {
                 },
                 aspect: TextureAspect::All,
             },
-            &self.atlas.as_raw(),
+            &self.mask_atlas.image.as_raw(),
             TexelCopyBufferLayout {
                 offset: 0,
-                bytes_per_row: Some(self.atlas.width() * 4),
+                bytes_per_row: Some(self.mask_atlas.image.width() * 4),
                 rows_per_image: None,
             },
             Extent3d {
-                width: self.atlas.width(),
-                height: self.atlas.height(),
+                width: self.mask_atlas.image.width(),
+                height: self.mask_atlas.image.height(),
                 depth_or_array_layers: 1,
             },
         );

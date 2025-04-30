@@ -108,21 +108,31 @@ fn vs_main(in_vert: VertexInput) -> VertexOutput {
     vert_output.content_type = content_type;
 
     vert_output.uv = vec2<f32>(uv) / vec2<f32>(dim);
+        let positions = array<vec2<f32>, 3>(
+        vec2<f32>(-0.5, -0.5),
+        vec2<f32>(0.0, 0.5),
+        vec2<f32>(0.5, -0.5),
+    );
+    
+    // Select the position based on vertex index
+    vert_output.position = vec4<f32>(positions[in_vert.vertex_idx], 0.0, 1.0);
 
     return vert_output;
 }
 
 @fragment
 fn fs_main(in_frag: VertexOutput) -> @location(0) vec4<f32> {
-    switch in_frag.content_type {
-        case 0u: {
-            return textureSampleLevel(color_atlas_texture, atlas_sampler, in_frag.uv, 0.0);
-        }
-        case 1u: {
+    // return vec4(1.0);
             return vec4<f32>(in_frag.color.rgb, in_frag.color.a * textureSampleLevel(mask_atlas_texture, atlas_sampler, in_frag.uv, 0.0).x);
-        }
-        default: {
-            return vec4<f32>(0.0);
-        }
-    }
+    // switch in_frag.content_type {
+    //     case 0u: {
+    //         return textureSampleLevel(color_atlas_texture, atlas_sampler, in_frag.uv, 0.0);
+    //     }
+    //     case 1u: {
+    //         return vec4<f32>(in_frag.color.rgb, in_frag.color.a * textureSampleLevel(mask_atlas_texture, atlas_sampler, in_frag.uv, 0.0).x);
+    //     }
+    //     default: {
+    //         return vec4<f32>(0.0);
+    //     }
+    // }
 }
