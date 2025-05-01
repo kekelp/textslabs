@@ -12,7 +12,7 @@ use parley::{Alignment, AlignmentOptions, FontContext, FontStack, FontWeight, Gl
 use wgpu::{
     CommandEncoderDescriptor, CompositeAlphaMode, DeviceDescriptor, Instance, InstanceDescriptor, LoadOp, MultisampleState, Operations, PresentMode, RenderPassColorAttachment, RenderPassDescriptor, RequestAdapterOptions, SurfaceConfiguration, Texture, TextureFormat, TextureUsages, TextureView, TextureViewDescriptor
 };
-use swash::scale::image::Content;
+use swash::scale::image::{Content, Image};
 use swash::scale::{Render, ScaleContext, Scaler, Source, StrikeWith};
 use swash::{zeno, FontRef};
 use winit::{dpi::LogicalSize, event::WindowEvent, event_loop::EventLoop, window::Window};
@@ -229,7 +229,7 @@ fn text_layout() -> Layout<ColorBrush> {
 
 
 struct TextRenderer {
-    tmp_glyph: RgbaImage,
+    tmp_swash_image: Image,
     font_cx: FontContext,
     layout_cx: LayoutContext<ColorBrush>,
     scale_cx: ScaleContext,
@@ -516,7 +516,7 @@ impl TextRenderer {
         });
 
         Self {
-            tmp_glyph: RgbaImage::from_pixel(100, 100, bg_color),
+            tmp_swash_image: Image::new(),
             font_cx: FontContext::new(),
             layout_cx: LayoutContext::new(),
             scale_cx: ScaleContext::new(),
@@ -588,6 +588,30 @@ impl TextRenderer {
                 depth_or_array_layers: 1,
             },
         );
+
+        queue.write_texture(
+            TexelCopyTextureInfo {
+                texture: &self.color_atlas.texture,
+                mip_level: 0,
+                origin: Origin3d {
+                    x: 0,
+                    y: 0,
+                    z: 0,
+                },
+                aspect: TextureAspect::All,
+            },
+            &self.color_atlas.image.as_raw(),
+            TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(self.color_atlas.image.width() * 4),
+                rows_per_image: None,
+            },
+            Extent3d {
+                width: self.color_atlas.image.width(),
+                height: self.color_atlas.image.height(),
+                depth_or_array_layers: 1,
+            },
+        );
     }
 
     fn prepare_glyph_run(
@@ -631,7 +655,7 @@ impl TextRenderer {
             let offset = Vector::new(glyph_x.fract(), glyph_y.fract());
 
             // Render the glyph using swash
-            let rendered_glyph = Render::new(
+            Render::new(
                 // Select our source order
                 &[
                     Source::ColorOutline(0),
@@ -644,18 +668,17 @@ impl TextRenderer {
             // Apply the fractional offset
             .offset(offset)
             // Render the image
-            .render(&mut scaler, glyph.id)
-            .unwrap();
+            .render_into(&mut scaler, glyph.id, &mut self.tmp_swash_image);
 
-            let glyph_width = rendered_glyph.placement.width;
-            let glyph_height = rendered_glyph.placement.height;
-            // let glyph_x = (glyph_x.floor() as i32 + rendered_glyph.placement.left) as u32;
-            // let glyph_y = (glyph_y.floor() as i32 - rendered_glyph.placement.top) as u32;
+            let glyph_width = self.tmp_swash_image.placement.width;
+            let glyph_height = self.tmp_swash_image.placement.height;
+            // let glyph_x = (glyph_x.floor() as i32 + self.tmp_swash_image.placement.left) as u32;
+            // let glyph_y = (glyph_y.floor() as i32 - self.tmp_swash_image.placement.top) as u32;
 
             let glyph_x = 0;
             let glyph_y = 0;
 
-            match rendered_glyph.content {
+            match self.tmp_swash_image.content {
                 Content::Mask => {
                     let mut i = 0;
                     let bc = color_brush.color;
@@ -663,9 +686,9 @@ impl TextRenderer {
                         for pixel_x in 0..glyph_width {
                             let x = glyph_x + pixel_x;
                             let y = glyph_y + pixel_y;
-                            let alpha = rendered_glyph.data[i];
+                            let alpha = self.tmp_swash_image.data[i];
                             let color = Rgba([bc[0], bc[1], bc[2], alpha]);
-                            self.tmp_glyph.get_pixel_mut(x, y).blend(&color);
+                            self.mask_atlas.image.get_pixel_mut(x, y).blend(&color);
                             i += 1;
                         }
                     }
@@ -673,16 +696,18 @@ impl TextRenderer {
                 Content::SubpixelMask => unimplemented!(),
                 Content::Color => {
                     let row_size = glyph_width as usize * 4;
-                    for (pixel_y, row) in rendered_glyph.data.chunks_exact(row_size).enumerate() {
+                    for (pixel_y, row) in self.tmp_swash_image.data.chunks_exact(row_size).enumerate() {
                         for (pixel_x, pixel) in row.chunks_exact(4).enumerate() {
                             let x = glyph_x + pixel_x as u32;
                             let y = glyph_y + pixel_y as u32;
                             let color = Rgba(pixel.try_into().expect("Not RGBA"));
-                            self.tmp_glyph.get_pixel_mut(x, y).blend(&color);
+                            self.color_atlas.image.get_pixel_mut(x, y).blend(&color);
                         }
                     }
                 }
             }
+
+            self.tmp_swash_image.clear();
         }
 
         // Draw decorations: underline & strikethrough
