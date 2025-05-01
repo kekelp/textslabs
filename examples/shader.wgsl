@@ -42,80 +42,90 @@ fn srgb_to_linear(c: f32) -> f32 {
 
 @vertex
 fn vs_main(in_vert: VertexInput) -> VertexOutput {
-    var pos = in_vert.pos;
-    let width = in_vert.dim & 0xffffu;
-    let height = (in_vert.dim & 0xffff0000u) >> 16u;
-    let color = in_vert.color;
-    var uv = vec2<u32>(in_vert.uv & 0xffffu, (in_vert.uv & 0xffff0000u) >> 16u);
-    let v = in_vert.vertex_idx;
+    // var pos = in_vert.pos;
+    // let width = in_vert.dim & 0xffffu;
+    // let height = (in_vert.dim & 0xffff0000u) >> 16u;
+    // let color = in_vert.color;
+    // // var uv = vec2<u32>(in_vert.uv & 0xffffu, (in_vert.uv & 0xffff0000u) >> 16u);
+    // let v = in_vert.vertex_idx;
 
-    let corner_position = vec2<u32>(
-        in_vert.vertex_idx & 1u,
-        (in_vert.vertex_idx >> 1u) & 1u,
-    );
+    // let corner_position = vec2<u32>(
+    //     in_vert.vertex_idx & 1u,
+    //     (in_vert.vertex_idx >> 1u) & 1u,
+    // );
 
-    let corner_offset = vec2<u32>(width, height) * corner_position;
+    // let corner_offset = vec2<u32>(width, height) * corner_position;
 
-    uv = uv + corner_offset;
-    pos = pos + vec2<i32>(corner_offset);
+    // // uv = uv + corner_offset;
+    // pos = pos + vec2<i32>(corner_offset);
 
     var vert_output: VertexOutput;
 
-    vert_output.position = vec4<f32>(
-        2.0 * vec2<f32>(pos) / vec2<f32>(params.screen_resolution) - 1.0,
-        in_vert.depth,
-        1.0,
+    // vert_output.position = vec4<f32>(
+    //     2.0 * vec2<f32>(pos) / vec2<f32>(params.screen_resolution) - 1.0,
+    //     in_vert.depth,
+    //     1.0,
+    // );
+
+    // vert_output.position.y *= -1.0;
+
+    // let content_type = in_vert.content_type_with_srgb & 0xffffu;
+    // let srgb = (in_vert.content_type_with_srgb & 0xffff0000u) >> 16u;
+
+    // switch srgb {
+    //     case 0u: {
+    //         vert_output.color = vec4<f32>(
+    //             f32((color & 0x00ff0000u) >> 16u) / 255.0,
+    //             f32((color & 0x0000ff00u) >> 8u) / 255.0,
+    //             f32(color & 0x000000ffu) / 255.0,
+    //             f32((color & 0xff000000u) >> 24u) / 255.0,
+    //         );
+    //     }
+    //     case 1u: {
+    //         vert_output.color = vec4<f32>(
+    //             srgb_to_linear(f32((color & 0x00ff0000u) >> 16u) / 255.0),
+    //             srgb_to_linear(f32((color & 0x0000ff00u) >> 8u) / 255.0),
+    //             srgb_to_linear(f32(color & 0x000000ffu) / 255.0),
+    //             f32((color & 0xff000000u) >> 24u) / 255.0,
+    //         );
+    //     }
+    //     default: {}
+    // }
+
+    // var dim: vec2<u32> = vec2(0u);
+    // switch content_type {
+    //     case 0u: {
+    //         dim = textureDimensions(color_atlas_texture);
+    //         break;
+    //     }
+    //     case 1u: {
+    //         dim = textureDimensions(mask_atlas_texture);
+    //         break;
+    //     }
+    //     default: {}
+    // }
+
+    // vert_output.content_type = content_type;
+    
+    let uvs = array<vec2<f32>, 6>(
+        // First triangle
+        vec2<f32>(0.0, 1.0),  // Bottom-left
+        vec2<f32>(0.0, 0.0),   // Top-left
+        vec2<f32>(1.0, 0.0),    // Top-right
+        
+        // Second triangle
+        vec2<f32>(0.0, 1.0),  // Bottom-left
+        vec2<f32>(1.0, 0.0),    // Top-right
+        vec2<f32>(1.0, 1.0),    // Bottom-right
     );
 
-    vert_output.position.y *= -1.0;
-
-    let content_type = in_vert.content_type_with_srgb & 0xffffu;
-    let srgb = (in_vert.content_type_with_srgb & 0xffff0000u) >> 16u;
-
-    switch srgb {
-        case 0u: {
-            vert_output.color = vec4<f32>(
-                f32((color & 0x00ff0000u) >> 16u) / 255.0,
-                f32((color & 0x0000ff00u) >> 8u) / 255.0,
-                f32(color & 0x000000ffu) / 255.0,
-                f32((color & 0xff000000u) >> 24u) / 255.0,
-            );
-        }
-        case 1u: {
-            vert_output.color = vec4<f32>(
-                srgb_to_linear(f32((color & 0x00ff0000u) >> 16u) / 255.0),
-                srgb_to_linear(f32((color & 0x0000ff00u) >> 8u) / 255.0),
-                srgb_to_linear(f32(color & 0x000000ffu) / 255.0),
-                f32((color & 0xff000000u) >> 24u) / 255.0,
-            );
-        }
-        default: {}
-    }
-
-    var dim: vec2<u32> = vec2(0u);
-    switch content_type {
-        case 0u: {
-            dim = textureDimensions(color_atlas_texture);
-            break;
-        }
-        case 1u: {
-            dim = textureDimensions(mask_atlas_texture);
-            break;
-        }
-        default: {}
-    }
-
-    vert_output.content_type = content_type;
-
-    vert_output.uv = vec2<f32>(uv) / vec2<f32>(dim);
-        let positions = array<vec2<f32>, 3>(
-        vec2<f32>(-0.5, -0.5),
-        vec2<f32>(0.0, 0.5),
-        vec2<f32>(0.5, -0.5),
-    );
+    var uv = uvs[in_vert.vertex_idx];
+    var pos = (uv - 0.5);
+    pos.y = - pos.y;
     
     // Select the position based on vertex index
-    vert_output.position = vec4<f32>(positions[in_vert.vertex_idx], 0.0, 1.0);
+    vert_output.position = vec4<f32>(pos, 0.0, 1.0);
+    vert_output.uv = vec2<f32>(uv);
 
     return vert_output;
 }
@@ -123,12 +133,8 @@ fn vs_main(in_vert: VertexInput) -> VertexOutput {
 @fragment
 fn fs_main(in_frag: VertexOutput) -> @location(0) vec4<f32> {
     // return vec4(1.0);
-            return vec4<f32>(
-                textureSampleLevel(mask_atlas_texture, atlas_sampler, vec2(0.5, 0.5), 0.0).x,
-                0.0,
-                0.0,
-                1.0
-            );
+    var color = textureSampleLevel(color_atlas_texture, atlas_sampler, in_frag.uv, 0.0);
+            return vec4<f32>(color.rgb, 1.0);
     // switch in_frag.content_type {
     //     case 0u: {
     //         return textureSampleLevel(color_atlas_texture, atlas_sampler, in_frag.uv, 0.0);

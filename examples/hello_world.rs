@@ -103,7 +103,7 @@ impl State {
                 self.text_renderer.quads = vec![Quad { 
                     pos: [0, 0],
                     dim: [100, 100],
-                    uv: [0, 1],
+                    uv: [0, 0],
                     color: 0,
                     content_type_with_srgb: [0, 1],
                     depth: 0.0,
@@ -155,7 +155,7 @@ impl winit::application::ApplicationHandler for Application {
         let (width, height) = (800, 600);
         let window_attributes = Window::default_attributes()
             .with_inner_size(LogicalSize::new(width as f64, height as f64))
-            .with_title("glyphon hello world");
+            .with_title("hello world");
         let window = Arc::new(event_loop.create_window(window_attributes).unwrap());
 
         self.state = Some(State::new(window));
@@ -268,11 +268,11 @@ pub(crate) struct Quad {
 
 impl TextRenderer {
     fn new(device: &Device, _queue: &Queue) -> Self {
-        let bg_color = Rgba([255, 255, 255, 255]);
-        let size = 256;
+        let bg_color = Rgba([255, 0, 255, 255]);
+        let size = 500;
 
         let mask_texture = device.create_texture(&TextureDescriptor {
-            label: Some("glyphon atlas"),
+            label: Some("atlas"),
             size: Extent3d {
                 width: size,
                 height: size,
@@ -287,14 +287,14 @@ impl TextRenderer {
         });
         let mask_texture_view = mask_texture.create_view(&TextureViewDescriptor::default());
 
-        let mask_atlas = Atlas {
+        let mut mask_atlas = Atlas {
             image: RgbaImage::from_pixel(256, 256, bg_color),
             texture: mask_texture,
             texture_view: mask_texture_view,
         };
         
         let color_texture = device.create_texture(&TextureDescriptor {
-            label: Some("glyphon atlas"),
+            label: Some("atlas"),
             size: Extent3d {
                 width: size,
                 height: size,
@@ -309,7 +309,7 @@ impl TextRenderer {
         });
         let color_texture_view = color_texture.create_view(&TextureViewDescriptor::default());
         
-        let color_atlas = Atlas {
+        let mut color_atlas = Atlas {
             image: RgbaImage::from_pixel(256, 256, bg_color),
             texture: color_texture,
             texture_view: color_texture_view,
@@ -318,14 +318,14 @@ impl TextRenderer {
 
         let vertex_buffer_size = 4096;
         let vertex_buffer = device.create_buffer(&BufferDescriptor {
-            label: Some("glyphon vertices"),
+            label: Some("vertices"),
             size: vertex_buffer_size,
             usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
 
         let sampler = device.create_sampler(&SamplerDescriptor {
-            label: Some("glyphon sampler"),
+            label: Some("sampler"),
             min_filter: FilterMode::Nearest,
             mag_filter: FilterMode::Nearest,
             mipmap_filter: FilterMode::Nearest,
@@ -335,7 +335,7 @@ impl TextRenderer {
         });
 
         let shader = device.create_shader_module(ShaderModuleDescriptor {
-            label: Some("glyphon shader"),
+            label: Some("shader"),
             source: ShaderSource::Wgsl(Cow::Borrowed(include_str!("shader.wgsl"))),
         });
 
@@ -385,7 +385,7 @@ impl TextRenderer {
         };
 
         let params_buffer = device.create_buffer(&BufferDescriptor {
-            label: Some("glyphon params"),
+            label: Some("params"),
             size: mem::size_of::<Params>() as u64,
             usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
             mapped_at_creation: false,
@@ -402,7 +402,7 @@ impl TextRenderer {
                 },
                 count: None,
             }],
-            label: Some("glyphon uniforms bind group layout"),
+            label: Some("uniforms bind group layout"),
         });
 
         let params_bind_group = device.create_bind_group(&BindGroupDescriptor {
@@ -411,7 +411,7 @@ impl TextRenderer {
                 binding: 0,
                 resource: params_buffer.as_entire_binding(),
             }],
-            label: Some("glyphon uniforms bind group"),
+            label: Some("uniforms bind group"),
         }); 
 
         let uniforms_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -425,7 +425,7 @@ impl TextRenderer {
                 },
                 count: None,
             }],
-            label: Some("glyphon uniforms bind group layout"),
+            label: Some("uniforms bind group layout"),
         });
 
 
@@ -458,7 +458,7 @@ impl TextRenderer {
                     count: None,
                 },
             ],
-            label: Some("glyphon atlas bind group layout"),
+            label: Some("atlas bind group layout"),
         });
 
         let bind_group = device.create_bind_group(&BindGroupDescriptor {
@@ -477,7 +477,7 @@ impl TextRenderer {
                     resource: BindingResource::Sampler(&sampler),
                 },
             ],
-            label: Some("glyphon atlas bind group"),
+            label: Some("atlas bind group"),
         });
 
         let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
@@ -487,7 +487,7 @@ impl TextRenderer {
         });
 
         let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
-            label: Some("glyphon pipeline"),
+            label: Some("pipeline"),
             layout: Some(&pipeline_layout),
             vertex: VertexState {
                 module: &shader,
@@ -514,6 +514,12 @@ impl TextRenderer {
             multiview: None,
             cache: None,
         });
+
+        let image_data = include_bytes!("../test copy.jpg");
+        let embedded_img = image::load_from_memory(image_data).unwrap();
+        color_atlas.image = embedded_img.to_rgba8();
+        mask_atlas.image = embedded_img.to_rgba8();
+
 
         Self {
             tmp_swash_image: Image::new(),
@@ -546,7 +552,7 @@ impl TextRenderer {
         pass.set_bind_group(0, &self.bind_group, &[]);
         pass.set_bind_group(1, &self.params_bind_group, &[]);
         pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-        pass.draw(0..4, 0..1 as u32);
+        pass.draw(0..6, 0..1 as u32);
     }
 
     fn prepare(&mut self, layout: &Layout<ColorBrush>) {
