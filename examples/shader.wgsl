@@ -10,7 +10,7 @@ struct VertexInput {
 struct VertexOutput {
     @invariant @builtin(position) position: vec4<f32>,
     @location(0) color: vec4<f32>,
-    @location(1) uv: vec2<f32>,
+    @location(1) uv: vec2f,
     @location(2) @interpolate(flat) content_type: u32,
 };
 
@@ -40,34 +40,37 @@ fn srgb_to_linear(c: f32) -> f32 {
     }
 }
 
+fn split(u: u32) -> vec2<f32> {
+    return vec2f(vec2u(
+         u & 0x0000ffffu,
+        (u & 0xffff0000u) >> 16u,
+    ));
+}
+
 @vertex
 fn vs_main(input: VertexInput) -> VertexOutput {
     var vert_output: VertexOutput;
 
-    let ucoords = vec2<u32>(
+    let ucoords = vec2u(
         input.idx & 1,
         input.idx >> 1 & 1,
     );
-    let coords = vec2<f32>(ucoords);
+    let coords = vec2f(ucoords);
 
-    let dim = vec2<u32>(
-         input.dim & 0x0000ffffu,
-        (input.dim & 0xffff0000u) >> 16u,
-    );
- 
-    let pos = vec2<f32>(input.pos) + vec2<f32>(dim) * coords;
-    // atlas debug
-    // let uv = vec2<f32>(input.uv) + vec2<f32>(dim) * coords;
-    let uv = coords;
+    let dim = split(input.dim);
 
-    vert_output.position = vec4<f32>(
-        2.0 * (pos / (vec2<f32>(params.screen_resolution))) - 1.0,
+    // vert_output.uv = coords; // atlas debug
+    vert_output.uv = split(input.uv) + dim / vec2f(params.screen_resolution) * coords;
+
+    let pos = vec2f(input.pos) + dim * coords;
+
+    vert_output.position = vec4f(
+        2.0 * (pos / (vec2f(params.screen_resolution))) - 1.0,
         input.depth,
         1.0,
     );
     vert_output.position.y = -vert_output.position.y;
 
-    vert_output.uv = uv;
     return vert_output;
 }
 

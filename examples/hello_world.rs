@@ -20,14 +20,13 @@ use std::num::NonZeroU64;
 use std::sync::Arc;
 use swash::scale::image::{Content, Image};
 use swash::scale::{Render, ScaleContext, Scaler, Source, StrikeWith};
-use swash::{CacheKey, FontRef, GlyphId, zeno};
+use swash::{FontRef, GlyphId};
 use wgpu::{
     CommandEncoderDescriptor, CompositeAlphaMode, DeviceDescriptor, Instance, InstanceDescriptor,
     LoadOp, MultisampleState, Operations, PresentMode, RenderPassColorAttachment,
     RenderPassDescriptor, RequestAdapterOptions, SurfaceConfiguration, Texture, TextureFormat,
     TextureUsages, TextureView, TextureViewDescriptor,
 };
-use winit::keyboard::NamedKey;
 use winit::{dpi::LogicalSize, event::WindowEvent, event_loop::EventLoop, window::Window};
 
 fn main() {
@@ -709,6 +708,15 @@ impl ContextlessTextRenderer {
                         if let Some(alloc) = self.mask_atlas.packer.allocate(size) {
                             self.copy_glyph_to_atlas(size, &alloc);
                             self.mask_atlas.glyph_cache.push(cache_key, alloc);
+
+                            self.quads.push(Quad {
+                                pos: [0, 0],
+                                dim: [200 as u16, 200 as u16],
+                                uv: [0, 0],
+                                // uv: [alloc.rectangle.min.x as u16, alloc.rectangle.min.y as u16],
+                                color: 0,
+                                depth: 0.0,
+                            });
                         } else {
                             panic!("Grow o algo");
                         }
