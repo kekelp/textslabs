@@ -212,7 +212,7 @@ fn text_layout() -> Layout<ColorBrush> {
 
     builder.push_default(FontStack::from("system-ui"));
     builder.push_default(StyleProperty::LineHeight(1.3));
-    builder.push_default(StyleProperty::FontSize(24.0));
+    builder.push_default(StyleProperty::FontSize(25.85));
 
     // builder.push(StyleProperty::FontWeight(FontWeight::new(600.0)), 0..4);
 
@@ -265,6 +265,12 @@ struct TextRenderer {
     pipeline: RenderPipeline,
     quads: Vec<Quad>,
 }
+
+const SOURCES: &[Source; 3] = &[
+    Source::ColorOutline(0),
+    Source::ColorBitmap(StrikeWith::BestFit),
+    Source::Outline,
+];
 
 struct Atlas<ImageType> {
     packer: BucketedAtlasAllocator,
@@ -648,7 +654,6 @@ impl TextRenderer {
 
         // Convert from parley::Font to swash::FontRef
         let font_ref = FontRef::from_index(font.data.as_ref(), font.index as usize).unwrap();
-        
         let real_font_key = font.data.id();
 
         // Iterates over the glyphs in the GlyphRun
@@ -667,33 +672,47 @@ impl TextRenderer {
             let glyph_y = run_y - glyph.y;
             run_x += glyph.advance;
 
-            let fractional_offset = Vector::new(glyph_x.fract(), glyph_y.fract());
-
-            // Render the glyph using swash
-            Render::new(
-                // Select our source order
-                &[
-                    Source::ColorOutline(0),
-                    Source::ColorBitmap(StrikeWith::BestFit),
-                    Source::Outline,
-                ],
-            )
-            // Select the simple alpha (non-subpixel) format
-            .format(Format::Alpha)
-            // Apply the fractional offset
-            .offset(fractional_offset)
-            // Render the image
-            .render_into(&mut scaler, glyph.id, &mut self.tmp_swash_image);
-            
-            let glyph_width = self.tmp_swash_image.placement.width;
-            let glyph_height = self.tmp_swash_image.placement.height;
-
-            let size: Size2D<i32, UnknownUnit> = size2(glyph_width as i32, glyph_height as i32);
-            let (cache_key, pos_x, pos_y) = GlyphCacheKey::new(real_font_key, glyph.id, font_size, (glyph.x, glyph.x));
+            let (cache_key, pos_x, pos_y) = GlyphCacheKey::new(real_font_key, glyph.id, font_size, (glyph_x, glyph_y));
 
             match self.tmp_swash_image.content {
                 Content::Mask => {
-                    self.allocate_mask(cache_key, size);
+                    if let Some(alloc) = self.mask_atlas.glyph_cache.get(&cache_key) {
+                        // println!("cache hit {:?}", cache_key);
+                    } else {
+                        eprintln!("cache miss {:?}", cache_key);
+            
+                        let fractional_offset = Vector { x: cache_key.x_bin.as_float(), y: cache_key.y_bin.as_float() };
+                        
+                        Render::new(SOURCES)
+                            .format(Format::Alpha)
+                            .offset(fractional_offset)
+                            .render_into(&mut scaler, glyph.id, &mut self.tmp_swash_image);
+                        
+                        let glyph_width = self.tmp_swash_image.placement.width;
+                        let glyph_height = self.tmp_swash_image.placement.height;
+                        let size: Size2D<i32, UnknownUnit> = size2(glyph_width as i32, glyph_height as i32);
+                
+                        let alloc = self.mask_atlas.packer.allocate(size);
+                        if let Some(alloc) = alloc {
+                            self.mask_atlas.glyph_cache.push(cache_key, alloc);
+                
+                            let mut i = 0;
+                            for pixel_y in 0..(size.height as i32) {
+                                for pixel_x in 0..(size.width as i32) {
+                                    let x = alloc.rectangle.min.x + pixel_x;
+                                    let y = alloc.rectangle.min.y + pixel_y;
+                                    let alpha = self.tmp_swash_image.data[i];
+                                    let color = Luma([alpha]);
+                                    self.mask_atlas.image.get_pixel_mut(x as u32, y as u32).blend(&color);
+                                    i += 1;
+                                }
+                            };
+                
+                            break;
+                        } else {
+                            panic!("Grow o algo");
+                        }
+                    }
                 }
                 Content::SubpixelMask => unimplemented!(),
                 Content::Color => {
@@ -735,36 +754,6 @@ impl TextRenderer {
         //     let size = decoration.size.unwrap_or(run_metrics.strikethrough_size);
         //     render_decoration(img, glyph_run, decoration.brush, offset, size, padding);
         // }
-    }
-
-    fn allocate_mask(&mut self, cache_key: GlyphCacheKey, size: Size2D<i32, UnknownUnit>) -> Allocation {
-        if let Some(alloc) = self.mask_atlas.glyph_cache.get(&cache_key) {
-            // println!("cache hit {:?}", cache_key);
-            return *alloc;
-        }
-        println!("cache miss {:?}", cache_key);
-
-        let alloc = self.mask_atlas.packer.allocate(size);
-        if let Some(alloc) = alloc {
-            self.mask_atlas.glyph_cache.push(cache_key, alloc);
-
-            
-            let mut i = 0;
-            for pixel_y in 0..(size.height as i32) {
-                for pixel_x in 0..(size.width as i32) {
-                    let x = alloc.rectangle.min.x + pixel_x;
-                    let y = alloc.rectangle.min.y + pixel_y;
-                    let alpha = self.tmp_swash_image.data[i];
-                    let color = Luma([alpha]);
-                    self.mask_atlas.image.get_pixel_mut(x as u32, y as u32).blend(&color);
-                    i += 1;
-                }
-            };
-
-            return alloc;
-        } else {
-            panic!("Grow o algo");
-        }
     }
 }
 
