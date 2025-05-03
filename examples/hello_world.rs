@@ -1,5 +1,8 @@
-use etagere::{size2, BucketedAtlasAllocator};
+use etagere::euclid::{Size2D, UnknownUnit};
+use etagere::{size2, Allocation, BucketedAtlasAllocator};
+use lru::LruCache;
 use parley_atlas_renderer::*;
+use rustc_hash::FxHasher;
 use swash::zeno::{Format, Vector};
 
 use wgpu::*;
@@ -10,6 +13,7 @@ use parley::{
     Layout, LayoutContext, PositionedLayoutItem, StyleProperty, TextStyle,
 };
 use std::borrow::Cow;
+use std::hash::BuildHasherDefault;
 use std::mem;
 use std::num::NonZeroU64;
 use std::sync::Arc;
@@ -189,7 +193,7 @@ impl winit::application::ApplicationHandler for Application {
 
 fn text_layout() -> Layout<ColorBrush> {
     let text = String::from(
-        "🍤",
+        "🍤🔪🌩🌨🌫🍏🍎🍐🍊🍋🍌🍉🍇🍓🍈🍒🍍🥥🥝",
     );
 
     let display_scale = 1.0;
@@ -208,7 +212,7 @@ fn text_layout() -> Layout<ColorBrush> {
 
     builder.push_default(FontStack::from("system-ui"));
     builder.push_default(StyleProperty::LineHeight(1.3));
-    builder.push_default(StyleProperty::FontSize(72.0));
+    builder.push_default(StyleProperty::FontSize(24.0));
 
     // builder.push(StyleProperty::FontWeight(FontWeight::new(600.0)), 0..4);
 
@@ -239,13 +243,13 @@ fn text_layout() -> Layout<ColorBrush> {
     return layout;
 }
 
+type Hasher = BuildHasherDefault<FxHasher>;
+
 struct TextRenderer {
     tmp_swash_image: Image,
     font_cx: FontContext,
     layout_cx: LayoutContext<ColorBrush>,
     scale_cx: ScaleContext,
-
-    packer: BucketedAtlasAllocator,
 
     mask_atlas: Atlas,
     color_atlas: Atlas,
@@ -263,9 +267,25 @@ struct TextRenderer {
 }
 
 struct Atlas {
+    packer: BucketedAtlasAllocator,
+    glyph_cache: LruCache<CacheKey, Allocation, Hasher>,
     image: RgbaImage,
     texture: Texture,
     texture_view: TextureView,
+}
+
+impl Atlas {
+    fn allocate(&mut self, size: Size2D<i32, UnknownUnit>) -> Allocation {
+        loop {
+            let allocation = self.packer.allocate(size);
+            if let Some(allocation) = allocation {
+                return allocation;
+            }
+
+            let (_, value) = self.glyph_cache.pop_lru().unwrap();
+            self.packer.deallocate(value.id);
+        }
+    }
 }
 
 #[repr(C)]
@@ -305,6 +325,8 @@ impl TextRenderer {
             image: RgbaImage::from_pixel(256, 256, bg_color),
             texture: mask_texture,
             texture_view: mask_texture_view,
+            packer: BucketedAtlasAllocator::new(size2(SIZE as i32, SIZE as i32)),
+            glyph_cache: LruCache::unbounded_with_hasher(Hasher::default()),
         };
 
         let color_texture = device.create_texture(&TextureDescriptor {
@@ -327,6 +349,8 @@ impl TextRenderer {
             image: RgbaImage::from_pixel(256, 256, bg_color),
             texture: color_texture,
             texture_view: color_texture_view,
+            packer: BucketedAtlasAllocator::new(size2(SIZE as i32, SIZE as i32)),
+            glyph_cache: LruCache::unbounded_with_hasher(Hasher::default()),
         };
 
         let vertex_buffer_size = 4096;
@@ -544,8 +568,6 @@ impl TextRenderer {
             pipeline,
             bind_group,
 
-            packer: BucketedAtlasAllocator::new(size2(SIZE as i32, SIZE as i32)),
-
             params,
             params_buffer,
             params_bind_group,
@@ -674,19 +696,20 @@ impl TextRenderer {
             .offset(fractional_offset)
             // Render the image
             .render_into(&mut scaler, glyph.id, &mut self.tmp_swash_image);
-
+            
             let glyph_width = self.tmp_swash_image.placement.width;
             let glyph_height = self.tmp_swash_image.placement.height;
 
-            dbg!(glyph_x);
-            dbg!(glyph_y);
-            dbg!(self.tmp_swash_image.placement);
+            let size: Size2D<i32, UnknownUnit> = size2(glyph_width as i32, glyph_height as i32);
 
+            let alloc = self.color_atlas.allocate(size);
 
-            let glyph_x = (glyph_x.floor() as i32 + self.tmp_swash_image.placement.left) as i32;
-            let glyph_y = (glyph_y.floor() as i32 - self.tmp_swash_image.placement.top) as i32;
-            // let glyph_x = glyph_x.floor() as i32;
-            // let glyph_y = glyph_y.floor() as i32;
+            dbg!(alloc);
+
+            // let glyph_x = (glyph_x.floor() as i32 + self.tmp_swash_image.placement.left) as i32;
+            // let glyph_y = (glyph_y.floor() as i32 - self.tmp_swash_image.placement.top) as i32;
+            let glyph_x = alloc.rectangle.min.x;
+            let glyph_y = alloc.rectangle.min.y;
 
             match self.tmp_swash_image.content {
                 Content::Mask => {
@@ -709,6 +732,7 @@ impl TextRenderer {
                     for (pixel_y, row) in
                         self.tmp_swash_image.data.chunks_exact(row_size).enumerate()
                     {
+                        // todo: surely this could just be a single memcpy?
                         for (pixel_x, pixel) in row.chunks_exact(4).enumerate() {
                             let (pixel_x, pixel_y) = (pixel_x as i32, pixel_y as i32);
                             let x = glyph_x + pixel_x;
