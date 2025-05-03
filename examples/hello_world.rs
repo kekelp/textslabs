@@ -51,8 +51,6 @@ struct State {
     text_renderer: TextRenderer,
 
     text_layout: Layout<ColorBrush>,
-
-    show_atlas: bool,
 }
 
 impl State {
@@ -101,7 +99,6 @@ impl State {
             window,
             text_renderer,
             text_layout: layout,
-            show_atlas: true,
         }
     }
 
@@ -111,14 +108,6 @@ impl State {
         event: WindowEvent,
     ) {
         match event {
-            WindowEvent::KeyboardInput { event, .. } => {
-                if let winit::keyboard::Key::Named(NamedKey::F1) = event.logical_key {
-                    if event.state.is_pressed() && ! event.repeat {
-                        self.window.request_redraw();
-                        self.show_atlas = ! self.show_atlas;
-                    }
-                }
-            }
             WindowEvent::Resized(size) => {
                 self.surface_config.width = size.width;
                 self.surface_config.height = size.height;
@@ -126,24 +115,28 @@ impl State {
                 self.window.request_redraw();
             }
             WindowEvent::RedrawRequested => {
+                // todo: move
+                self.text_renderer.text_renderer.params.screen_resolution = Resolution {
+                    width: self.surface_config.width,
+                    height: self.surface_config.height,
+                };
+
                 let frame = self.surface.get_current_texture().unwrap();
                 let view = frame.texture.create_view(&TextureViewDescriptor::default());
 
-                if self.show_atlas {
-                    self.text_renderer.gpu_load(&self.queue);
+                self.text_renderer.gpu_load(&self.queue);
 
-                    let big_quad = vec![Quad {
-                        pos: [0, 0],
-                        dim: [100, 100],
-                        uv: [0, 0],
-                        color: 0,
-                        depth: 0.0,
-                    }];
-                    let bytes: &[u8] = bytemuck::cast_slice(&big_quad);
-                    self.queue.write_buffer(&self.text_renderer.text_renderer.vertex_buffer, 0, &bytes);
-                } else {
-                    self.text_renderer.gpu_load(&self.queue);
-                }
+                // atlas debug
+                // let big_quad = vec![Quad {
+                //     pos: [0, 0],
+                //     // dim: [20 as u16, 20 as u16],
+                //     dim: [SIZE as u16, SIZE as u16],
+                //     uv: [0, 0],
+                //     color: 0,
+                //     depth: 0.0,
+                // }];
+                // let bytes: &[u8] = bytemuck::cast_slice(&big_quad);
+                // self.queue.write_buffer(&self.text_renderer.text_renderer.vertex_buffer, 0, &bytes);
 
                 let mut encoder = self
                     .device
@@ -612,6 +605,14 @@ impl ContextlessTextRenderer {
     }
 
     fn gpu_load(&mut self, queue: &Queue) {
+        // todo: check what is actually needed
+        queue.write_buffer(&self.params_buffer, 0, unsafe {
+            core::slice::from_raw_parts(
+                &self.params as *const Params as *const u8,
+                mem::size_of::<Params>(),
+            )
+        });
+
         let bytes: &[u8] = bytemuck::cast_slice(&self.quads);
         queue.write_buffer(&self.vertex_buffer, 0, &bytes);
         

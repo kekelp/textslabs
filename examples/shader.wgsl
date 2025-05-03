@@ -15,6 +15,7 @@ struct VertexOutput {
 };
 
 struct Params {
+    // todo: why not f32 directly
     screen_resolution: vec2<u32>,
     _pad: vec2<u32>,
 };
@@ -40,16 +41,32 @@ fn srgb_to_linear(c: f32) -> f32 {
 }
 
 @vertex
-fn vs_main(in_vert: VertexInput) -> VertexOutput {
+fn vs_main(input: VertexInput) -> VertexOutput {
     var vert_output: VertexOutput;
 
-    var ix = in_vert.idx & 1;
-    var iy = in_vert.idx >> 1 & 1;
+    let ucoords = vec2<u32>(
+        input.idx & 1,
+        input.idx >> 1 & 1,
+    );
+    let coords = vec2<f32>(ucoords);
 
-    var uv = vec2<f32>(f32(ix), f32(iy));
-    var pos = (uv - 0.5);
-    pos.y = -pos.y;
-    vert_output.position = vec4<f32>(pos, 0.0, 1.0);
+    let dim = vec2<u32>(
+         input.dim & 0x0000ffffu,
+        (input.dim & 0xffff0000u) >> 16u,
+    );
+ 
+    let pos = vec2<f32>(input.pos) + vec2<f32>(dim) * coords;
+    // atlas debug
+    // let uv = vec2<f32>(input.uv) + vec2<f32>(dim) * coords;
+    let uv = coords;
+
+    vert_output.position = vec4<f32>(
+        2.0 * (pos / (vec2<f32>(params.screen_resolution))) - 1.0,
+        input.depth,
+        1.0,
+    );
+    vert_output.position.y = -vert_output.position.y;
+
     vert_output.uv = uv;
     return vert_output;
 }
