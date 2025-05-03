@@ -270,7 +270,7 @@ struct Atlas<ImageType> {
     packer: BucketedAtlasAllocator,
     glyph_cache: LruCache<CacheKey, Allocation, Hasher>,
     image: ImageType,
-    texture: Texture,
+    texture: Texture, // the format here has to match the image type...
     texture_view: TextureView,
 }
 
