@@ -92,7 +92,6 @@ impl State {
         text_renderer.prepare(&layout);
         println!("end prepare");
         dbg!(now.elapsed());
-        text_renderer.gpu_load(&queue);
 
         Self {
             device,
@@ -130,14 +129,22 @@ impl State {
                 let frame = self.surface.get_current_texture().unwrap();
                 let view = frame.texture.create_view(&TextureViewDescriptor::default());
 
-                self.text_renderer.contextless_text_renderer.quads = vec![Quad {
-                    pos: [0, 0],
-                    dim: [100, 100],
-                    uv: [0, 0],
-                    color: 0,
-                    content_type_with_srgb: [0, 1],
-                    depth: 0.0,
-                }];
+                if self.show_atlas {
+                    self.text_renderer.gpu_load(&self.queue);
+
+                    let whole_screen_quad = vec![Quad {
+                        pos: [0, 0],
+                        dim: [100, 100],
+                        uv: [0, 0],
+                        color: 0,
+                        content_type_with_srgb: [0, 1],
+                        depth: 0.0,
+                    }];
+                    let bytes: &[u8] = bytemuck::cast_slice(&whole_screen_quad);
+                    self.queue.write_buffer(&self.text_renderer.text_renderer.vertex_buffer, 0, &bytes);
+                } else {
+                    self.text_renderer.gpu_load(&self.queue);
+                }
 
                 let mut encoder = self
                     .device
@@ -158,11 +165,7 @@ impl State {
                         occlusion_query_set: None,
                     });
 
-                    if self.show_atlas {
-                        self.text_renderer.render_atlas(&mut pass, &self.queue);
-                    } else {
-                        self.text_renderer.render(&mut pass);
-                    }
+                    self.text_renderer.render(&mut pass);
                 }
 
                 self.queue.submit(Some(encoder.finish()));
@@ -259,7 +262,7 @@ fn text_layout() -> Layout<ColorBrush> {
 type Hasher = BuildHasherDefault<FxHasher>;
 
 struct TextRenderer {
-    contextless_text_renderer: ContextlessTextRenderer,
+    text_renderer: ContextlessTextRenderer,
     scale_cx: ScaleContext,
 }
 
@@ -267,26 +270,21 @@ impl TextRenderer {
     pub fn new(device: &Device, _queue: &Queue) -> Self {
         Self {
             scale_cx: ScaleContext::new(),
-            contextless_text_renderer: ContextlessTextRenderer::new(device, _queue),
+            text_renderer: ContextlessTextRenderer::new(device, _queue),
         }
     }
 
     fn prepare(&mut self, layout: &Layout<ColorBrush>) {
-        self.contextless_text_renderer
+        self.text_renderer
             .prepare(layout, &mut self.scale_cx);
     }
 
     fn gpu_load(&mut self, queue: &Queue) {
-        self.contextless_text_renderer.gpu_load(queue);
-    }
-
-    fn render_atlas(&self, pass: &mut RenderPass<'_>, queue: &Queue) {
-        self.contextless_text_renderer
-            .render_whole_atlas(pass, queue);
+        self.text_renderer.gpu_load(queue);
     }
 
     fn render(&self, pass: &mut RenderPass<'_>) {
-        self.contextless_text_renderer.render(pass);
+        self.text_renderer.render(pass);
     }
 
 }
@@ -611,38 +609,18 @@ impl ContextlessTextRenderer {
             params,
             params_buffer,
             params_bind_group,
-            quads: Vec::with_capacity(300),
+            quads: Vec::<Quad>::with_capacity(300),
         }
-    }
-
-    pub fn render_whole_atlas(&self, pass: &mut RenderPass<'_>, queue: &Queue) {
-        let whole_screen_quad = vec![Quad {
-            pos: [0, 0],
-            dim: [100, 100],
-            uv: [0, 0],
-            color: 0,
-            content_type_with_srgb: [0, 1],
-            depth: 0.0,
-        }];
-
-        let bytes: &[u8] = bytemuck::cast_slice(&whole_screen_quad);
-        queue.write_buffer(&self.vertex_buffer, 0, &bytes);
-
-        pass.set_pipeline(&self.pipeline);
-        pass.set_bind_group(0, &self.bind_group, &[]);
-        pass.set_bind_group(1, &self.params_bind_group, &[]);
-        pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-        pass.draw(0..4, 0..1 as u32);
     }
 
     pub fn render(&self, pass: &mut RenderPass<'_>) {
         // if self.quads.is_empty() { return }
 
-        // pass.set_pipeline(&self.pipeline);
-        // pass.set_bind_group(0, &self.bind_group, &[]);
-        // pass.set_bind_group(1, &self.params_bind_group, &[]);
-        // pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-        // pass.draw(0..6, 0..1 as u32);
+        pass.set_pipeline(&self.pipeline);
+        pass.set_bind_group(0, &self.bind_group, &[]);
+        pass.set_bind_group(1, &self.params_bind_group, &[]);
+        pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+        pass.draw(0..6, 0..1 as u32);
     }
 
     fn prepare(&mut self, layout: &Layout<ColorBrush>, scale_cx: &mut ScaleContext) {
@@ -661,6 +639,9 @@ impl ContextlessTextRenderer {
     }
 
     fn gpu_load(&mut self, queue: &Queue) {
+        let bytes: &[u8] = bytemuck::cast_slice(&self.quads);
+        queue.write_buffer(&self.vertex_buffer, 0, &bytes);
+        
         queue.write_texture(
             TexelCopyTextureInfo {
                 texture: &self.mask_atlas.texture,
