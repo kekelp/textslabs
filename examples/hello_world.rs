@@ -1,20 +1,27 @@
+use etagere::{size2, BucketedAtlasAllocator};
 use parley_atlas_renderer::*;
 use swash::zeno::{Format, Vector};
 
 use wgpu::*;
 
+use image::{Pixel, Rgba, RgbaImage};
+use parley::{
+    Alignment, AlignmentOptions, FontContext, FontStack, FontWeight, Glyph, GlyphRun, InlineBox,
+    Layout, LayoutContext, PositionedLayoutItem, StyleProperty, TextStyle,
+};
 use std::borrow::Cow;
 use std::mem;
 use std::num::NonZeroU64;
 use std::sync::Arc;
-use image::{Pixel, Rgba, RgbaImage};
-use parley::{Alignment, AlignmentOptions, FontContext, FontStack, FontWeight, Glyph, GlyphRun, InlineBox, Layout, LayoutContext, PositionedLayoutItem, StyleProperty, TextStyle};
-use wgpu::{
-    CommandEncoderDescriptor, CompositeAlphaMode, DeviceDescriptor, Instance, InstanceDescriptor, LoadOp, MultisampleState, Operations, PresentMode, RenderPassColorAttachment, RenderPassDescriptor, RequestAdapterOptions, SurfaceConfiguration, Texture, TextureFormat, TextureUsages, TextureView, TextureViewDescriptor
-};
 use swash::scale::image::{Content, Image};
 use swash::scale::{Render, ScaleContext, Scaler, Source, StrikeWith};
-use swash::{zeno, FontRef};
+use swash::{zeno, FontRef, GlyphId};
+use wgpu::{
+    CommandEncoderDescriptor, CompositeAlphaMode, DeviceDescriptor, Instance, InstanceDescriptor,
+    LoadOp, MultisampleState, Operations, PresentMode, RenderPassColorAttachment,
+    RenderPassDescriptor, RequestAdapterOptions, SurfaceConfiguration, Texture, TextureFormat,
+    TextureUsages, TextureView, TextureViewDescriptor,
+};
 use winit::{dpi::LogicalSize, event::WindowEvent, event_loop::EventLoop, window::Window};
 
 fn main() {
@@ -68,13 +75,15 @@ impl State {
         };
         surface.configure(&device, &surface_config);
 
- 
-
         let layout = text_layout();
 
         let mut text_renderer = TextRenderer::new(&device, &queue);
 
+        let now = std::time::Instant::now();
+        println!("begin prepare");
         text_renderer.prepare(&layout);
+        println!("end prepare");
+        dbg!(now.elapsed());
         text_renderer.gpu_load(&queue);
 
         Self {
@@ -88,7 +97,11 @@ impl State {
         }
     }
 
-    fn window_event(&mut self, event_loop: &winit::event_loop::ActiveEventLoop, event: WindowEvent) {
+    fn window_event(
+        &mut self,
+        event_loop: &winit::event_loop::ActiveEventLoop,
+        event: WindowEvent,
+    ) {
         match event {
             WindowEvent::Resized(size) => {
                 self.surface_config.width = size.width;
@@ -100,17 +113,18 @@ impl State {
                 let frame = self.surface.get_current_texture().unwrap();
                 let view = frame.texture.create_view(&TextureViewDescriptor::default());
 
-                self.text_renderer.quads = vec![Quad { 
+                self.text_renderer.quads = vec![Quad {
                     pos: [0, 0],
                     dim: [100, 100],
                     uv: [0, 0],
                     color: 0,
                     content_type_with_srgb: [0, 1],
                     depth: 0.0,
-                 }];
+                }];
 
-                let mut encoder =
-                    self.device.create_command_encoder(&CommandEncoderDescriptor { label: None });
+                let mut encoder = self
+                    .device
+                    .create_command_encoder(&CommandEncoderDescriptor { label: None });
                 {
                     let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
                         label: None,
@@ -175,7 +189,7 @@ impl winit::application::ApplicationHandler for Application {
 
 fn text_layout() -> Layout<ColorBrush> {
     let text = String::from(
-        "Some text here. Let's make it a bit longer so that line wrapping kicks in 😊. And also some اللغة العربية arabic text.\nThis is underline and strikethrough text",
+        "🍤",
     );
 
     let display_scale = 1.0;
@@ -183,7 +197,6 @@ fn text_layout() -> Layout<ColorBrush> {
     let max_advance = Some(200.0 * display_scale);
 
     let text_color = Rgba([0, 0, 0, 255]);
-
 
     let mut font_cx = FontContext::new();
     let mut layout_cx = LayoutContext::new();
@@ -195,29 +208,29 @@ fn text_layout() -> Layout<ColorBrush> {
 
     builder.push_default(FontStack::from("system-ui"));
     builder.push_default(StyleProperty::LineHeight(1.3));
-    builder.push_default(StyleProperty::FontSize(16.0));
+    builder.push_default(StyleProperty::FontSize(72.0));
 
-    builder.push(StyleProperty::FontWeight(FontWeight::new(600.0)), 0..4);
+    // builder.push(StyleProperty::FontWeight(FontWeight::new(600.0)), 0..4);
 
-    builder.push(StyleProperty::Underline(true), 141..150);
-    builder.push(StyleProperty::Strikethrough(true), 155..168);
+    // builder.push(StyleProperty::Underline(true), 141..150);
+    // builder.push(StyleProperty::Strikethrough(true), 155..168);
 
-    builder.push_inline_box(InlineBox {
-        id: 0,
-        index: 40,
-        width: 50.0,
-        height: 50.0,
-    });
-    builder.push_inline_box(InlineBox {
-        id: 1,
-        index: 50,
-        width: 50.0,
-        height: 30.0,
-    });
+    // builder.push_inline_box(InlineBox {
+    //     id: 0,
+    //     index: 40,
+    //     width: 50.0,
+    //     height: 50.0,
+    // });
+    // builder.push_inline_box(InlineBox {
+    //     id: 1,
+    //     index: 50,
+    //     width: 50.0,
+    //     height: 30.0,
+    // });
 
     // Build the builder into a Layout
     // let mut layout: Layout<ColorBrush> = builder.build(&text);
-    let mut layout: Layout<ColorBrush> = builder.build(&text);    
+    let mut layout: Layout<ColorBrush> = builder.build(&text);
 
     // Perform layout (including bidi resolution and shaping) with start alignment
     layout.break_all_lines(max_advance);
@@ -226,14 +239,14 @@ fn text_layout() -> Layout<ColorBrush> {
     return layout;
 }
 
-
-
 struct TextRenderer {
     tmp_swash_image: Image,
     font_cx: FontContext,
     layout_cx: LayoutContext<ColorBrush>,
     scale_cx: ScaleContext,
-    
+
+    packer: BucketedAtlasAllocator,
+
     mask_atlas: Atlas,
     color_atlas: Atlas,
 
@@ -266,16 +279,17 @@ pub(crate) struct Quad {
     depth: f32,
 }
 
+const SIZE: u32 = 500;
+
 impl TextRenderer {
     fn new(device: &Device, _queue: &Queue) -> Self {
         let bg_color = Rgba([255, 0, 255, 255]);
-        let size = 500;
 
         let mask_texture = device.create_texture(&TextureDescriptor {
             label: Some("atlas"),
             size: Extent3d {
-                width: size,
-                height: size,
+                width: SIZE,
+                height: SIZE,
                 depth_or_array_layers: 1,
             },
             mip_level_count: 1,
@@ -292,12 +306,12 @@ impl TextRenderer {
             texture: mask_texture,
             texture_view: mask_texture_view,
         };
-        
+
         let color_texture = device.create_texture(&TextureDescriptor {
             label: Some("atlas"),
             size: Extent3d {
-                width: size,
-                height: size,
+                width: SIZE,
+                height: SIZE,
                 depth_or_array_layers: 1,
             },
             mip_level_count: 1,
@@ -308,13 +322,12 @@ impl TextRenderer {
             view_formats: &[],
         });
         let color_texture_view = color_texture.create_view(&TextureViewDescriptor::default());
-        
+
         let mut color_atlas = Atlas {
             image: RgbaImage::from_pixel(256, 256, bg_color),
             texture: color_texture,
             texture_view: color_texture_view,
         };
-
 
         let vertex_buffer_size = 4096;
         let vertex_buffer = device.create_buffer(&BufferDescriptor {
@@ -412,7 +425,7 @@ impl TextRenderer {
                 resource: params_buffer.as_entire_binding(),
             }],
             label: Some("uniforms bind group"),
-        }); 
+        });
 
         let uniforms_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             entries: &[BindGroupLayoutEntry {
@@ -427,7 +440,6 @@ impl TextRenderer {
             }],
             label: Some("uniforms bind group layout"),
         });
-
 
         let atlas_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             entries: &[
@@ -466,11 +478,11 @@ impl TextRenderer {
             entries: &[
                 BindGroupEntry {
                     binding: 0,
-                    resource: BindingResource::TextureView(&mask_atlas.texture_view),
+                    resource: BindingResource::TextureView(&color_atlas.texture_view),
                 },
                 BindGroupEntry {
                     binding: 1,
-                    resource: BindingResource::TextureView(&color_atlas.texture_view),
+                    resource: BindingResource::TextureView(&mask_atlas.texture_view),
                 },
                 BindGroupEntry {
                     binding: 2,
@@ -520,7 +532,6 @@ impl TextRenderer {
         color_atlas.image = embedded_img.to_rgba8();
         mask_atlas.image = embedded_img.to_rgba8();
 
-
         Self {
             tmp_swash_image: Image::new(),
             font_cx: FontContext::new(),
@@ -533,6 +544,8 @@ impl TextRenderer {
             pipeline,
             bind_group,
 
+            packer: BucketedAtlasAllocator::new(size2(SIZE as i32, SIZE as i32)),
+
             params,
             params_buffer,
             params_bind_group,
@@ -540,10 +553,7 @@ impl TextRenderer {
         }
     }
 
-    pub fn render(
-        &self,
-        pass: &mut RenderPass<'_>,
-    ) {
+    pub fn render(&self, pass: &mut RenderPass<'_>) {
         if self.quads.is_empty() {
             return;
         }
@@ -575,11 +585,7 @@ impl TextRenderer {
             TexelCopyTextureInfo {
                 texture: &self.mask_atlas.texture,
                 mip_level: 0,
-                origin: Origin3d {
-                    x: 0,
-                    y: 0,
-                    z: 0,
-                },
+                origin: Origin3d { x: 0, y: 0, z: 0 },
                 aspect: TextureAspect::All,
             },
             &self.mask_atlas.image.as_raw(),
@@ -599,11 +605,7 @@ impl TextRenderer {
             TexelCopyTextureInfo {
                 texture: &self.color_atlas.texture,
                 mip_level: 0,
-                origin: Origin3d {
-                    x: 0,
-                    y: 0,
-                    z: 0,
-                },
+                origin: Origin3d { x: 0, y: 0, z: 0 },
                 aspect: TextureAspect::All,
             },
             &self.color_atlas.image.as_raw(),
@@ -620,10 +622,7 @@ impl TextRenderer {
         );
     }
 
-    fn prepare_glyph_run(
-        &mut self,
-        glyph_run: &GlyphRun<'_, ColorBrush>,
-    ) {
+    fn prepare_glyph_run(&mut self, glyph_run: &GlyphRun<'_, ColorBrush>) {
         // Resolve properties of the GlyphRun
         let mut run_x = glyph_run.offset();
         let run_y = glyph_run.baseline();
@@ -643,7 +642,8 @@ impl TextRenderer {
 
         // Build a scaler. As the font properties are constant across an entire run of glyphs
         // we can build one scaler for the run and reuse it for each glyph.
-        let mut scaler = self.scale_cx
+        let mut scaler = self
+            .scale_cx
             .builder(font_ref)
             .size(font_size)
             .hint(true)
@@ -652,13 +652,12 @@ impl TextRenderer {
 
         // Iterates over the glyphs in the GlyphRun
         for glyph in glyph_run.glyphs() {
+            dbg!(glyph);
             let glyph_x = run_x + glyph.x;
             let glyph_y = run_y - glyph.y;
             run_x += glyph.advance;
 
-            // Compute the fractional offset
-            // You'll likely want to quantize this in a real renderer
-            let offset = Vector::new(glyph_x.fract(), glyph_y.fract());
+            let fractional_offset = Vector::new(glyph_x.fract(), glyph_y.fract());
 
             // Render the glyph using swash
             Render::new(
@@ -672,29 +671,34 @@ impl TextRenderer {
             // Select the simple alpha (non-subpixel) format
             .format(Format::Alpha)
             // Apply the fractional offset
-            .offset(offset)
+            .offset(fractional_offset)
             // Render the image
             .render_into(&mut scaler, glyph.id, &mut self.tmp_swash_image);
 
             let glyph_width = self.tmp_swash_image.placement.width;
             let glyph_height = self.tmp_swash_image.placement.height;
-            // let glyph_x = (glyph_x.floor() as i32 + self.tmp_swash_image.placement.left) as u32;
-            // let glyph_y = (glyph_y.floor() as i32 - self.tmp_swash_image.placement.top) as u32;
 
-            let glyph_x = 0;
-            let glyph_y = 0;
+            dbg!(glyph_x);
+            dbg!(glyph_y);
+            dbg!(self.tmp_swash_image.placement);
+
+
+            let glyph_x = (glyph_x.floor() as i32 + self.tmp_swash_image.placement.left) as i32;
+            let glyph_y = (glyph_y.floor() as i32 - self.tmp_swash_image.placement.top) as i32;
+            // let glyph_x = glyph_x.floor() as i32;
+            // let glyph_y = glyph_y.floor() as i32;
 
             match self.tmp_swash_image.content {
                 Content::Mask => {
                     let mut i = 0;
                     let bc = color_brush.color;
-                    for pixel_y in 0..glyph_height {
-                        for pixel_x in 0..glyph_width {
+                    for pixel_y in 0..(glyph_height as i32) {
+                        for pixel_x in 0..(glyph_width as i32) {
                             let x = glyph_x + pixel_x;
                             let y = glyph_y + pixel_y;
                             let alpha = self.tmp_swash_image.data[i];
                             let color = Rgba([bc[0], bc[1], bc[2], alpha]);
-                            self.mask_atlas.image.get_pixel_mut(x, y).blend(&color);
+                            self.mask_atlas.image.get_pixel_mut(x as u32, y as u32).blend(&color);
                             i += 1;
                         }
                     }
@@ -702,12 +706,15 @@ impl TextRenderer {
                 Content::SubpixelMask => unimplemented!(),
                 Content::Color => {
                     let row_size = glyph_width as usize * 4;
-                    for (pixel_y, row) in self.tmp_swash_image.data.chunks_exact(row_size).enumerate() {
+                    for (pixel_y, row) in
+                        self.tmp_swash_image.data.chunks_exact(row_size).enumerate()
+                    {
                         for (pixel_x, pixel) in row.chunks_exact(4).enumerate() {
-                            let x = glyph_x + pixel_x as u32;
-                            let y = glyph_y + pixel_y as u32;
+                            let (pixel_x, pixel_y) = (pixel_x as i32, pixel_y as i32);
+                            let x = glyph_x + pixel_x;
+                            let y = glyph_y + pixel_y;
                             let color = Rgba(pixel.try_into().expect("Not RGBA"));
-                            self.color_atlas.image.get_pixel_mut(x, y).blend(&color);
+                            *self.color_atlas.image.get_pixel_mut(x as u32, y as u32) = color;
                         }
                     }
                 }
@@ -732,8 +739,98 @@ impl TextRenderer {
         //     render_decoration(img, glyph_run, decoration.brush, offset, size, padding);
         // }
     }
+}
 
+use swash::CacheKey as FontCacheKey;
 
+/// Key for building a glyph cache
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct CacheKey {
+    /// Font ID
+    pub font_id: FontCacheKey,
+    /// Glyph ID
+    pub glyph_id: GlyphId,
+    /// `f32` bits of font size
+    pub font_size_bits: u32,
+    /// Binning of fractional X offset
+    pub x_bin: SubpixelBin,
+    /// Binning of fractional Y offset
+    pub y_bin: SubpixelBin,
+    // /// [`CacheKeyFlags`]
+    // pub flags: CacheKeyFlags,
+}
 
-    
+impl CacheKey {
+    pub fn new(
+        font_id: FontCacheKey,
+        glyph_id: u16,
+        font_size: f32,
+        pos: (f32, f32),
+    ) -> (Self, i32, i32) {
+        let (x, x_bin) = SubpixelBin::new(pos.0);
+        let (y, y_bin) = SubpixelBin::new(pos.1);
+        (
+            Self {
+                font_id,
+                glyph_id,
+                font_size_bits: font_size.to_bits(),
+                x_bin,
+                y_bin,
+            },
+            x,
+            y,
+        )
+    }
+}
+
+/// Binning of subpixel position for cache optimization
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum SubpixelBin {
+    Zero,
+    One,
+    Two,
+    Three,
+}
+
+impl SubpixelBin {
+    pub fn new(pos: f32) -> (i32, Self) {
+        let trunc = pos as i32;
+        let fract = pos - trunc as f32;
+
+        if pos.is_sign_negative() {
+            if fract > -0.125 {
+                (trunc, Self::Zero)
+            } else if fract > -0.375 {
+                (trunc - 1, Self::Three)
+            } else if fract > -0.625 {
+                (trunc - 1, Self::Two)
+            } else if fract > -0.875 {
+                (trunc - 1, Self::One)
+            } else {
+                (trunc - 1, Self::Zero)
+            }
+        } else {
+            #[allow(clippy::collapsible_else_if)]
+            if fract < 0.125 {
+                (trunc, Self::Zero)
+            } else if fract < 0.375 {
+                (trunc, Self::One)
+            } else if fract < 0.625 {
+                (trunc, Self::Two)
+            } else if fract < 0.875 {
+                (trunc, Self::Three)
+            } else {
+                (trunc + 1, Self::Zero)
+            }
+        }
+    }
+
+    pub fn as_float(&self) -> f32 {
+        match self {
+            Self::Zero => 0.0,
+            Self::One => 0.25,
+            Self::Two => 0.5,
+            Self::Three => 0.75,
+        }
+    }
 }
