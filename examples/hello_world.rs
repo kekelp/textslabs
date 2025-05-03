@@ -1,9 +1,9 @@
 use etagere::euclid::{Size2D, UnknownUnit};
-use etagere::{size2, Allocation, BucketedAtlasAllocator};
+use etagere::{Allocation, BucketedAtlasAllocator, size2};
 use lru::LruCache;
 use parley_atlas_renderer::*;
 use rustc_hash::FxHasher;
-use swash::zeno::{Format, Vector};
+use swash::zeno::{Format, Placement, Vector};
 
 use wgpu::*;
 
@@ -19,7 +19,7 @@ use std::num::NonZeroU64;
 use std::sync::Arc;
 use swash::scale::image::{Content, Image};
 use swash::scale::{Render, ScaleContext, Scaler, Source, StrikeWith};
-use swash::{zeno, FontRef, GlyphId};
+use swash::{FontRef, GlyphId, zeno};
 use wgpu::{
     CommandEncoderDescriptor, CompositeAlphaMode, DeviceDescriptor, Instance, InstanceDescriptor,
     LoadOp, MultisampleState, Operations, PresentMode, RenderPassColorAttachment,
@@ -117,7 +117,7 @@ impl State {
                 let frame = self.surface.get_current_texture().unwrap();
                 let view = frame.texture.create_view(&TextureViewDescriptor::default());
 
-                self.text_renderer.quads = vec![Quad {
+                self.text_renderer.contextless_text_renderer.quads = vec![Quad {
                     pos: [0, 0],
                     dim: [100, 100],
                     uv: [0, 0],
@@ -246,10 +246,35 @@ fn text_layout() -> Layout<ColorBrush> {
 type Hasher = BuildHasherDefault<FxHasher>;
 
 struct TextRenderer {
+    contextless_text_renderer: ContextlessTextRenderer,
+    scale_cx: ScaleContext,
+}
+
+impl TextRenderer {
+    pub fn new(device: &Device, _queue: &Queue) -> Self {
+        Self {
+            scale_cx: ScaleContext::new(),
+            contextless_text_renderer: ContextlessTextRenderer::new(device, _queue)
+        }
+    }
+
+    fn prepare(&mut self, layout: &Layout<ColorBrush>) {
+        self.contextless_text_renderer.prepare(layout, &mut self.scale_cx);
+    }
+
+    fn gpu_load(&mut self, queue: &Queue) {
+        self.contextless_text_renderer.gpu_load(queue);
+    }
+
+    fn render(&self, pass: &mut RenderPass<'_>) {
+        self.contextless_text_renderer.render(pass);
+    }
+}
+
+struct ContextlessTextRenderer {
     tmp_swash_image: Image,
     font_cx: FontContext,
     layout_cx: LayoutContext<ColorBrush>,
-    scale_cx: ScaleContext,
 
     color_atlas: Atlas<RgbaImage>,
     mask_atlas: Atlas<GrayImage>,
@@ -274,12 +299,11 @@ const SOURCES: &[Source; 3] = &[
 
 struct Atlas<ImageType> {
     packer: BucketedAtlasAllocator,
-    glyph_cache: LruCache<GlyphCacheKey, Allocation, Hasher>,
+    glyph_cache: LruCache<GlyphKey, Allocation, Hasher>,
     image: ImageType,
     texture: Texture, // the format here has to match the image type...
     texture_view: TextureView,
 }
-
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
@@ -294,7 +318,7 @@ pub(crate) struct Quad {
 
 const SIZE: u32 = 500;
 
-impl TextRenderer {
+impl ContextlessTextRenderer {
     fn new(device: &Device, _queue: &Queue) -> Self {
         let bg_color = Rgba([255, 0, 255, 255]);
 
@@ -318,7 +342,7 @@ impl TextRenderer {
             image: GrayImage::from_pixel(256, 256, Luma([0])),
             texture: mask_texture,
             texture_view: mask_texture_view,
-            packer: BucketedAtlasAllocator::new(size2(SIZE as i32, 2*SIZE as i32)),
+            packer: BucketedAtlasAllocator::new(size2(SIZE as i32, 2 * SIZE as i32)),
             glyph_cache: LruCache::unbounded_with_hasher(Hasher::default()),
         };
 
@@ -553,7 +577,6 @@ impl TextRenderer {
             tmp_swash_image: Image::new(),
             font_cx: FontContext::new(),
             layout_cx: LayoutContext::new(),
-            scale_cx: ScaleContext::new(),
             color_atlas,
             mask_atlas,
             vertex_buffer,
@@ -580,14 +603,14 @@ impl TextRenderer {
         pass.draw(0..6, 0..1 as u32);
     }
 
-    fn prepare(&mut self, layout: &Layout<ColorBrush>) {
+    fn prepare(&mut self, layout: &Layout<ColorBrush>, scale_cx: &mut ScaleContext) {
         // Iterate over laid out lines
         for line in layout.lines() {
             // Iterate over GlyphRun's within each line
             for item in line.items() {
                 match item {
                     PositionedLayoutItem::GlyphRun(glyph_run) => {
-                        self.prepare_glyph_run(&glyph_run);
+                        self.prepare_glyph_run(&glyph_run, scale_cx);
                     }
                     PositionedLayoutItem::InlineBox(_inline_box) => {}
                 }
@@ -637,7 +660,7 @@ impl TextRenderer {
         );
     }
 
-    fn prepare_glyph_run(&mut self, glyph_run: &GlyphRun<'_, ColorBrush>) {
+    fn prepare_glyph_run(&mut self, glyph_run: &GlyphRun<'_, ColorBrush>, scale_cx: &mut ScaleContext) {
         // Resolve properties of the GlyphRun
         let mut run_x = glyph_run.offset();
         let run_y = glyph_run.baseline();
@@ -654,25 +677,23 @@ impl TextRenderer {
 
         // Convert from parley::Font to swash::FontRef
         let font_ref = FontRef::from_index(font.data.as_ref(), font.index as usize).unwrap();
-        let real_font_key = font.data.id();
+        let font_key = font.data.id();
 
-        // Iterates over the glyphs in the GlyphRun
+        let mut scaler = scale_cx
+            .builder(font_ref)
+            .size(font_size)
+            .hint(true)
+            .normalized_coords(normalized_coords)
+            .build();
+
         for glyph in glyph_run.glyphs() {
 
-            // todo: move this outside again
-            let mut scaler = self
-                .scale_cx
-                .builder(font_ref)
-                .size(font_size)
-                .hint(true)
-                .normalized_coords(normalized_coords)
-                .build();
-            
             let glyph_x = run_x + glyph.x;
             let glyph_y = run_y - glyph.y;
             run_x += glyph.advance;
 
-            let (cache_key, pos_x, pos_y) = GlyphCacheKey::new(real_font_key, glyph.id, font_size, (glyph_x, glyph_y));
+            let (cache_key, pos_x, pos_y) =
+                GlyphKey::new(font_key, glyph.id, font_size, (glyph_x, glyph_y));
 
             match self.tmp_swash_image.content {
                 Content::Mask => {
@@ -680,35 +701,18 @@ impl TextRenderer {
                         // println!("cache hit {:?}", cache_key);
                     } else {
                         eprintln!("cache miss {:?}", cache_key);
-            
-                        let fractional_offset = Vector { x: cache_key.x_bin.as_float(), y: cache_key.y_bin.as_float() };
-                        
+
                         Render::new(SOURCES)
                             .format(Format::Alpha)
-                            .offset(fractional_offset)
+                            .offset(cache_key.frac_offset())
                             .render_into(&mut scaler, glyph.id, &mut self.tmp_swash_image);
-                        
-                        let glyph_width = self.tmp_swash_image.placement.width;
-                        let glyph_height = self.tmp_swash_image.placement.height;
-                        let size: Size2D<i32, UnknownUnit> = size2(glyph_width as i32, glyph_height as i32);
-                
+
+                        let size = self.tmp_swash_image.size();
+
                         let alloc = self.mask_atlas.packer.allocate(size);
                         if let Some(alloc) = alloc {
+                            self.copy_glyph_to_atlas(size, &alloc);
                             self.mask_atlas.glyph_cache.push(cache_key, alloc);
-                
-                            let mut i = 0;
-                            for pixel_y in 0..(size.height as i32) {
-                                for pixel_x in 0..(size.width as i32) {
-                                    let x = alloc.rectangle.min.x + pixel_x;
-                                    let y = alloc.rectangle.min.y + pixel_y;
-                                    let alpha = self.tmp_swash_image.data[i];
-                                    let color = Luma([alpha]);
-                                    self.mask_atlas.image.get_pixel_mut(x as u32, y as u32).blend(&color);
-                                    i += 1;
-                                }
-                            };
-                
-                            break;
                         } else {
                             panic!("Grow o algo");
                         }
@@ -719,7 +723,7 @@ impl TextRenderer {
                     // let alloc = self.color_atlas.allocate(size, cache_key);
                     // let glyph_x = alloc.rectangle.min.x;
                     // let glyph_y = alloc.rectangle.min.y;
-        
+
                     // let row_size = glyph_width as usize * 4;
                     // for (pixel_y, row) in
                     //     self.tmp_swash_image.data.chunks_exact(row_size).enumerate()
@@ -755,11 +759,32 @@ impl TextRenderer {
         //     render_decoration(img, glyph_run, decoration.brush, offset, size, padding);
         // }
     }
+
+    fn copy_glyph_to_atlas(&mut self, size: Size2D<i32, UnknownUnit>, alloc: &Allocation) {
+        for y in 0..size.height as i32 {
+            let src_start = (y as usize) * (size.width as usize);
+            let src_slice =
+                &self.tmp_swash_image.data[src_start..(src_start + size.width as usize)];
+
+            let dst_y = (alloc.rectangle.min.y + y) as u32;
+            let dst_x = alloc.rectangle.min.x as u32;
+
+            let layout = self.mask_atlas.image.as_flat_samples().layout;
+            let mut samples = self.mask_atlas.image.as_flat_samples_mut();
+            let samples = samples.as_mut_slice();
+
+            let dst_start =
+                (dst_y as usize) * layout.height_stride + (dst_x as usize) * layout.width_stride;
+
+            // Copy the entire row at once (safe memcpy equivalent)
+            samples[dst_start..(dst_start + size.width as usize)].copy_from_slice(src_slice);
+        }
+    }
 }
 
 /// Key for building a glyph cache
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct GlyphCacheKey {
+pub struct GlyphKey {
     /// Font ID
     pub font_id: u64,
     /// Glyph ID
@@ -774,13 +799,8 @@ pub struct GlyphCacheKey {
     // pub flags: CacheKeyFlags,
 }
 
-impl GlyphCacheKey {
-    pub fn new(
-        font_id: u64,
-        glyph_id: u16,
-        font_size: f32,
-        pos: (f32, f32),
-    ) -> (Self, i32, i32) {
+impl GlyphKey {
+    pub fn new(font_id: u64, glyph_id: u16, font_size: f32, pos: (f32, f32)) -> (Self, i32, i32) {
         let (x, x_bin) = SubpixelBin::new(pos.0);
         let (y, y_bin) = SubpixelBin::new(pos.1);
         (
@@ -794,6 +814,13 @@ impl GlyphCacheKey {
             x,
             y,
         )
+    }
+
+    pub fn frac_offset(&self) -> Vector {
+        Vector {
+            x: self.x_bin.as_float(),
+            y: self.y_bin.as_float(),
+        }
     }
 }
 
@@ -846,5 +873,17 @@ impl SubpixelBin {
             Self::Two => 0.5,
             Self::Three => 0.75,
         }
+    }
+}
+
+trait UselessTrait2 {
+    fn size(&self) -> Size2D<i32, UnknownUnit>;
+}
+impl UselessTrait2 for Image {
+    fn size(&self) -> Size2D<i32, UnknownUnit> {
+        size2(
+            self.placement.width as i32,
+            self.placement.height as i32,
+        )
     }
 }
