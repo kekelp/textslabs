@@ -102,7 +102,7 @@ impl State {
             window,
             text_renderer,
             text_layout: layout,
-            show_atlas: false,
+            show_atlas: true,
         }
     }
 
@@ -207,7 +207,7 @@ impl winit::application::ApplicationHandler for Application {
 }
 
 fn text_layout() -> Layout<ColorBrush> {
-    let text = String::from("Þ"); // here1
+    let text = String::from("z"); // here1
 
     let display_scale = 1.0;
 
@@ -632,7 +632,7 @@ impl ContextlessTextRenderer {
         pass.set_bind_group(0, &self.bind_group, &[]);
         pass.set_bind_group(1, &self.params_bind_group, &[]);
         pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-        pass.draw(0..6, 0..1 as u32);
+        pass.draw(0..4, 0..1 as u32);
     }
 
     pub fn render(&self, pass: &mut RenderPass<'_>) {
@@ -826,6 +826,9 @@ impl ContextlessTextRenderer {
             .format(Format::Alpha)
             .offset(cache_key.frac_offset())
             .render_into(scaler, glyph.id, &mut self.tmp_swash_image);
+
+        dbg!(self.tmp_swash_image.placement.width);
+        dbg!(glyph.advance);
     }
 }
 

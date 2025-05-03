@@ -43,27 +43,19 @@ fn srgb_to_linear(c: f32) -> f32 {
 @vertex
 fn vs_main(in_vert: VertexInput) -> VertexOutput {
     var vert_output: VertexOutput;
-    
-    let uvs = array<vec2<f32>, 6>(
-        // First triangle
-        vec2<f32>(0.0, 1.0),  // Bottom-left
-        vec2<f32>(0.0, 0.0),   // Top-left
-        vec2<f32>(1.0, 0.0),    // Top-right
-        
-        // Second triangle
-        vec2<f32>(0.0, 1.0),  // Bottom-left
-        vec2<f32>(1.0, 0.0),    // Top-right
-        vec2<f32>(1.0, 1.0),    // Bottom-right
-    );
 
+    let uvs = array<vec2<f32>, 4>(
+        vec2<f32>(0.0, 1.0),
+        vec2<f32>(0.0, 0.0),
+        vec2<f32>(1.0, 1.0),
+        vec2<f32>(1.0, 0.0),
+    );
     var uv = uvs[in_vert.vertex_idx];
     var pos = (uv - 0.5);
-    pos.y = - pos.y;
-    
-    // Select the position based on vertex index
+    pos.y = -pos.y;
+
     vert_output.position = vec4<f32>(pos, 0.0, 1.0);
     vert_output.uv = vec2<f32>(uv);
-
     return vert_output;
 }
 
