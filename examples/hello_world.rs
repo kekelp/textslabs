@@ -132,15 +132,14 @@ impl State {
                 if self.show_atlas {
                     self.text_renderer.gpu_load(&self.queue);
 
-                    let whole_screen_quad = vec![Quad {
+                    let big_quad = vec![Quad {
                         pos: [0, 0],
                         dim: [100, 100],
                         uv: [0, 0],
                         color: 0,
-                        content_type_with_srgb: [0, 1],
                         depth: 0.0,
                     }];
-                    let bytes: &[u8] = bytemuck::cast_slice(&whole_screen_quad);
+                    let bytes: &[u8] = bytemuck::cast_slice(&big_quad);
                     self.queue.write_buffer(&self.text_renderer.text_renderer.vertex_buffer, 0, &bytes);
                 } else {
                     self.text_renderer.gpu_load(&self.queue);
@@ -334,7 +333,6 @@ pub(crate) struct Quad {
     dim: [u16; 2],
     uv: [u16; 2],
     color: u32,
-    content_type_with_srgb: [u16; 2],
     depth: f32,
 }
 
@@ -416,39 +414,14 @@ impl ContextlessTextRenderer {
         });
 
         let vertex_buffer_layout = wgpu::VertexBufferLayout {
-            array_stride: mem::size_of::<Quad>() as wgpu::BufferAddress,
+            array_stride: std::mem::size_of::<Quad>() as wgpu::BufferAddress,
             step_mode: wgpu::VertexStepMode::Instance,
-            attributes: &[
-                wgpu::VertexAttribute {
-                    format: VertexFormat::Sint32x2,
-                    offset: 0,
-                    shader_location: 0,
-                },
-                wgpu::VertexAttribute {
-                    format: VertexFormat::Uint32,
-                    offset: mem::size_of::<u32>() as u64 * 2,
-                    shader_location: 1,
-                },
-                wgpu::VertexAttribute {
-                    format: VertexFormat::Uint32,
-                    offset: mem::size_of::<u32>() as u64 * 3,
-                    shader_location: 2,
-                },
-                wgpu::VertexAttribute {
-                    format: VertexFormat::Uint32,
-                    offset: mem::size_of::<u32>() as u64 * 4,
-                    shader_location: 3,
-                },
-                wgpu::VertexAttribute {
-                    format: VertexFormat::Uint32,
-                    offset: mem::size_of::<u32>() as u64 * 5,
-                    shader_location: 4,
-                },
-                wgpu::VertexAttribute {
-                    format: VertexFormat::Float32,
-                    offset: mem::size_of::<u32>() as u64 * 6,
-                    shader_location: 5,
-                },
+            attributes: &wgpu::vertex_attr_array![
+                0 => Sint32x2,
+                1 => Uint32,
+                2 => Uint32,
+                3 => Uint32,
+                4 => Float32,
             ],
         };
 

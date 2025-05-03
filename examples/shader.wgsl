@@ -4,8 +4,7 @@ struct VertexInput {
     @location(1) dim: u32,
     @location(2) uv: u32,
     @location(3) color: u32,
-    @location(4) content_type_with_srgb: u32,
-    @location(5) depth: f32,
+    @location(4) depth: f32,
 }
 
 struct VertexOutput {
