@@ -133,7 +133,7 @@ fn vs_main(in_vert: VertexInput) -> VertexOutput {
 @fragment
 fn fs_main(in_frag: VertexOutput) -> @location(0) vec4<f32> {
     // return vec4(1.0);
-    var color = textureSampleLevel(color_atlas_texture, atlas_sampler, in_frag.uv, 0.0);
+    var color = textureSampleLevel(mask_atlas_texture, atlas_sampler, in_frag.uv, 0.0);
             return vec4<f32>(color.rgb, 1.0);
     // switch in_frag.content_type {
     //     case 0u: {

@@ -193,7 +193,7 @@ impl winit::application::ApplicationHandler for Application {
 
 fn text_layout() -> Layout<ColorBrush> {
     let text = String::from(
-        "🍤🔪🌩🌨🌫🍏🍎🍐🍊🍋🍌🍉🍇🍓🍈🍒🍍🥥🥝",
+        "明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明",
     );
 
     let display_scale = 1.0;
@@ -268,25 +268,12 @@ struct TextRenderer {
 
 struct Atlas<ImageType> {
     packer: BucketedAtlasAllocator,
-    glyph_cache: LruCache<CacheKey, Allocation, Hasher>,
+    glyph_cache: LruCache<GlyphCacheKey, Allocation, Hasher>,
     image: ImageType,
     texture: Texture, // the format here has to match the image type...
     texture_view: TextureView,
 }
 
-impl<ImageType> Atlas<ImageType> {
-    fn allocate(&mut self, size: Size2D<i32, UnknownUnit>) -> Allocation {
-        loop {
-            let allocation = self.packer.allocate(size);
-            if let Some(allocation) = allocation {
-                return allocation;
-            }
-
-            let (_, value) = self.glyph_cache.pop_lru().unwrap();
-            self.packer.deallocate(value.id);
-        }
-    }
-}
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
@@ -325,7 +312,7 @@ impl TextRenderer {
             image: GrayImage::from_pixel(256, 256, Luma([0])),
             texture: mask_texture,
             texture_view: mask_texture_view,
-            packer: BucketedAtlasAllocator::new(size2(SIZE as i32, SIZE as i32)),
+            packer: BucketedAtlasAllocator::new(size2(SIZE as i32, 2*SIZE as i32)),
             glyph_cache: LruCache::unbounded_with_hasher(Hasher::default()),
         };
 
@@ -661,20 +648,21 @@ impl TextRenderer {
 
         // Convert from parley::Font to swash::FontRef
         let font_ref = FontRef::from_index(font.data.as_ref(), font.index as usize).unwrap();
-
-        // Build a scaler. As the font properties are constant across an entire run of glyphs
-        // we can build one scaler for the run and reuse it for each glyph.
-        let mut scaler = self
-            .scale_cx
-            .builder(font_ref)
-            .size(font_size)
-            .hint(true)
-            .normalized_coords(normalized_coords)
-            .build();
+        
+        let real_font_key = font.data.id();
 
         // Iterates over the glyphs in the GlyphRun
         for glyph in glyph_run.glyphs() {
-            dbg!(glyph);
+
+            // todo: move this outside again
+            let mut scaler = self
+                .scale_cx
+                .builder(font_ref)
+                .size(font_size)
+                .hint(true)
+                .normalized_coords(normalized_coords)
+                .build();
+            
             let glyph_x = run_x + glyph.x;
             let glyph_y = run_y - glyph.y;
             run_x += glyph.advance;
@@ -701,46 +689,31 @@ impl TextRenderer {
             let glyph_height = self.tmp_swash_image.placement.height;
 
             let size: Size2D<i32, UnknownUnit> = size2(glyph_width as i32, glyph_height as i32);
-
+            let (cache_key, pos_x, pos_y) = GlyphCacheKey::new(real_font_key, glyph.id, font_size, (glyph.x, glyph.x));
 
             match self.tmp_swash_image.content {
                 Content::Mask => {
-                    let alloc = self.mask_atlas.allocate(size);
-                    let glyph_x = alloc.rectangle.min.x;
-                    let glyph_y = alloc.rectangle.min.y;
-        
-                    let mut i = 0;
-                    let bc = color_brush.color;
-                    for pixel_y in 0..(glyph_height as i32) {
-                        for pixel_x in 0..(glyph_width as i32) {
-                            let x = glyph_x + pixel_x;
-                            let y = glyph_y + pixel_y;
-                            let alpha = self.tmp_swash_image.data[i];
-                            let color = Luma([alpha]);
-                            self.mask_atlas.image.get_pixel_mut(x as u32, y as u32).blend(&color);
-                            i += 1;
-                        }
-                    }
+                    self.allocate_mask(cache_key, size);
                 }
                 Content::SubpixelMask => unimplemented!(),
                 Content::Color => {
-                    let alloc = self.color_atlas.allocate(size);
-                    let glyph_x = alloc.rectangle.min.x;
-                    let glyph_y = alloc.rectangle.min.y;
+                    // let alloc = self.color_atlas.allocate(size, cache_key);
+                    // let glyph_x = alloc.rectangle.min.x;
+                    // let glyph_y = alloc.rectangle.min.y;
         
-                    let row_size = glyph_width as usize * 4;
-                    for (pixel_y, row) in
-                        self.tmp_swash_image.data.chunks_exact(row_size).enumerate()
-                    {
-                        // todo: surely this could just be a single memcpy?
-                        for (pixel_x, pixel) in row.chunks_exact(4).enumerate() {
-                            let (pixel_x, pixel_y) = (pixel_x as i32, pixel_y as i32);
-                            let x = glyph_x + pixel_x;
-                            let y = glyph_y + pixel_y;
-                            let color = Rgba(pixel.try_into().expect("Not RGBA"));
-                            *self.color_atlas.image.get_pixel_mut(x as u32, y as u32) = color;
-                        }
-                    }
+                    // let row_size = glyph_width as usize * 4;
+                    // for (pixel_y, row) in
+                    //     self.tmp_swash_image.data.chunks_exact(row_size).enumerate()
+                    // {
+                    //     // todo: surely this could just be a single memcpy?
+                    //     for (pixel_x, pixel) in row.chunks_exact(4).enumerate() {
+                    //         let (pixel_x, pixel_y) = (pixel_x as i32, pixel_y as i32);
+                    //         let x = glyph_x + pixel_x;
+                    //         let y = glyph_y + pixel_y;
+                    //         let color = Rgba(pixel.try_into().expect("Not RGBA"));
+                    //         *self.color_atlas.image.get_pixel_mut(x as u32, y as u32) = color;
+                    //     }
+                    // }
                 }
             }
 
@@ -763,15 +736,43 @@ impl TextRenderer {
         //     render_decoration(img, glyph_run, decoration.brush, offset, size, padding);
         // }
     }
-}
 
-use swash::CacheKey as FontCacheKey;
+    fn allocate_mask(&mut self, cache_key: GlyphCacheKey, size: Size2D<i32, UnknownUnit>) -> Allocation {
+        if let Some(alloc) = self.mask_atlas.glyph_cache.get(&cache_key) {
+            // println!("cache hit {:?}", cache_key);
+            return *alloc;
+        }
+        println!("cache miss {:?}", cache_key);
+
+        let alloc = self.mask_atlas.packer.allocate(size);
+        if let Some(alloc) = alloc {
+            self.mask_atlas.glyph_cache.push(cache_key, alloc);
+
+            
+            let mut i = 0;
+            for pixel_y in 0..(size.height as i32) {
+                for pixel_x in 0..(size.width as i32) {
+                    let x = alloc.rectangle.min.x + pixel_x;
+                    let y = alloc.rectangle.min.y + pixel_y;
+                    let alpha = self.tmp_swash_image.data[i];
+                    let color = Luma([alpha]);
+                    self.mask_atlas.image.get_pixel_mut(x as u32, y as u32).blend(&color);
+                    i += 1;
+                }
+            };
+
+            return alloc;
+        } else {
+            panic!("Grow o algo");
+        }
+    }
+}
 
 /// Key for building a glyph cache
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct CacheKey {
+pub struct GlyphCacheKey {
     /// Font ID
-    pub font_id: FontCacheKey,
+    pub font_id: u64,
     /// Glyph ID
     pub glyph_id: GlyphId,
     /// `f32` bits of font size
@@ -784,9 +785,9 @@ pub struct CacheKey {
     // pub flags: CacheKeyFlags,
 }
 
-impl CacheKey {
+impl GlyphCacheKey {
     pub fn new(
-        font_id: FontCacheKey,
+        font_id: u64,
         glyph_id: u16,
         font_size: f32,
         pos: (f32, f32),
