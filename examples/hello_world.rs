@@ -7,7 +7,7 @@ use swash::zeno::{Format, Vector};
 
 use wgpu::*;
 
-use image::{Pixel, Rgba, RgbaImage};
+use image::{GrayImage, Luma, Pixel, Rgba, RgbaImage};
 use parley::{
     Alignment, AlignmentOptions, FontContext, FontStack, FontWeight, Glyph, GlyphRun, InlineBox,
     Layout, LayoutContext, PositionedLayoutItem, StyleProperty, TextStyle,
@@ -251,8 +251,8 @@ struct TextRenderer {
     layout_cx: LayoutContext<ColorBrush>,
     scale_cx: ScaleContext,
 
-    mask_atlas: Atlas,
-    color_atlas: Atlas,
+    color_atlas: Atlas<RgbaImage>,
+    mask_atlas: Atlas<GrayImage>,
 
     bind_group: BindGroup,
 
@@ -266,15 +266,15 @@ struct TextRenderer {
     quads: Vec<Quad>,
 }
 
-struct Atlas {
+struct Atlas<ImageType> {
     packer: BucketedAtlasAllocator,
     glyph_cache: LruCache<CacheKey, Allocation, Hasher>,
-    image: RgbaImage,
+    image: ImageType,
     texture: Texture,
     texture_view: TextureView,
 }
 
-impl Atlas {
+impl<ImageType> Atlas<ImageType> {
     fn allocate(&mut self, size: Size2D<i32, UnknownUnit>) -> Allocation {
         loop {
             let allocation = self.packer.allocate(size);
@@ -315,14 +315,14 @@ impl TextRenderer {
             mip_level_count: 1,
             sample_count: 1,
             dimension: TextureDimension::D2,
-            format: TextureFormat::Rgba8Unorm,
+            format: TextureFormat::R8Unorm,
             usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
             view_formats: &[],
         });
         let mask_texture_view = mask_texture.create_view(&TextureViewDescriptor::default());
 
         let mut mask_atlas = Atlas {
-            image: RgbaImage::from_pixel(256, 256, bg_color),
+            image: GrayImage::from_pixel(256, 256, Luma([0])),
             texture: mask_texture,
             texture_view: mask_texture_view,
             packer: BucketedAtlasAllocator::new(size2(SIZE as i32, SIZE as i32)),
@@ -554,7 +554,7 @@ impl TextRenderer {
         let image_data = include_bytes!("../test copy.jpg");
         let embedded_img = image::load_from_memory(image_data).unwrap();
         color_atlas.image = embedded_img.to_rgba8();
-        mask_atlas.image = embedded_img.to_rgba8();
+        mask_atlas.image = embedded_img.to_luma8();
 
         Self {
             tmp_swash_image: Image::new(),
@@ -613,7 +613,7 @@ impl TextRenderer {
             &self.mask_atlas.image.as_raw(),
             TexelCopyBufferLayout {
                 offset: 0,
-                bytes_per_row: Some(self.mask_atlas.image.width() * 4),
+                bytes_per_row: Some(self.mask_atlas.image.width()),
                 rows_per_image: None,
             },
             Extent3d {
@@ -702,17 +702,13 @@ impl TextRenderer {
 
             let size: Size2D<i32, UnknownUnit> = size2(glyph_width as i32, glyph_height as i32);
 
-            let alloc = self.color_atlas.allocate(size);
-
-            dbg!(alloc);
-
-            // let glyph_x = (glyph_x.floor() as i32 + self.tmp_swash_image.placement.left) as i32;
-            // let glyph_y = (glyph_y.floor() as i32 - self.tmp_swash_image.placement.top) as i32;
-            let glyph_x = alloc.rectangle.min.x;
-            let glyph_y = alloc.rectangle.min.y;
 
             match self.tmp_swash_image.content {
                 Content::Mask => {
+                    let alloc = self.mask_atlas.allocate(size);
+                    let glyph_x = alloc.rectangle.min.x;
+                    let glyph_y = alloc.rectangle.min.y;
+        
                     let mut i = 0;
                     let bc = color_brush.color;
                     for pixel_y in 0..(glyph_height as i32) {
@@ -720,7 +716,7 @@ impl TextRenderer {
                             let x = glyph_x + pixel_x;
                             let y = glyph_y + pixel_y;
                             let alpha = self.tmp_swash_image.data[i];
-                            let color = Rgba([bc[0], bc[1], bc[2], alpha]);
+                            let color = Luma([alpha]);
                             self.mask_atlas.image.get_pixel_mut(x as u32, y as u32).blend(&color);
                             i += 1;
                         }
@@ -728,6 +724,10 @@ impl TextRenderer {
                 }
                 Content::SubpixelMask => unimplemented!(),
                 Content::Color => {
+                    let alloc = self.color_atlas.allocate(size);
+                    let glyph_x = alloc.rectangle.min.x;
+                    let glyph_y = alloc.rectangle.min.y;
+        
                     let row_size = glyph_width as usize * 4;
                     for (pixel_y, row) in
                         self.tmp_swash_image.data.chunks_exact(row_size).enumerate()
