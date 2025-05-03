@@ -19,7 +19,7 @@ use std::num::NonZeroU64;
 use std::sync::Arc;
 use swash::scale::image::{Content, Image};
 use swash::scale::{Render, ScaleContext, Scaler, Source, StrikeWith};
-use swash::{FontRef, GlyphId, zeno};
+use swash::{zeno, CacheKey, FontRef, GlyphId};
 use wgpu::{
     CommandEncoderDescriptor, CompositeAlphaMode, DeviceDescriptor, Instance, InstanceDescriptor,
     LoadOp, MultisampleState, Operations, PresentMode, RenderPassColorAttachment,
@@ -665,7 +665,7 @@ impl ContextlessTextRenderer {
         let mut run_x = glyph_run.offset();
         let run_y = glyph_run.baseline();
         let style = glyph_run.style();
-        let color_brush = style.brush;
+        let color_brush = style.brush; // has to go into the Quad I guess
 
         // Get the "Run" from the "GlyphRun"
         let run = glyph_run.run();
@@ -702,10 +702,7 @@ impl ContextlessTextRenderer {
                     } else {
                         eprintln!("cache miss {:?}", cache_key);
 
-                        Render::new(SOURCES)
-                            .format(Format::Alpha)
-                            .offset(cache_key.frac_offset())
-                            .render_into(&mut scaler, glyph.id, &mut self.tmp_swash_image);
+                        self.render_glyph_into_tmp_image(glyph, cache_key, &mut scaler);
 
                         let size = self.tmp_swash_image.size();
 
@@ -776,9 +773,15 @@ impl ContextlessTextRenderer {
             let dst_start =
                 (dst_y as usize) * layout.height_stride + (dst_x as usize) * layout.width_stride;
 
-            // Copy the entire row at once (safe memcpy equivalent)
             samples[dst_start..(dst_start + size.width as usize)].copy_from_slice(src_slice);
         }
+    }
+
+    fn render_glyph_into_tmp_image(&mut self, glyph: Glyph, cache_key: GlyphKey, scaler: &mut Scaler) {
+        Render::new(SOURCES)
+            .format(Format::Alpha)
+            .offset(cache_key.frac_offset())
+            .render_into(scaler, glyph.id, &mut self.tmp_swash_image);
     }
 }
 
