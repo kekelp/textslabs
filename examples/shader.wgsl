@@ -1,5 +1,5 @@
 struct VertexInput {
-    @builtin(vertex_index) vertex_idx: u32,
+    @builtin(vertex_index) idx: u32,
     @location(0) pos: vec2<i32>,
     @location(1) dim: u32,
     @location(2) uv: u32,
@@ -43,18 +43,14 @@ fn srgb_to_linear(c: f32) -> f32 {
 fn vs_main(in_vert: VertexInput) -> VertexOutput {
     var vert_output: VertexOutput;
 
-    let uvs = array<vec2<f32>, 4>(
-        vec2<f32>(0.0, 1.0),
-        vec2<f32>(0.0, 0.0),
-        vec2<f32>(1.0, 1.0),
-        vec2<f32>(1.0, 0.0),
-    );
-    var uv = uvs[in_vert.vertex_idx];
+    var ix = in_vert.idx & 1;
+    var iy = in_vert.idx >> 1 & 1;
+
+    var uv = vec2<f32>(f32(ix), f32(iy));
     var pos = (uv - 0.5);
     pos.y = -pos.y;
-
     vert_output.position = vec4<f32>(pos, 0.0, 1.0);
-    vert_output.uv = vec2<f32>(uv);
+    vert_output.uv = uv;
     return vert_output;
 }
 
