@@ -1,3 +1,4 @@
+use bytemuck::{NoUninit, Pod, Zeroable};
 use etagere::euclid::{Size2D, UnknownUnit};
 use etagere::{Allocation, BucketedAtlasAllocator, size2};
 use lru::LruCache;
@@ -19,13 +20,14 @@ use std::num::NonZeroU64;
 use std::sync::Arc;
 use swash::scale::image::{Content, Image};
 use swash::scale::{Render, ScaleContext, Scaler, Source, StrikeWith};
-use swash::{zeno, CacheKey, FontRef, GlyphId};
+use swash::{CacheKey, FontRef, GlyphId, zeno};
 use wgpu::{
     CommandEncoderDescriptor, CompositeAlphaMode, DeviceDescriptor, Instance, InstanceDescriptor,
     LoadOp, MultisampleState, Operations, PresentMode, RenderPassColorAttachment,
     RenderPassDescriptor, RequestAdapterOptions, SurfaceConfiguration, Texture, TextureFormat,
     TextureUsages, TextureView, TextureViewDescriptor,
 };
+use winit::keyboard::NamedKey;
 use winit::{dpi::LogicalSize, event::WindowEvent, event_loop::EventLoop, window::Window};
 
 fn main() {
@@ -49,6 +51,8 @@ struct State {
     text_renderer: TextRenderer,
 
     text_layout: Layout<ColorBrush>,
+
+    show_atlas: bool,
 }
 
 impl State {
@@ -98,6 +102,7 @@ impl State {
             window,
             text_renderer,
             text_layout: layout,
+            show_atlas: false,
         }
     }
 
@@ -107,6 +112,14 @@ impl State {
         event: WindowEvent,
     ) {
         match event {
+            WindowEvent::KeyboardInput { event, .. } => {
+                if let winit::keyboard::Key::Named(NamedKey::F1) = event.logical_key {
+                    if event.state.is_pressed() && ! event.repeat {
+                        self.window.request_redraw();
+                        self.show_atlas = ! self.show_atlas;
+                    }
+                }
+            }
             WindowEvent::Resized(size) => {
                 self.surface_config.width = size.width;
                 self.surface_config.height = size.height;
@@ -145,13 +158,15 @@ impl State {
                         occlusion_query_set: None,
                     });
 
-                    self.text_renderer.render(&mut pass);
+                    if self.show_atlas {
+                        self.text_renderer.render_atlas(&mut pass, &self.queue);
+                    } else {
+                        self.text_renderer.render(&mut pass);
+                    }
                 }
 
                 self.queue.submit(Some(encoder.finish()));
                 frame.present();
-
-                // atlas.trim();
             }
             WindowEvent::CloseRequested => event_loop.exit(),
             _ => {}
@@ -192,9 +207,7 @@ impl winit::application::ApplicationHandler for Application {
 }
 
 fn text_layout() -> Layout<ColorBrush> {
-    let text = String::from(
-        "明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明明",
-    );
+    let text = String::from("Þ"); // here1
 
     let display_scale = 1.0;
 
@@ -254,21 +267,28 @@ impl TextRenderer {
     pub fn new(device: &Device, _queue: &Queue) -> Self {
         Self {
             scale_cx: ScaleContext::new(),
-            contextless_text_renderer: ContextlessTextRenderer::new(device, _queue)
+            contextless_text_renderer: ContextlessTextRenderer::new(device, _queue),
         }
     }
 
     fn prepare(&mut self, layout: &Layout<ColorBrush>) {
-        self.contextless_text_renderer.prepare(layout, &mut self.scale_cx);
+        self.contextless_text_renderer
+            .prepare(layout, &mut self.scale_cx);
     }
 
     fn gpu_load(&mut self, queue: &Queue) {
         self.contextless_text_renderer.gpu_load(queue);
     }
 
+    fn render_atlas(&self, pass: &mut RenderPass<'_>, queue: &Queue) {
+        self.contextless_text_renderer
+            .render_whole_atlas(pass, queue);
+    }
+
     fn render(&self, pass: &mut RenderPass<'_>) {
         self.contextless_text_renderer.render(pass);
     }
+
 }
 
 struct ContextlessTextRenderer {
@@ -305,8 +325,12 @@ struct Atlas<ImageType> {
     texture_view: TextureView,
 }
 
+impl<ImageType> Atlas<ImageType> {
+    pub fn allocate_and_remember() {}
+}
+
 #[repr(C)]
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Zeroable, Pod)]
 pub(crate) struct Quad {
     pos: [i32; 2],
     dim: [u16; 2],
@@ -591,16 +615,34 @@ impl ContextlessTextRenderer {
         }
     }
 
-    pub fn render(&self, pass: &mut RenderPass<'_>) {
-        if self.quads.is_empty() {
-            return;
-        }
+    pub fn render_whole_atlas(&self, pass: &mut RenderPass<'_>, queue: &Queue) {
+        let whole_screen_quad = vec![Quad {
+            pos: [0, 0],
+            dim: [100, 100],
+            uv: [0, 0],
+            color: 0,
+            content_type_with_srgb: [0, 1],
+            depth: 0.0,
+        }];
+
+        let bytes: &[u8] = bytemuck::cast_slice(&whole_screen_quad);
+        queue.write_buffer(&self.vertex_buffer, 0, &bytes);
 
         pass.set_pipeline(&self.pipeline);
         pass.set_bind_group(0, &self.bind_group, &[]);
         pass.set_bind_group(1, &self.params_bind_group, &[]);
         pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
         pass.draw(0..6, 0..1 as u32);
+    }
+
+    pub fn render(&self, pass: &mut RenderPass<'_>) {
+        // if self.quads.is_empty() { return }
+
+        // pass.set_pipeline(&self.pipeline);
+        // pass.set_bind_group(0, &self.bind_group, &[]);
+        // pass.set_bind_group(1, &self.params_bind_group, &[]);
+        // pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+        // pass.draw(0..6, 0..1 as u32);
     }
 
     fn prepare(&mut self, layout: &Layout<ColorBrush>, scale_cx: &mut ScaleContext) {
@@ -660,7 +702,11 @@ impl ContextlessTextRenderer {
         );
     }
 
-    fn prepare_glyph_run(&mut self, glyph_run: &GlyphRun<'_, ColorBrush>, scale_cx: &mut ScaleContext) {
+    fn prepare_glyph_run(
+        &mut self,
+        glyph_run: &GlyphRun<'_, ColorBrush>,
+        scale_cx: &mut ScaleContext,
+    ) {
         // Resolve properties of the GlyphRun
         let mut run_x = glyph_run.offset();
         let run_y = glyph_run.baseline();
@@ -687,7 +733,6 @@ impl ContextlessTextRenderer {
             .build();
 
         for glyph in glyph_run.glyphs() {
-
             let glyph_x = run_x + glyph.x;
             let glyph_y = run_y - glyph.y;
             run_x += glyph.advance;
@@ -702,12 +747,11 @@ impl ContextlessTextRenderer {
                     } else {
                         eprintln!("cache miss {:?}", cache_key);
 
-                        self.render_glyph_into_tmp_image(glyph, cache_key, &mut scaler);
+                        self.render_glyph(glyph, cache_key, &mut scaler);
 
                         let size = self.tmp_swash_image.size();
 
-                        let alloc = self.mask_atlas.packer.allocate(size);
-                        if let Some(alloc) = alloc {
+                        if let Some(alloc) = self.mask_atlas.packer.allocate(size) {
                             self.copy_glyph_to_atlas(size, &alloc);
                             self.mask_atlas.glyph_cache.push(cache_key, alloc);
                         } else {
@@ -736,8 +780,6 @@ impl ContextlessTextRenderer {
                     // }
                 }
             }
-
-            self.tmp_swash_image.clear();
         }
 
         // Draw decorations: underline & strikethrough
@@ -777,7 +819,9 @@ impl ContextlessTextRenderer {
         }
     }
 
-    fn render_glyph_into_tmp_image(&mut self, glyph: Glyph, cache_key: GlyphKey, scaler: &mut Scaler) {
+    /// Render a glyph into the `self.tmp_swash_image` buffer
+    fn render_glyph(&mut self, glyph: Glyph, cache_key: GlyphKey, scaler: &mut Scaler) {
+        self.tmp_swash_image.clear();
         Render::new(SOURCES)
             .format(Format::Alpha)
             .offset(cache_key.frac_offset())
@@ -884,9 +928,6 @@ trait UselessTrait2 {
 }
 impl UselessTrait2 for Image {
     fn size(&self) -> Size2D<i32, UnknownUnit> {
-        size2(
-            self.placement.width as i32,
-            self.placement.height as i32,
-        )
+        size2(self.placement.width as i32, self.placement.height as i32)
     }
 }
