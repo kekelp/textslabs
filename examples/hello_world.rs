@@ -1,31 +1,17 @@
-use bytemuck::{Pod, Zeroable};
-use etagere::euclid::{Size2D, UnknownUnit};
-use etagere::{size2, AllocId, Allocation, BucketedAtlasAllocator};
-use lru::LruCache;
 use parley_atlas_renderer::*;
-use rustc_hash::FxHasher;
-use swash::zeno::{Format, Vector};
 
-use wgpu::*;
 
-use image::{GrayImage, Luma, Rgba, RgbaImage};
+use image::Rgba;
 use parley::{
-    Alignment, AlignmentOptions, FontContext, FontStack, Glyph, GlyphRun,
-    Layout, LayoutContext, PositionedLayoutItem, StyleProperty,
+    Alignment, AlignmentOptions, FontContext, FontStack,
+    Layout, LayoutContext, StyleProperty,
 };
-use std::borrow::Cow;
-use std::hash::BuildHasherDefault;
-use std::mem;
-use std::num::NonZeroU64;
 use std::sync::Arc;
-use swash::scale::image::{Content, Image};
-use swash::scale::{Render, ScaleContext, Scaler, Source, StrikeWith};
-use swash::{FontRef, GlyphId};
 use wgpu::{
     CommandEncoderDescriptor, CompositeAlphaMode, DeviceDescriptor, Instance, InstanceDescriptor,
-    LoadOp, MultisampleState, Operations, PresentMode, RenderPassColorAttachment,
-    RenderPassDescriptor, RequestAdapterOptions, SurfaceConfiguration, Texture, TextureFormat,
-    TextureUsages, TextureView, TextureViewDescriptor,
+    LoadOp, Operations, PresentMode, RenderPassColorAttachment,
+    RenderPassDescriptor, RequestAdapterOptions, SurfaceConfiguration, TextureFormat,
+    TextureUsages, TextureViewDescriptor,
 };
 use winit::{dpi::LogicalSize, event::WindowEvent, event_loop::EventLoop, window::Window};
 

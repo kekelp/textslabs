@@ -25,7 +25,7 @@ impl ContextlessTextRenderer {
         });
         let mask_texture_view = mask_texture.create_view(&TextureViewDescriptor::default());
 
-        let mut mask_atlas = Atlas {
+        let mask_atlas = Atlas {
             image: GrayImage::from_pixel(atlas_size, atlas_size, Luma([0])),
             texture: mask_texture,
             texture_view: mask_texture_view,
@@ -49,7 +49,7 @@ impl ContextlessTextRenderer {
         });
         let color_texture_view = color_texture.create_view(&TextureViewDescriptor::default());
 
-        let mut color_atlas = Atlas {
+        let color_atlas = Atlas {
             image: RgbaImage::from_pixel(atlas_size, atlas_size, bg_color),
             texture: color_texture,
             texture_view: color_texture_view,

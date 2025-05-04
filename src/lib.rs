@@ -1,8 +1,6 @@
 mod wgpu_vomit;
-pub(crate) use wgpu_vomit::*;
 
 mod text_renderer;
-pub(crate) use text_renderer::*;
 
 
 use bytemuck::{Pod, Zeroable};
@@ -16,21 +14,18 @@ use wgpu::*;
 
 use image::{GrayImage, Luma, Rgba, RgbaImage};
 use parley::{
-    Alignment, AlignmentOptions, FontContext, FontStack, Glyph, GlyphRun,
-    Layout, LayoutContext, PositionedLayoutItem, StyleProperty,
+    FontContext, Glyph, GlyphRun,
+    Layout, LayoutContext, PositionedLayoutItem,
 };
 use std::borrow::Cow;
 use std::hash::BuildHasherDefault;
 use std::mem;
 use std::num::NonZeroU64;
-use std::sync::Arc;
 use swash::scale::image::{Content, Image};
 use swash::scale::{Render, ScaleContext, Scaler, Source, StrikeWith};
 use swash::{FontRef, GlyphId};
 use wgpu::{
-    CommandEncoderDescriptor, CompositeAlphaMode, DeviceDescriptor, Instance, InstanceDescriptor,
-    LoadOp, MultisampleState, Operations, PresentMode, RenderPassColorAttachment,
-    RenderPassDescriptor, RequestAdapterOptions, SurfaceConfiguration, Texture, TextureFormat,
+    MultisampleState, Texture, TextureFormat,
     TextureUsages, TextureView, TextureViewDescriptor,
 };
 
@@ -44,8 +39,8 @@ pub struct ContextlessTextRenderer {
     pub font_cx: FontContext,
     pub layout_cx: LayoutContext<ColorBrush>,
 
-    pub color_atlas: Atlas<RgbaImage>,
-    pub mask_atlas: Atlas<GrayImage>,
+    color_atlas: Atlas<RgbaImage>,
+    mask_atlas: Atlas<GrayImage>,
     
     pub bind_group: BindGroup,
     
