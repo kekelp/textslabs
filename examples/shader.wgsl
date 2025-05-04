@@ -76,23 +76,22 @@ fn vs_main(input: VertexInput) -> VertexOutput {
     );
     vert_output.position.y = -vert_output.position.y;
 
+    vert_output.color = vec4<f32>(
+        f32((input.color & 0x00ff0000u) >> 16u) / 255.0,
+        f32((input.color & 0x0000ff00u) >> 8u ) / 255.0,
+        f32((input.color & 0x000000ffu))        / 255.0,
+        f32((input.color & 0xff000000u) >> 24u) / 255.0,
+    );
+
     return vert_output;
 }
 
 @fragment
-fn fs_main(in_frag: VertexOutput) -> @location(0) vec4<f32> {
-    // return vec4(1.0);
-    var color = textureSampleLevel(mask_atlas_texture, atlas_sampler, in_frag.uv, 0.0);
-            return vec4<f32>(color.rgb, 1.0);
-    // switch in_frag.content_type {
-    //     case 0u: {
-    //         return textureSampleLevel(color_atlas_texture, atlas_sampler, in_frag.uv, 0.0);
-    //     }
-    //     case 1u: {
-    //         return vec4<f32>(in_frag.color.rgb, in_frag.color.a * textureSampleLevel(mask_atlas_texture, atlas_sampler, in_frag.uv, 0.0).x);
-    //     }
-    //     default: {
-    //         return vec4<f32>(0.0);
-    //     }
-    // }
+fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
+    var glyph_alpha = textureSampleLevel(mask_atlas_texture, atlas_sampler, input.uv, 0.0).r;
+    return vec4<f32>(input.color.rgb, input.color.a * glyph_alpha);
+
+    // // debug
+    // var color = textureSampleLevel(mask_atlas_texture, atlas_sampler, input.uv, 0.0);
+    // return vec4<f32>(color.rgb, 1.0);
 }

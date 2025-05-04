@@ -674,7 +674,11 @@ impl ContextlessTextRenderer {
         let mut run_x = glyph_run.offset();
         let run_y = glyph_run.baseline();
         let style = glyph_run.style();
-        let color_brush = style.brush; // has to go into the Quad I guess
+        let color_u8s = style.brush.color;
+        let color = ((color_u8s[0] as u32) << 0)
+            + ((color_u8s[1] as u32) << 8)
+            + ((color_u8s[2] as u32) << 16)
+            + ((color_u8s[3] as u32) << 24);
 
         let run = glyph_run.run();
 
@@ -722,7 +726,7 @@ impl ContextlessTextRenderer {
                                 pos: [x, y],
                                 dim: [size.width as u16, size.height as u16],
                                 uv: [alloc.rectangle.min.x as u16, alloc.rectangle.min.y as u16],
-                                color: 0,
+                                color,
                                 depth: 0.0,
                             };
                             dbg!(quad);
