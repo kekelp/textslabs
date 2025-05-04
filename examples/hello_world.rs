@@ -50,6 +50,7 @@ struct State {
     text_renderer: TextRenderer,
 
     text_layout: Layout<ColorBrush>,
+    show_atlas: bool,
 }
 
 impl State {
@@ -82,13 +83,7 @@ impl State {
 
         let layout = text_layout();
 
-        let mut text_renderer = TextRenderer::new(&device, &queue);
-
-        let now = std::time::Instant::now();
-        println!("begin prepare");
-        text_renderer.prepare(&layout);
-        println!("end prepare");
-        dbg!(now.elapsed());
+        let text_renderer = TextRenderer::new(&device, &queue);
 
         Self {
             device,
@@ -98,6 +93,7 @@ impl State {
             window,
             text_renderer,
             text_layout: layout,
+            show_atlas: false,
         }
     }
 
@@ -107,6 +103,14 @@ impl State {
         event: WindowEvent,
     ) {
         match event {
+            WindowEvent::KeyboardInput { event, .. } => {
+                if let winit::keyboard::Key::Named(winit::keyboard::NamedKey::F1) = event.logical_key {
+                    if event.state.is_pressed() && ! event.repeat {
+                        self.window.request_redraw();
+                        self.show_atlas = ! self.show_atlas;
+                    }
+                }
+            }
             WindowEvent::Resized(size) => {
                 self.surface_config.width = size.width;
                 self.surface_config.height = size.height;
@@ -116,26 +120,31 @@ impl State {
             WindowEvent::RedrawRequested => {
                 // todo: move
                 self.text_renderer.text_renderer.params.screen_resolution = Resolution {
-                    width: self.surface_config.width,
-                    height: self.surface_config.height,
+                    width: self.surface_config.width as f32,
+                    height: self.surface_config.height as f32,
                 };
 
                 let frame = self.surface.get_current_texture().unwrap();
                 let view = frame.texture.create_view(&TextureViewDescriptor::default());
 
+
+                let now = std::time::Instant::now();
+                self.text_renderer.prepare(&self.text_layout);
+                println!("prepare(): {:?}", now.elapsed());
+
                 self.text_renderer.gpu_load(&self.queue);
 
-                // atlas debug
-                // let big_quad = vec![Quad {
-                //     pos: [0, 0],
-                //     // dim: [20 as u16, 20 as u16],
-                //     dim: [SIZE as u16, SIZE as u16],
-                //     uv: [0, 0],
-                //     color: 0,
-                //     depth: 0.0,
-                // }];
-                // let bytes: &[u8] = bytemuck::cast_slice(&big_quad);
-                // self.queue.write_buffer(&self.text_renderer.text_renderer.vertex_buffer, 0, &bytes);
+                if self.show_atlas {
+                    let big_quad = vec![Quad {
+                        pos: [9999, 0],
+                        dim: [SIZE as u16, SIZE as u16],
+                        uv: [0, 0],
+                        color: 0,
+                        depth: 0.0,
+                    }];
+                    let bytes: &[u8] = bytemuck::cast_slice(&big_quad);
+                    self.queue.write_buffer(&self.text_renderer.text_renderer.vertex_buffer, 0, &bytes);
+                }
 
                 let mut encoder = self
                     .device
@@ -201,7 +210,7 @@ impl winit::application::ApplicationHandler for Application {
 }
 
 fn text_layout() -> Layout<ColorBrush> {
-    let text = String::from("z"); // here1
+    let text = String::from("zsdfuasdhk"); // here1
 
     let display_scale = 1.0;
 
@@ -419,8 +428,8 @@ impl ContextlessTextRenderer {
 
         let params = Params {
             screen_resolution: Resolution {
-                width: 0,
-                height: 0,
+                width: 0.0,
+                height: 0.0,
             },
             _pad: [0, 0],
         };
@@ -585,7 +594,7 @@ impl ContextlessTextRenderer {
         pass.set_bind_group(0, &self.bind_group, &[]);
         pass.set_bind_group(1, &self.params_bind_group, &[]);
         pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-        pass.draw(0..6, 0..1 as u32);
+        pass.draw(0..4, 0..self.quads.len() as u32);
     }
 
     fn prepare(&mut self, layout: &Layout<ColorBrush>, scale_cx: &mut ScaleContext) {
@@ -709,14 +718,15 @@ impl ContextlessTextRenderer {
                             self.copy_glyph_to_atlas(size, &alloc);
                             self.mask_atlas.glyph_cache.push(cache_key, alloc);
 
-                            self.quads.push(Quad {
-                                pos: [0, 0],
-                                dim: [200 as u16, 200 as u16],
-                                uv: [0, 0],
-                                // uv: [alloc.rectangle.min.x as u16, alloc.rectangle.min.y as u16],
+                            let quad = Quad {
+                                pos: [pos_x, pos_y],
+                                dim: [size.width as u16, size.height as u16],
+                                uv: [alloc.rectangle.min.x as u16, alloc.rectangle.min.y as u16],
                                 color: 0,
                                 depth: 0.0,
-                            });
+                            };
+                            dbg!(quad);
+                            self.quads.push(quad);
                         } else {
                             panic!("Grow o algo");
                         }

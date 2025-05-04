@@ -15,8 +15,7 @@ struct VertexOutput {
 };
 
 struct Params {
-    // todo: why not f32 directly
-    screen_resolution: vec2<u32>,
+    screen_resolution: vec2<f32>,
     _pad: vec2<u32>,
 };
 
@@ -59,13 +58,19 @@ fn vs_main(input: VertexInput) -> VertexOutput {
 
     let dim = split(input.dim);
 
-    // vert_output.uv = coords; // atlas debug
-    vert_output.uv = split(input.uv) + dim / vec2f(params.screen_resolution) * coords;
+    let atlas_size = vec2f(textureDimensions(mask_atlas_texture));
+    vert_output.uv = (split(input.uv) + dim * coords) / atlas_size;
 
-    let pos = vec2f(input.pos) + dim * coords;
+    var pos = vec2f(input.pos) + dim * coords;
+    
+    // atlas debug. todo: remove
+    if input.pos.x == 9999 {
+        vert_output.uv = coords;
+        pos = vec2f(0.0, 0.0) + dim * coords;
+    }
 
     vert_output.position = vec4f(
-        2.0 * (pos / (vec2f(params.screen_resolution))) - 1.0,
+        2.0 * (pos / params.screen_resolution) - 1.0,
         input.depth,
         1.0,
     );

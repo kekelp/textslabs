@@ -13,7 +13,7 @@ impl Default for ColorBrush {
 }
 
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Params {
     pub screen_resolution: Resolution,
     pub _pad: [u32; 2],
@@ -21,10 +21,10 @@ pub struct Params {
 
 /// The screen resolution to use when rendering text.
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Resolution {
     /// The width of the screen in pixels.
-    pub width: u32,
+    pub width: f32,
     /// The height of the screen in pixels.
-    pub height: u32,
+    pub height: f32,
 }
