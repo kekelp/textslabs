@@ -29,7 +29,7 @@ pub struct ContextlessTextRenderer {
 
 pub(crate) struct Atlas<ImageType> {
     pub(crate) packer: BucketedAtlasAllocator,
-    pub(crate) glyph_cache: LruCache<GlyphKey, Allocation, BuildHasherDefault<FxHasher>>,
+    pub(crate) glyph_cache: LruCache<GlyphKey, StoredGlyph, BuildHasherDefault<FxHasher>>,
     pub(crate) image: ImageType,
     pub(crate) texture: Texture, // the format here has to match the image type...
     pub(crate) texture_view: TextureView,
@@ -45,62 +45,45 @@ pub struct GlyphKey {
     /// `f32` bits of font size
     pub font_size_bits: u32,
     /// Binning of fractional X offset
-    pub x_bin: SubpixelBin,
+    pub x_bin: SubpixelBin::<4>,
     /// Binning of fractional Y offset
-    pub y_bin: SubpixelBin,
+    pub y_bin: SubpixelBin::<4>,
     // /// [`CacheKeyFlags`]
     // pub flags: CacheKeyFlags,
 }
 
-
-/// Binning of subpixel position for cache optimization
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum SubpixelBin {
-    Zero,
-    One,
-    Two,
-    Three,
+pub struct SubpixelBin<const N: u8>(pub u8);
+
+fn quantize<const N: u8>(pos: f32) -> (i32, SubpixelBin::<N>) {
+    let trunc = pos.floor() as i32;
+    let fract = pos - trunc as f32;
+    
+    let expanded_bin = if fract.is_sign_negative() {
+        let abs_fract = fract.abs();
+        ((2 * N) as f32 * (1.0 - abs_fract)).floor() as i32
+    } else {
+        ((2 * N) as f32 * fract).floor() as i32
+    };
+    
+    let (adjusted_trunc, bin) = if expanded_bin >= 2 * N as i32 {
+        (trunc + 1, 0)
+    } else if expanded_bin <= 0 {
+        (trunc, 0)
+    } else {
+        let compressed_bin = (expanded_bin + 1) / 2;
+        (trunc, compressed_bin as u8)
+    };
+    
+    (adjusted_trunc, SubpixelBin::<N>(bin))
 }
 
-impl SubpixelBin {
-    pub fn new(pos: f32) -> (i32, Self) {
-        let trunc = pos as i32;
-        let fract = pos - trunc as f32;
-
-        if pos.is_sign_negative() {
-            if fract > -0.125 {
-                (trunc, Self::Zero)
-            } else if fract > -0.375 {
-                (trunc - 1, Self::Three)
-            } else if fract > -0.625 {
-                (trunc - 1, Self::Two)
-            } else if fract > -0.875 {
-                (trunc - 1, Self::One)
-            } else {
-                (trunc - 1, Self::Zero)
-            }
-        } else {
-            #[allow(clippy::collapsible_else_if)]
-            if fract < 0.125 {
-                (trunc, Self::Zero)
-            } else if fract < 0.375 {
-                (trunc, Self::One)
-            } else if fract < 0.625 {
-                (trunc, Self::Two)
-            } else if fract < 0.875 {
-                (trunc, Self::Three)
-            } else {
-                (trunc + 1, Self::Zero)
-            }
-        }
-    }
-
+impl<const N: u8> SubpixelBin<N> {    
     pub fn as_float(&self) -> f32 {
-        match self {
-            Self::Zero => 0.0,
-            Self::One => 0.25,
-            Self::Two => 0.5,
-            Self::Three => 0.75,
+        if self.0 == 0 {
+            0.0
+        } else {
+            (2 * self.0 - 1) as f32 / (2 * N) as f32
         }
     }
 }
@@ -148,31 +131,6 @@ pub struct Resolution {
     pub width: f32,
     /// The height of the screen in pixels.
     pub height: f32,
-}
-
-impl GlyphKey {
-    pub fn new(font_id: u64, glyph_id: u16, font_size: f32, pos: (f32, f32)) -> (Self, i32, i32) {
-        let (x, x_bin) = SubpixelBin::new(pos.0);
-        let (y, y_bin) = SubpixelBin::new(pos.1);
-        (
-            Self {
-                font_id,
-                glyph_id,
-                font_size_bits: font_size.to_bits(),
-                x_bin,
-                y_bin,
-            },
-            x,
-            y,
-        )
-    }
-
-    pub fn frac_offset(&self) -> Vector {
-        Vector {
-            x: self.x_bin.as_float(),
-            y: self.y_bin.as_float(),
-        }
-    }
 }
 
 impl TextRenderer {
@@ -338,13 +296,12 @@ impl ContextlessTextRenderer {
 
                         if let Some(alloc) = self.mask_atlas.packer.allocate(size) {
                             self.copy_glyph_to_atlas(size, &alloc);
-                            self.mask_atlas.glyph_cache.push(cache_key, alloc);
-
+                            
                             let scale_factor = 1.0; // todo, what is this
                             let line_y = (run_y * scale_factor).round() as i32;
                             let y = line_y + pos_y - self.tmp_image.placement.top as i32;
                             let x = pos_x + self.tmp_image.placement.left as i32;
-        
+                            
                             let quad = Quad {
                                 pos: [x, y],
                                 dim: [size.width as u16, size.height as u16],
@@ -353,6 +310,8 @@ impl ContextlessTextRenderer {
                                 depth: 0.0,
                             };
                             self.quads.push(quad);
+
+                            self.mask_atlas.glyph_cache.push(cache_key, alloc);
                         } else {
                             todo!("grow the atlas or figure other reasons why the alloc fails")
                         }
@@ -436,6 +395,76 @@ impl ContextlessTextRenderer {
             .format(Format::Alpha)
             .offset(cache_key.frac_offset())
             .render_into(scaler, glyph.id, &mut self.tmp_image);
+    }
+
+    // fn store_glyph(&mut self) -> StoredGlyph {
+    //     if let Some(alloc) = self.mask_atlas.packer.allocate(size) {
+    //         self.copy_glyph_to_atlas(size, &alloc);
+    //         self.mask_atlas.glyph_cache.push(cache_key, alloc);
+
+    //         let scale_factor = 1.0; // todo, what is this
+    //         let line_y = (run_y * scale_factor).round() as i32;
+    //         let y = line_y + pos_y - self.tmp_image.placement.top as i32;
+    //         let x = pos_x + self.tmp_image.placement.left as i32;
+
+    //         let quad = Quad {
+    //             pos: [x, y],
+    //             dim: [size.width as u16, size.height as u16],
+    //             uv: [alloc.rectangle.min.x as u16, alloc.rectangle.min.y as u16],
+    //             color,
+    //             depth: 0.0,
+    //         };
+    //         self.quads.push(quad);
+    //     } else {
+    //         todo!("grow the atlas or figure other reasons why the alloc fails")
+    //     };
+    //     todo!();
+    // }
+}
+
+struct FullGlyph {
+    glyph: Glyph,
+    run_x: f32,
+    run_y: f32,
+    font_key: u64,
+    font_size: f32,
+    quantized_pos_x: i32,
+    quantized_pos_y: i32,
+    frac_pos_x: f32,
+    frac_pos_y: f32,
+    subpixel_bin_x: SubpixelBin<4>,
+    subpixel_bin_y: SubpixelBin<4>,
+}
+
+impl FullGlyph {
+    fn new(glyph: Glyph, run_x: f32, run_y: f32, font_key: u64, font_size: f32) -> Self {
+        Self {
+            glyph,
+            run_x,
+            run_y,
+            font_key,
+            font_size,
+            quantized_pos_x,
+            quantized_pos_y,
+            frac_pos_x,
+            frac_pos_y,
+            subpixel_bin_x,
+            subpixel_bin_y,
+        }
+    }
+
+    fn round_to_subpixel_bin(&self) -> (SubpixelBin) {
+        let (x, x_bin) = SubpixelBin::from_pos(pos.0);
+        let (y, y_bin) = SubpixelBin::from_pos(pos.1);
+
+    }
+
+    fn key(&self) -> GlyphKey {
+        let glyph_x = self.run_x + self.glyph.x;
+        let glyph_y = self.run_y - self.glyph.y;
+
+        let (x, x_bin) = quantize::<4>(pos.0);
+        let (y, y_bin) = quantize::<4>(pos.1);
     }
 }
 
