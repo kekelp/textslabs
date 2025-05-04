@@ -55,7 +55,7 @@ pub struct GlyphKey {
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct SubpixelBin<const N: u8>(pub u8);
 
-fn quantize<const N: u8>(pos: f32) -> (i32, SubpixelBin::<N>) {
+fn quantize<const N: u8>(pos: f32) -> (i32, f32, SubpixelBin::<N>) {
     let trunc = pos.floor() as i32;
     let fract = pos - trunc as f32;
     
@@ -75,7 +75,7 @@ fn quantize<const N: u8>(pos: f32) -> (i32, SubpixelBin::<N>) {
         (trunc, compressed_bin as u8)
     };
     
-    (adjusted_trunc, SubpixelBin::<N>(bin))
+    return (adjusted_trunc, fract, SubpixelBin::<N>(bin))
 }
 
 impl<const N: u8> SubpixelBin<N> {    
@@ -99,6 +99,7 @@ pub struct Quad {
 }
 
 /// A glyph as stored in a glyph atlas.
+#[derive(Clone, Copy, Debug)]
 pub(crate) struct StoredGlyph {
     quad: Quad,
     alloc_id: AllocId,
@@ -251,11 +252,7 @@ impl ContextlessTextRenderer {
         let mut run_x = glyph_run.offset();
         let run_y = glyph_run.baseline();
         let style = glyph_run.style();
-        let color_u8s = style.brush.color;
-        let color = ((color_u8s[0] as u32) << 0)
-            + ((color_u8s[1] as u32) << 8)
-            + ((color_u8s[2] as u32) << 16)
-            + ((color_u8s[3] as u32) << 24);
+
 
         let run = glyph_run.run();
 
@@ -272,48 +269,17 @@ impl ContextlessTextRenderer {
             .build();
 
         for glyph in glyph_run.glyphs() {
-            let glyph_x = run_x + glyph.x;
-            let glyph_y = run_y - glyph.y;
             run_x += glyph.advance;
 
-            let (cache_key, pos_x, pos_y) =
-                GlyphKey::new(font_key, glyph.id, font_size, (glyph_x, glyph_y));
+            let full_glyph = FullGlyph::new(glyph, run_x, run_y, font_key, font_size, style.brush.color);
+            let glyph_key = full_glyph.key();
 
             match self.tmp_image.content {
                 Content::Mask => {
-                    if let Some(alloc) = self.mask_atlas.glyph_cache.get(&cache_key) {
-                        // eprintln!("cache hit {:?}", cache_key);
+                    if let Some(alloc) = self.mask_atlas.glyph_cache.get(&glyph_key) {
                     } else {
-                        // eprintln!("cache miss {:?}", cache_key);
-
-                        self.render_glyph(glyph, cache_key, &mut scaler);
-
-                        let size = self.tmp_image.size();
-
-                        if size.is_empty() {
-                            continue;
-                        }
-
-                        if let Some(alloc) = self.mask_atlas.packer.allocate(size) {
-                            self.copy_glyph_to_atlas(size, &alloc);
-                            
-                            let scale_factor = 1.0; // todo, what is this
-                            let line_y = (run_y * scale_factor).round() as i32;
-                            let y = line_y + pos_y - self.tmp_image.placement.top as i32;
-                            let x = pos_x + self.tmp_image.placement.left as i32;
-                            
-                            let quad = Quad {
-                                pos: [x, y],
-                                dim: [size.width as u16, size.height as u16],
-                                uv: [alloc.rectangle.min.x as u16, alloc.rectangle.min.y as u16],
-                                color,
-                                depth: 0.0,
-                            };
-                            self.quads.push(quad);
-
-                            self.mask_atlas.glyph_cache.push(cache_key, alloc);
-                        } else {
-                            todo!("grow the atlas or figure other reasons why the alloc fails")
+                        if let Some(stored_glyph) = self.store_glyph(&full_glyph, &mut scaler) {
+                            self.quads.push(stored_glyph.quad);
                         }
                     }
                 }
@@ -389,41 +355,59 @@ impl ContextlessTextRenderer {
     }
 
     /// Render a glyph into the `self.tmp_swash_image` buffer
-    fn render_glyph(&mut self, glyph: Glyph, cache_key: GlyphKey, scaler: &mut Scaler) {
+    fn render_glyph(&mut self, glyph: &FullGlyph, scaler: &mut Scaler) {
         self.tmp_image.clear();
         Render::new(SOURCES)
             .format(Format::Alpha)
-            .offset(cache_key.frac_offset())
-            .render_into(scaler, glyph.id, &mut self.tmp_image);
+            .offset(glyph.frac_offset())
+            .render_into(scaler, glyph.glyph.id, &mut self.tmp_image);
     }
 
-    // fn store_glyph(&mut self) -> StoredGlyph {
-    //     if let Some(alloc) = self.mask_atlas.packer.allocate(size) {
-    //         self.copy_glyph_to_atlas(size, &alloc);
-    //         self.mask_atlas.glyph_cache.push(cache_key, alloc);
+    /// If None, the glyph was just empty, like a spacebar,
+    fn store_glyph(&mut self, glyph: &FullGlyph, scaler: &mut Scaler) -> Option<StoredGlyph> {
+        let glyph_key = glyph.key();
 
-    //         let scale_factor = 1.0; // todo, what is this
-    //         let line_y = (run_y * scale_factor).round() as i32;
-    //         let y = line_y + pos_y - self.tmp_image.placement.top as i32;
-    //         let x = pos_x + self.tmp_image.placement.left as i32;
+        self.render_glyph(&glyph, scaler);
 
-    //         let quad = Quad {
-    //             pos: [x, y],
-    //             dim: [size.width as u16, size.height as u16],
-    //             uv: [alloc.rectangle.min.x as u16, alloc.rectangle.min.y as u16],
-    //             color,
-    //             depth: 0.0,
-    //         };
-    //         self.quads.push(quad);
-    //     } else {
-    //         todo!("grow the atlas or figure other reasons why the alloc fails")
-    //     };
-    //     todo!();
-    // }
+        let size = self.tmp_image.size();
+
+        if size.is_empty() {
+            return None;
+        }
+
+        if let Some(alloc) = self.mask_atlas.packer.allocate(size) {
+            self.copy_glyph_to_atlas(size, &alloc);
+
+            let scale_factor = 1.0; // todo, what is this
+            let line_y = (glyph.run_y * scale_factor).round() as i32;
+            let y = line_y + glyph.quantized_pos_y - self.tmp_image.placement.top as i32;
+            let x = glyph.quantized_pos_x + self.tmp_image.placement.left as i32;
+
+            let quad = Quad {
+                pos: [x, y],
+                dim: [size.width as u16, size.height as u16],
+                uv: [alloc.rectangle.min.x as u16, alloc.rectangle.min.y as u16],
+                color: glyph.color,
+                depth: 0.0,
+            };
+
+            let stored_glyph = StoredGlyph {
+                quad,
+                alloc_id: alloc.id,
+            };
+            self.mask_atlas.glyph_cache.push(glyph_key, stored_glyph);
+
+            return Some(stored_glyph);
+        } else {
+            todo!("grow the atlas or figure other reasons why the alloc fails")
+        };
+        todo!();
+    }
 }
 
 struct FullGlyph {
     glyph: Glyph,
+    color: u32,
     run_x: f32,
     run_y: f32,
     font_key: u64,
@@ -437,9 +421,21 @@ struct FullGlyph {
 }
 
 impl FullGlyph {
-    fn new(glyph: Glyph, run_x: f32, run_y: f32, font_key: u64, font_size: f32) -> Self {
+    fn new(glyph: Glyph, run_x: f32, run_y: f32, font_key: u64, font_size: f32, color: Rgba<u8>) -> Self {
+        let glyph_x = run_x + glyph.x;
+        let glyph_y = run_y - glyph.y;
+
+        let (quantized_pos_x, frac_pos_x, subpixel_bin_x) = quantize(glyph_x);
+        let (quantized_pos_y, frac_pos_y, subpixel_bin_y) = quantize(glyph_y);
+
+        let color = ((color[0] as u32) << 0)
+            + ((color[1] as u32) << 8)
+            + ((color[2] as u32) << 16)
+            + ((color[3] as u32) << 24);
+
         Self {
             glyph,
+            color,
             run_x,
             run_y,
             font_key,
@@ -453,18 +449,18 @@ impl FullGlyph {
         }
     }
 
-    fn round_to_subpixel_bin(&self) -> (SubpixelBin) {
-        let (x, x_bin) = SubpixelBin::from_pos(pos.0);
-        let (y, y_bin) = SubpixelBin::from_pos(pos.1);
-
+    fn key(&self) -> GlyphKey {
+        GlyphKey {
+            font_id: self.font_key,
+            glyph_id: self.glyph.id,
+            font_size_bits: self.font_size.to_bits(),
+            x_bin: self.subpixel_bin_x,
+            y_bin: self.subpixel_bin_y,
+        }
     }
 
-    fn key(&self) -> GlyphKey {
-        let glyph_x = self.run_x + self.glyph.x;
-        let glyph_y = self.run_y - self.glyph.y;
-
-        let (x, x_bin) = quantize::<4>(pos.0);
-        let (y, y_bin) = quantize::<4>(pos.1);
+    fn frac_offset(&self) -> Vector {
+        Vector::new(self.frac_pos_x, self.frac_pos_y)
     }
 }
 
