@@ -290,7 +290,7 @@ impl TextRenderer {
 }
 
 struct ContextlessTextRenderer {
-    tmp_swash_image: Image,
+    tmp_image: Image,
     font_cx: FontContext,
     layout_cx: LayoutContext<ColorBrush>,
 
@@ -570,7 +570,7 @@ impl ContextlessTextRenderer {
         mask_atlas.image = embedded_img.to_luma8();
 
         Self {
-            tmp_swash_image: Image::new(),
+            tmp_image: Image::new(),
             font_cx: FontContext::new(),
             layout_cx: LayoutContext::new(),
             color_atlas,
@@ -676,15 +676,10 @@ impl ContextlessTextRenderer {
         let style = glyph_run.style();
         let color_brush = style.brush; // has to go into the Quad I guess
 
-        // Get the "Run" from the "GlyphRun"
         let run = glyph_run.run();
 
-        // Resolve properties of the Run
         let font = run.font();
         let font_size = run.font_size();
-        let normalized_coords = run.normalized_coords();
-
-        // Convert from parley::Font to swash::FontRef
         let font_ref = FontRef::from_index(font.data.as_ref(), font.index as usize).unwrap();
         let font_key = font.data.id();
 
@@ -692,7 +687,7 @@ impl ContextlessTextRenderer {
             .builder(font_ref)
             .size(font_size)
             .hint(true)
-            .normalized_coords(normalized_coords)
+            .normalized_coords(run.normalized_coords())
             .build();
 
         for glyph in glyph_run.glyphs() {
@@ -703,7 +698,7 @@ impl ContextlessTextRenderer {
             let (cache_key, pos_x, pos_y) =
                 GlyphKey::new(font_key, glyph.id, font_size, (glyph_x, glyph_y));
 
-            match self.tmp_swash_image.content {
+            match self.tmp_image.content {
                 Content::Mask => {
                     if let Some(alloc) = self.mask_atlas.glyph_cache.get(&cache_key) {
                         // println!("cache hit {:?}", cache_key);
@@ -712,14 +707,19 @@ impl ContextlessTextRenderer {
 
                         self.render_glyph(glyph, cache_key, &mut scaler);
 
-                        let size = self.tmp_swash_image.size();
+                        let size = self.tmp_image.size();
 
                         if let Some(alloc) = self.mask_atlas.packer.allocate(size) {
                             self.copy_glyph_to_atlas(size, &alloc);
                             self.mask_atlas.glyph_cache.push(cache_key, alloc);
 
+                            let scale_factor = 1.0; // todo, what is this
+                            let line_y = (run_y * scale_factor).round() as i32;
+                            let y = line_y + pos_y - self.tmp_image.placement.top as i32;
+                            let x = pos_x + self.tmp_image.placement.left as i32;
+        
                             let quad = Quad {
-                                pos: [pos_x, pos_y],
+                                pos: [x, y],
                                 dim: [size.width as u16, size.height as u16],
                                 uv: [alloc.rectangle.min.x as u16, alloc.rectangle.min.y as u16],
                                 color: 0,
@@ -776,7 +776,7 @@ impl ContextlessTextRenderer {
         for y in 0..size.height as i32 {
             let src_start = (y as usize) * (size.width as usize);
             let src_slice =
-                &self.tmp_swash_image.data[src_start..(src_start + size.width as usize)];
+                &self.tmp_image.data[src_start..(src_start + size.width as usize)];
 
             let dst_y = (alloc.rectangle.min.y + y) as u32;
             let dst_x = alloc.rectangle.min.x as u32;
@@ -794,13 +794,13 @@ impl ContextlessTextRenderer {
 
     /// Render a glyph into the `self.tmp_swash_image` buffer
     fn render_glyph(&mut self, glyph: Glyph, cache_key: GlyphKey, scaler: &mut Scaler) {
-        self.tmp_swash_image.clear();
+        self.tmp_image.clear();
         Render::new(SOURCES)
             .format(Format::Alpha)
             .offset(cache_key.frac_offset())
-            .render_into(scaler, glyph.id, &mut self.tmp_swash_image);
+            .render_into(scaler, glyph.id, &mut self.tmp_image);
 
-        dbg!(self.tmp_swash_image.placement.width);
+        dbg!(self.tmp_image.placement.width);
         dbg!(glyph.advance);
     }
 }
