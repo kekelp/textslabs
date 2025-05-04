@@ -1,6 +1,5 @@
 use parley_atlas_renderer::*;
 
-
 use image::Rgba;
 use parley::{
     Alignment, AlignmentOptions, FontContext, FontStack,
