@@ -2,7 +2,7 @@ struct VertexInput {
     @builtin(vertex_index) idx: u32,
     @location(0) pos: vec2<i32>,
     @location(1) dim: u32,
-    @location(2) uv: u32,
+    @location(2) uv_origin: u32,
     @location(3) color: u32,
     @location(4) depth: f32,
 }
@@ -59,7 +59,7 @@ fn vs_main(input: VertexInput) -> VertexOutput {
     let dim = split(input.dim);
 
     let atlas_size = vec2f(textureDimensions(mask_atlas_texture));
-    vert_output.uv = (split(input.uv) + dim * coords) / atlas_size;
+    vert_output.uv = (split(input.uv_origin) + dim * coords) / atlas_size;
 
     var pos = vec2f(input.pos) + dim * coords;
     

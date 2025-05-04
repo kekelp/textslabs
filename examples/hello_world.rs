@@ -124,7 +124,7 @@ impl State {
                     let big_quad = vec![Quad {
                         pos: [9999, 0],
                         dim: [atlas_size as u16, atlas_size as u16],
-                        uv: [0, 0],
+                        uv_origin: [0, 0],
                         color: 0,
                         depth: 0.0,
                     }];
@@ -196,7 +196,7 @@ impl winit::application::ApplicationHandler for Application {
 }
 
 fn text_layout() -> Layout<ColorBrush> {
-    let text = String::from("We were... le kings"); // here1
+    let text = String::from("Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum. O algo."); // here1
 
     let display_scale = 1.0;
 
