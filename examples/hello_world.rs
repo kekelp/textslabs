@@ -211,7 +211,7 @@ impl winit::application::ApplicationHandler for Application {
 }
 
 fn text_layout() -> Layout<ColorBrush> {
-    let text = String::from("zsdfuasdhkssssssssssssssssssssssssssssssssssss"); // here1
+    let text = String::from("ヘッケはこれらのL-函数が全複素平面へ有理型接続を持ち、指標が自明であるときには s = 1 でオーダー 1 である極を持ち、それ以外では解析的であることを証明した。原始ヘッケ指標（原始ディリクレ指標に同じ方法である modulus に相対的に定義された）に対し、ヘッケは、これらのL-函数が指標の L-函数の函数等式を満たし、L-函数の複素共役指標であることを示した。 主イデアル上の座と、無限での座を含む全ての例外有限集合の上で 1 である単円の上への写像を取ることで、イデール類群の指標 ψ を考える。すると、ψ はイデアル群 IS の指標 χ を生成し、イデアル群は S 上に入らない素イデアル上の自由アーベル群となる。"); // here1
 
     let display_scale = 1.0;
 
@@ -228,7 +228,7 @@ fn text_layout() -> Layout<ColorBrush> {
     builder.push_default(StyleProperty::Brush(text_brush));
 
     builder.push_default(FontStack::from("system-ui"));
-    builder.push_default(StyleProperty::LineHeight(1.3));
+    builder.push_default(StyleProperty::LineHeight(0.5));
     builder.push_default(StyleProperty::FontSize(24.0));
 
     // builder.push(StyleProperty::FontWeight(FontWeight::new(600.0)), 0..4);
@@ -345,7 +345,8 @@ impl ContextlessTextRenderer {
 
         // todo
         // unused memory is wasted memory...?
-        let atlas_size = Limits::downlevel_defaults().max_texture_dimension_2d;
+        // let atlas_size = Limits::downlevel_defaults().max_texture_dimension_2d;
+        let atlas_size = 512;
 
         let mask_texture = device.create_texture(&TextureDescriptor {
             label: Some("atlas"),
@@ -713,6 +714,11 @@ impl ContextlessTextRenderer {
 
                         let size = self.tmp_image.size();
 
+                        // Probably a space. Don't do anything.
+                        if size.is_empty() {
+                            continue;
+                        }
+
                         if let Some(alloc) = self.mask_atlas.packer.allocate(size) {
                             self.copy_glyph_to_atlas(size, &alloc);
                             self.mask_atlas.glyph_cache.push(cache_key, alloc);
@@ -731,7 +737,7 @@ impl ContextlessTextRenderer {
                             };
                             self.quads.push(quad);
                         } else {
-                            panic!("Grow o algo");
+                            todo!("grow the atlas or figure other reasons why the alloc fails")
                         }
                     }
                 }
