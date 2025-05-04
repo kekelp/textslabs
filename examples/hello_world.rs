@@ -715,6 +715,7 @@ impl ContextlessTextRenderer {
                         let size = self.tmp_image.size();
 
                         // Probably a space. Don't do anything.
+                        // Actually, we should still push something to the cache.
                         if size.is_empty() {
                             continue;
                         }
