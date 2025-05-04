@@ -57,7 +57,7 @@ impl ContextlessTextRenderer {
             glyph_cache: LruCache::unbounded_with_hasher(BuildHasherDefault::<FxHasher>::default()),
         };
 
-        let vertex_buffer_size = 4096;
+        let vertex_buffer_size = 4096 * 9;
         let vertex_buffer = device.create_buffer(&BufferDescriptor {
             label: Some("vertices"),
             size: vertex_buffer_size,

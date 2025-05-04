@@ -101,8 +101,7 @@ pub struct Quad {
 /// A glyph as stored in a glyph atlas.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct StoredGlyph {
-    quad: Quad,
-    alloc_id: AllocId,
+    alloc: Allocation, // todo change this wtf
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -166,7 +165,7 @@ const SOURCES: &[Source; 3] = &[
 
 impl ContextlessTextRenderer {
         pub fn render(&self, pass: &mut RenderPass<'_>) {
-        // if self.quads.is_empty() { return }
+        if self.quads.is_empty() { return }
 
         pass.set_pipeline(&self.pipeline);
         pass.set_bind_group(0, &self.bind_group, &[]);
@@ -176,6 +175,7 @@ impl ContextlessTextRenderer {
     }
 
     fn prepare(&mut self, layout: &Layout<ColorBrush>, scale_cx: &mut ScaleContext) {
+        self.quads.clear();
         // Iterate over laid out lines
         for line in layout.lines() {
             // Iterate over GlyphRun's within each line
@@ -253,7 +253,6 @@ impl ContextlessTextRenderer {
         let run_y = glyph_run.baseline();
         let style = glyph_run.style();
 
-
         let run = glyph_run.run();
 
         let font = run.font();
@@ -276,10 +275,22 @@ impl ContextlessTextRenderer {
 
             match self.tmp_image.content {
                 Content::Mask => {
-                    if let Some(alloc) = self.mask_atlas.glyph_cache.get(&glyph_key) {
+                    if let Some(stored_glyph) = self.mask_atlas.glyph_cache.get(&glyph_key) {
+                        dbg!("cache hit");
+                        let size_x = stored_glyph.alloc.rectangle.width();
+                        let size_y = stored_glyph.alloc.rectangle.height();
+                        let quad = Quad {
+                            pos: [full_glyph.quantized_pos_x, full_glyph.quantized_pos_y],
+                            dim: [size_x as u16, size_y as u16],
+                            uv: [stored_glyph.alloc.rectangle.min.x as u16, stored_glyph.alloc.rectangle.min.y as u16],
+                            color: full_glyph.color,
+                            depth: 0.0,
+                        };
+                        self.quads.push(quad);
                     } else {
-                        if let Some(stored_glyph) = self.store_glyph(&full_glyph, &mut scaler) {
-                            self.quads.push(stored_glyph.quad);
+                        dbg!("cache miss");
+                        if let Some(quad) = self.store_glyph(&full_glyph, &mut scaler) {
+                            self.quads.push(quad);
                         }
                     }
                 }
@@ -364,7 +375,7 @@ impl ContextlessTextRenderer {
     }
 
     /// If None, the glyph was just empty, like a spacebar,
-    fn store_glyph(&mut self, glyph: &FullGlyph, scaler: &mut Scaler) -> Option<StoredGlyph> {
+    fn store_glyph(&mut self, glyph: &FullGlyph, scaler: &mut Scaler) -> Option<Quad> {
         let glyph_key = glyph.key();
 
         self.render_glyph(&glyph, scaler);
@@ -372,6 +383,7 @@ impl ContextlessTextRenderer {
         let size = self.tmp_image.size();
 
         if size.is_empty() {
+            // todo: actually return the None
             return None;
         }
 
@@ -392,12 +404,11 @@ impl ContextlessTextRenderer {
             };
 
             let stored_glyph = StoredGlyph {
-                quad,
-                alloc_id: alloc.id,
+                alloc,
             };
             self.mask_atlas.glyph_cache.push(glyph_key, stored_glyph);
 
-            return Some(stored_glyph);
+            return Some(quad);
         } else {
             todo!("grow the atlas or figure other reasons why the alloc fails")
         };
