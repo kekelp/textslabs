@@ -1,17 +1,17 @@
-use bytemuck::{NoUninit, Pod, Zeroable};
+use bytemuck::{Pod, Zeroable};
 use etagere::euclid::{Size2D, UnknownUnit};
 use etagere::{Allocation, BucketedAtlasAllocator, size2};
 use lru::LruCache;
 use parley_atlas_renderer::*;
 use rustc_hash::FxHasher;
-use swash::zeno::{Format, Placement, Vector};
+use swash::zeno::{Format, Vector};
 
 use wgpu::*;
 
-use image::{GrayImage, Luma, Pixel, Rgba, RgbaImage};
+use image::{GrayImage, Luma, Rgba, RgbaImage};
 use parley::{
-    Alignment, AlignmentOptions, FontContext, FontStack, FontWeight, Glyph, GlyphRun, InlineBox,
-    Layout, LayoutContext, PositionedLayoutItem, StyleProperty, TextStyle,
+    Alignment, AlignmentOptions, FontContext, FontStack, Glyph, GlyphRun,
+    Layout, LayoutContext, PositionedLayoutItem, StyleProperty,
 };
 use std::borrow::Cow;
 use std::hash::BuildHasherDefault;
@@ -135,9 +135,10 @@ impl State {
                 self.text_renderer.gpu_load(&self.queue);
 
                 if self.show_atlas {
+                    let atlas_size = self.text_renderer.text_renderer.atlas_size;
                     let big_quad = vec![Quad {
                         pos: [9999, 0],
-                        dim: [SIZE as u16, SIZE as u16],
+                        dim: [atlas_size as u16, atlas_size as u16],
                         uv: [0, 0],
                         color: 0,
                         depth: 0.0,
@@ -210,7 +211,7 @@ impl winit::application::ApplicationHandler for Application {
 }
 
 fn text_layout() -> Layout<ColorBrush> {
-    let text = String::from("zsdfuasdhk"); // here1
+    let text = String::from("zsdfuasdhkssssssssssssssssssssssssssssssssssss"); // here1
 
     let display_scale = 1.0;
 
@@ -228,7 +229,7 @@ fn text_layout() -> Layout<ColorBrush> {
 
     builder.push_default(FontStack::from("system-ui"));
     builder.push_default(StyleProperty::LineHeight(1.3));
-    builder.push_default(StyleProperty::FontSize(25.85));
+    builder.push_default(StyleProperty::FontSize(24.0));
 
     // builder.push(StyleProperty::FontWeight(FontWeight::new(600.0)), 0..4);
 
@@ -293,12 +294,12 @@ struct ContextlessTextRenderer {
     tmp_image: Image,
     font_cx: FontContext,
     layout_cx: LayoutContext<ColorBrush>,
-
+    
     color_atlas: Atlas<RgbaImage>,
     mask_atlas: Atlas<GrayImage>,
-
+    
     bind_group: BindGroup,
-
+    
     params: Params,
     params_buffer: Buffer,
     params_bind_group: BindGroup,
@@ -307,6 +308,7 @@ struct ContextlessTextRenderer {
     vertex_buffer_size: u64,
     pipeline: RenderPipeline,
     quads: Vec<Quad>,
+    atlas_size: u32,
 }
 
 const SOURCES: &[Source; 3] = &[
@@ -337,17 +339,19 @@ pub(crate) struct Quad {
     depth: f32,
 }
 
-const SIZE: u32 = 500;
-
 impl ContextlessTextRenderer {
     fn new(device: &Device, _queue: &Queue) -> Self {
         let bg_color = Rgba([255, 0, 255, 255]);
 
+        // todo
+        // unused memory is wasted memory...?
+        let atlas_size = Limits::downlevel_defaults().max_texture_dimension_2d;
+
         let mask_texture = device.create_texture(&TextureDescriptor {
             label: Some("atlas"),
             size: Extent3d {
-                width: SIZE,
-                height: SIZE,
+                width: atlas_size,
+                height: atlas_size,
                 depth_or_array_layers: 1,
             },
             mip_level_count: 1,
@@ -360,18 +364,18 @@ impl ContextlessTextRenderer {
         let mask_texture_view = mask_texture.create_view(&TextureViewDescriptor::default());
 
         let mut mask_atlas = Atlas {
-            image: GrayImage::from_pixel(256, 256, Luma([0])),
+            image: GrayImage::from_pixel(atlas_size, atlas_size, Luma([0])),
             texture: mask_texture,
             texture_view: mask_texture_view,
-            packer: BucketedAtlasAllocator::new(size2(SIZE as i32, 2 * SIZE as i32)),
+            packer: BucketedAtlasAllocator::new(size2(atlas_size as i32, atlas_size as i32)),
             glyph_cache: LruCache::unbounded_with_hasher(Hasher::default()),
         };
 
         let color_texture = device.create_texture(&TextureDescriptor {
             label: Some("atlas"),
             size: Extent3d {
-                width: SIZE,
-                height: SIZE,
+                width: atlas_size,
+                height: atlas_size,
                 depth_or_array_layers: 1,
             },
             mip_level_count: 1,
@@ -384,10 +388,10 @@ impl ContextlessTextRenderer {
         let color_texture_view = color_texture.create_view(&TextureViewDescriptor::default());
 
         let mut color_atlas = Atlas {
-            image: RgbaImage::from_pixel(256, 256, bg_color),
+            image: RgbaImage::from_pixel(atlas_size, atlas_size, bg_color),
             texture: color_texture,
             texture_view: color_texture_view,
-            packer: BucketedAtlasAllocator::new(size2(SIZE as i32, SIZE as i32)),
+            packer: BucketedAtlasAllocator::new(size2(atlas_size as i32, atlas_size as i32)),
             glyph_cache: LruCache::unbounded_with_hasher(Hasher::default()),
         };
 
@@ -564,12 +568,8 @@ impl ContextlessTextRenderer {
             cache: None,
         });
 
-        let image_data = include_bytes!("../test copy.jpg");
-        let embedded_img = image::load_from_memory(image_data).unwrap();
-        color_atlas.image = embedded_img.to_rgba8();
-        mask_atlas.image = embedded_img.to_luma8();
-
         Self {
+            atlas_size,
             tmp_image: Image::new(),
             font_cx: FontContext::new(),
             layout_cx: LayoutContext::new(),
@@ -705,9 +705,9 @@ impl ContextlessTextRenderer {
             match self.tmp_image.content {
                 Content::Mask => {
                     if let Some(alloc) = self.mask_atlas.glyph_cache.get(&cache_key) {
-                        // println!("cache hit {:?}", cache_key);
+                        // eprintln!("cache hit {:?}", cache_key);
                     } else {
-                        eprintln!("cache miss {:?}", cache_key);
+                        // eprintln!("cache miss {:?}", cache_key);
 
                         self.render_glyph(glyph, cache_key, &mut scaler);
 
@@ -729,7 +729,6 @@ impl ContextlessTextRenderer {
                                 color,
                                 depth: 0.0,
                             };
-                            dbg!(quad);
                             self.quads.push(quad);
                         } else {
                             panic!("Grow o algo");
@@ -803,9 +802,6 @@ impl ContextlessTextRenderer {
             .format(Format::Alpha)
             .offset(cache_key.frac_offset())
             .render_into(scaler, glyph.id, &mut self.tmp_image);
-
-        dbg!(self.tmp_image.placement.width);
-        dbg!(glyph.advance);
     }
 }
 
