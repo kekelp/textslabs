@@ -30,7 +30,7 @@ pub struct ContextlessTextRenderer {
 
 pub(crate) struct Atlas<ImageType> {
     pub(crate) packer: BucketedAtlasAllocator,
-    pub(crate) glyph_cache: LruCache<GlyphKey, StoredGlyph, BuildHasherDefault<FxHasher>>,
+    pub(crate) glyph_cache: LruCache<GlyphKey, Option<StoredGlyph>, BuildHasherDefault<FxHasher>>,
     pub(crate) image: ImageType,
     pub(crate) texture: Texture, // the format here has to match the image type...
     pub(crate) texture_view: TextureView,
@@ -296,15 +296,13 @@ impl ContextlessTextRenderer {
             match self.tmp_image.content {
                 Content::Mask => {
                     if let Some(stored_glyph) = self.mask_atlas.glyph_cache.get(&full_glyph.key()) {
-                        dbg!("cache hit");
-                        let quad = get_quad(&full_glyph, stored_glyph);
-                        // do a pre-quad struct that contains the parts that can be cached?
-                        // and then store that in storedglyph
-                        // (for simplicity, just store the quad and edit the pos? no. don't do this.)
-                        // store the image placement basically
-                        self.quads.push(quad);
+                        if let Some(stored_glyph) = stored_glyph {
+                            let quad = get_quad(&full_glyph, stored_glyph);
+                            self.quads.push(quad);
+                        } else {
+                            // cache hit, but the stored glyph was empty, like a space. Do nothing.
+                        }
                     } else {
-                        dbg!("cache miss");
                         if let Some(quad) = self.store_glyph(&full_glyph, &mut scaler) {
                             self.quads.push(quad);
                         }
@@ -383,7 +381,7 @@ impl ContextlessTextRenderer {
 
     /// Render a glyph into the `self.tmp_swash_image` buffer
     fn render_glyph(&mut self, glyph: &GlyphWithContext, scaler: &mut Scaler) -> Placement {
-        self.tmp_image.clear();
+        // self.tmp_image.clear();
         Render::new(SOURCES)
             .format(Format::Alpha)
             .offset(glyph.frac_offset())
@@ -399,7 +397,7 @@ impl ContextlessTextRenderer {
         let size = placement.size();
 
         if placement.size().is_empty() {
-            // todo: actually return the None
+            self.mask_atlas.glyph_cache.push(glyph_key, None);
             return None;
         }
 
@@ -411,7 +409,7 @@ impl ContextlessTextRenderer {
                 placement_left: placement.left,
                 placement_top: placement.top
             };
-            self.mask_atlas.glyph_cache.push(glyph_key, stored_glyph);
+            self.mask_atlas.glyph_cache.push(glyph_key, Some(stored_glyph));
 
             let quad = get_quad(glyph, &stored_glyph);
 
