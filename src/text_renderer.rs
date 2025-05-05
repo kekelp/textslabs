@@ -1,7 +1,6 @@
-use etagere::Rectangle;
+use swash::zeno::Placement;
 
 use crate::*;
-
 
 pub struct TextRenderer {
     pub text_renderer: ContextlessTextRenderer,
@@ -77,6 +76,7 @@ fn quantize<const N: u8>(pos: f32) -> (i32, f32, SubpixelBin::<N>) {
         (trunc, compressed_bin as u8)
     };
     
+    // todo: return the fract rounded to the subpixel bin 
     return (adjusted_trunc, fract, SubpixelBin::<N>(bin))
 }
 
@@ -100,10 +100,29 @@ pub struct Quad {
     pub depth: f32,
 }
 
+fn get_quad(glyph: &GlyphWithContext, stored_glyph: &StoredGlyph) -> Quad {
+    let scale_factor = 1.0; // todo, what is this
+    let line_y = (glyph.run_y * scale_factor).round() as i32;
+    let y = line_y + glyph.quantized_pos_y - stored_glyph.placement_top as i32;
+    let x = glyph.quantized_pos_x + stored_glyph.placement_left as i32;
+
+    let (dim_x, dim_y) = (stored_glyph.alloc.rectangle.min.x, stored_glyph.alloc.rectangle.min.y);
+    let (size_x, size_y) = (stored_glyph.alloc.rectangle.width(), stored_glyph.alloc.rectangle.height());
+    return Quad {
+        pos: [x, y],
+        dim: [size_x as u16, size_y as u16],
+        uv_origin: [dim_x as u16, dim_y as u16],
+        color: glyph.color,
+        depth: 0.0,
+    };
+}
+
 /// A glyph as stored in a glyph atlas.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct StoredGlyph {
-    alloc: Allocation, // todo change this wtf
+    alloc: Allocation,
+    placement_left: i32,
+    placement_top: i32
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -274,21 +293,22 @@ impl ContextlessTextRenderer {
 
             run_x += glyph.advance;
 
-            let glyph_key = full_glyph.key();
-
             match self.tmp_image.content {
                 Content::Mask => {
-                    // if let Some(stored_glyph) = self.mask_atlas.glyph_cache.get(&glyph_key) {
-                    //     dbg!("cache hit");
-                    //     let alloc = stored_glyph.alloc;
-                    //     let quad = self.get_quad(&full_glyph, alloc);
-                    //     self.quads.push(quad);
-                    // } else {
+                    if let Some(stored_glyph) = self.mask_atlas.glyph_cache.get(&full_glyph.key()) {
+                        dbg!("cache hit");
+                        let quad = get_quad(&full_glyph, stored_glyph);
+                        // do a pre-quad struct that contains the parts that can be cached?
+                        // and then store that in storedglyph
+                        // (for simplicity, just store the quad and edit the pos? no. don't do this.)
+                        // store the image placement basically
+                        self.quads.push(quad);
+                    } else {
                         dbg!("cache miss");
                         if let Some(quad) = self.store_glyph(&full_glyph, &mut scaler) {
                             self.quads.push(quad);
                         }
-                    // }
+                    }
                 }
                 Content::SubpixelMask => unimplemented!(),
                 Content::Color => {
@@ -362,22 +382,23 @@ impl ContextlessTextRenderer {
     }
 
     /// Render a glyph into the `self.tmp_swash_image` buffer
-    fn render_glyph(&mut self, glyph: &GlyphWithContext, scaler: &mut Scaler) -> Size2D<i32, UnknownUnit> {
+    fn render_glyph(&mut self, glyph: &GlyphWithContext, scaler: &mut Scaler) -> Placement {
         self.tmp_image.clear();
         Render::new(SOURCES)
             .format(Format::Alpha)
             .offset(glyph.frac_offset())
             .render_into(scaler, glyph.glyph.id, &mut self.tmp_image);
-        return self.tmp_image.size();
+        return self.tmp_image.placement;
     }
 
     /// Rasterizes the glyph in a texture atlas and returns a Quad that can be used to render it, or None if the glyph was just empty (like a space).
     fn store_glyph(&mut self, glyph: &GlyphWithContext, scaler: &mut Scaler) -> Option<Quad> {
         let glyph_key = glyph.key();
 
-        let size = self.render_glyph(&glyph, scaler);
+        let placement = self.render_glyph(&glyph, scaler);
+        let size = placement.size();
 
-        if size.is_empty() {
+        if placement.size().is_empty() {
             // todo: actually return the None
             return None;
         }
@@ -385,36 +406,23 @@ impl ContextlessTextRenderer {
         if let Some(alloc) = self.mask_atlas.packer.allocate(size) {
             self.copy_glyph_to_atlas(size, &alloc);
 
-            let quad = self.get_quad(glyph, alloc);
-
-            let stored_glyph = StoredGlyph { alloc, };
+            let stored_glyph = StoredGlyph {
+                alloc,
+                placement_left: placement.left,
+                placement_top: placement.top
+            };
             self.mask_atlas.glyph_cache.push(glyph_key, stored_glyph);
+
+            let quad = get_quad(glyph, &stored_glyph);
 
             return Some(quad);
         } else {
             todo!("grow the atlas or figure other reasons why the alloc fails")
         };
     }
-
-    fn get_quad(&self, glyph: &GlyphWithContext, alloc: Allocation) -> Quad {
-        let scale_factor = 1.0; // todo, what is this
-        let line_y = (glyph.run_y * scale_factor).round() as i32;
-        let y = line_y + glyph.quantized_pos_y - self.tmp_image.placement.top as i32;
-        let x = glyph.quantized_pos_x + self.tmp_image.placement.left as i32;
-
-        let (dim_x, dim_y) = (alloc.rectangle.min.x, alloc.rectangle.min.y);
-        let (size_x, size_y) = (alloc.rectangle.width(), alloc.rectangle.height());
-        return Quad {
-            pos: [x, y],
-            dim: [size_x as u16, size_y as u16],
-            uv_origin: [dim_x as u16, dim_y as u16],
-            color: glyph.color,
-            depth: 0.0,
-        };
-    }
 }
 
-/// A glyph with the context about it is being drawn 
+/// A glyph with the context in which it is being drawn 
 struct GlyphWithContext {
     glyph: Glyph,
     color: u32,
@@ -477,8 +485,8 @@ impl GlyphWithContext {
 trait UselessTrait2 {
     fn size(&self) -> Size2D<i32, UnknownUnit>;
 }
-impl UselessTrait2 for Image {
+impl UselessTrait2 for Placement {
     fn size(&self) -> Size2D<i32, UnknownUnit> {
-        size2(self.placement.width as i32, self.placement.height as i32)
+        size2(self.width as i32, self.height as i32)
     }
 }
