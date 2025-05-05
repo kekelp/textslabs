@@ -28,10 +28,11 @@ impl ContextlessTextRenderer {
             glyph_cache: LruCache::unbounded_with_hasher(BuildHasherDefault::<FxHasher>::default()),
             pages: vec![AtlasPage::<GrayImage> {
                 image: GrayImage::from_pixel(atlas_size, atlas_size, Luma([0])),
-                texture: mask_texture,
-                texture_view: mask_texture_view,
+                last_frame_evicted: 0,
                 packer: BucketedAtlasAllocator::new(size2(atlas_size as i32, atlas_size as i32)),
-            }]
+                texture: Some(mask_texture),
+                texture_view: Some(mask_texture_view),
+            }],
         };
 
         let color_texture = device.create_texture(&TextureDescriptor {
@@ -53,9 +54,10 @@ impl ContextlessTextRenderer {
         let color_atlas = Atlas::<RgbaImage> {
             glyph_cache: LruCache::unbounded_with_hasher(BuildHasherDefault::<FxHasher>::default()),
             pages: vec![AtlasPage::<RgbaImage> {
+                last_frame_evicted: 0,
                 image: RgbaImage::from_pixel(atlas_size, atlas_size, bg_color),
-                texture: color_texture,
-                texture_view: color_texture_view,
+                texture: Some(color_texture),
+                texture_view: Some(color_texture_view),
                 packer: BucketedAtlasAllocator::new(size2(atlas_size as i32, atlas_size as i32)),
             }]
         };
@@ -184,11 +186,11 @@ impl ContextlessTextRenderer {
             entries: &[
                 BindGroupEntry {
                     binding: 0,
-                    resource: BindingResource::TextureView(&color_atlas.pages[0].texture_view),
+                    resource: BindingResource::TextureView(&color_atlas.pages[0].texture_view.as_ref().unwrap()),
                 },
                 BindGroupEntry {
                     binding: 1,
-                    resource: BindingResource::TextureView(&mask_atlas.pages[0].texture_view),
+                    resource: BindingResource::TextureView(&mask_atlas.pages[0].texture_view.as_ref().unwrap()),
                 },
                 BindGroupEntry {
                     binding: 2,
@@ -234,6 +236,7 @@ impl ContextlessTextRenderer {
         });
 
         Self {
+            frame: 1,
             atlas_size,
             tmp_image: Image::new(),
             font_cx: FontContext::new(),

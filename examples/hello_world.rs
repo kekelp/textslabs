@@ -118,7 +118,7 @@ impl State {
                 self.text_renderer.prepare_layout(&self.text_layout);
                 println!("prepare(): {:?}", now.elapsed());
 
-                self.text_renderer.gpu_load(&self.queue);
+                self.text_renderer.gpu_load(&self.device, &self.queue);
 
                 if self.show_atlas {
                     let atlas_size = self.text_renderer.text_renderer.atlas_size;

@@ -8,6 +8,7 @@ pub struct TextRenderer {
 }
 
 pub struct ContextlessTextRenderer {
+    pub frame: u64,
     pub tmp_image: Image,
     pub font_cx: FontContext,
     pub layout_cx: LayoutContext<ColorBrush>,
@@ -35,17 +36,39 @@ pub(crate) struct Atlas<ImageType> {
 
 pub(crate) struct AtlasPage<ImageType> {
     pub(crate) packer: BucketedAtlasAllocator,
+    pub(crate) last_frame_evicted: u64,
     pub(crate) image: ImageType,
-    pub(crate) texture: Texture, // the format here has to match the image type...
-    pub(crate) texture_view: TextureView,
+    pub(crate) texture: Option<Texture>, // the format here has to match the image type...
+    pub(crate) texture_view: Option<TextureView>,
 }
 
+
 impl Atlas<GrayImage> {
-    pub fn gpu_load(&mut self, queue: &Queue) {
-        for page in &self.pages {
+    pub fn gpu_load(&mut self, queue: &Queue, device: &Device, atlas_size: u32) {
+        for page in &mut self.pages {
+            if page.texture.is_none() {
+                let texture = device.create_texture(&TextureDescriptor {
+                    label: Some("atlas"),
+                    size: Extent3d {
+                        width: atlas_size,
+                        height: atlas_size,
+                        depth_or_array_layers: 1,
+                    },
+                    mip_level_count: 1,
+                    sample_count: 1,
+                    dimension: TextureDimension::D2,
+                    format: TextureFormat::R8Unorm,
+                    usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
+                    view_formats: &[],
+                });
+                let texture_view = texture.create_view(&TextureViewDescriptor::default());
+                page.texture = Some(texture);       
+                page.texture_view = Some(texture_view);       
+            }
+
             queue.write_texture(
                 TexelCopyTextureInfo {
-                    texture: &page.texture,
+                    texture: &page.texture.as_ref().unwrap(),
                     mip_level: 0,
                     origin: Origin3d { x: 0, y: 0, z: 0 },
                     aspect: TextureAspect::All,
@@ -65,6 +88,17 @@ impl Atlas<GrayImage> {
         }
     }
 }
+
+impl<ImageType> AtlasPage<ImageType> {
+    fn evict_old_glyphs(&mut self) {
+        todo!()
+    }
+
+    fn needs_evicting(&self, current_frame: u64) -> bool {
+        self.last_frame_evicted == current_frame
+    }
+}
+
 
 /// Key for building a glyph cache
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -151,6 +185,7 @@ fn get_quad(glyph: &GlyphWithContext, stored_glyph: &StoredGlyph) -> Quad {
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct StoredGlyph {
     page: u16,
+    frame: u64,
     alloc: Allocation,
     placement_left: i32,
     placement_top: i32,
@@ -194,15 +229,15 @@ impl TextRenderer {
     }
 
     pub fn clear(&mut self) {
-        self.text_renderer.quads.clear();
+        self.text_renderer.clear();
     }
 
     pub fn prepare_layout(&mut self, layout: &Layout<ColorBrush>) {
         self.text_renderer.prepare_layout(layout, &mut self.scale_cx);
     }
 
-    pub fn gpu_load(&mut self, queue: &Queue) {
-        self.text_renderer.gpu_load(queue);
+    pub fn gpu_load(&mut self, device: &Device, queue: &Queue) {
+        self.text_renderer.gpu_load(device, queue);
     }
 
     pub fn render(&self, pass: &mut RenderPass<'_>) {
@@ -229,6 +264,11 @@ impl ContextlessTextRenderer {
         pass.draw(0..4, 0..self.quads.len() as u32);
     }
 
+    pub fn clear(&mut self) {
+        self.frame += 1;
+        self.quads.clear();
+    }
+
     fn prepare_layout(&mut self, layout: &Layout<ColorBrush>, scale_cx: &mut ScaleContext) {
         for line in layout.lines() {
             for item in line.items() {
@@ -242,7 +282,7 @@ impl ContextlessTextRenderer {
         }
     }
 
-    fn gpu_load(&mut self, queue: &Queue) {
+    fn gpu_load(&mut self, device: &Device, queue: &Queue) {
         // todo: check what is actually needed
         queue.write_buffer(&self.params_buffer, 0, unsafe {
             core::slice::from_raw_parts(
@@ -254,8 +294,7 @@ impl ContextlessTextRenderer {
         let bytes: &[u8] = bytemuck::cast_slice(&self.quads);
         queue.write_buffer(&self.vertex_buffer, 0, &bytes);
         
-        self.mask_atlas.gpu_load(queue);
-
+        self.mask_atlas.gpu_load(queue, device, self.atlas_size);
         // todo: color atlas
     }
 
@@ -264,7 +303,6 @@ impl ContextlessTextRenderer {
         glyph_run: &GlyphRun<'_, ColorBrush>,
         scale_cx: &mut ScaleContext,
     ) {
-        // Resolve properties of the GlyphRun
         let mut run_x = glyph_run.offset();
         let run_y = glyph_run.baseline();
         let style = glyph_run.style();
@@ -284,44 +322,19 @@ impl ContextlessTextRenderer {
             .build();
 
         for glyph in glyph_run.glyphs() {
-            let full_glyph = GlyphWithContext::new(glyph, run_x, run_y, font_key, font_size, style.brush.color);
+            let glyph_ctx = GlyphWithContext::new(glyph, run_x, run_y, font_key, font_size, style.brush.color);
 
             run_x += glyph.advance;
 
-            match self.tmp_image.content {
-                Content::Mask => {
-                    if let Some(stored_glyph) = self.mask_atlas.glyph_cache.get(&full_glyph.key()) {
-                        if let Some(stored_glyph) = stored_glyph {
-                            let quad = get_quad(&full_glyph, stored_glyph);
-                            self.quads.push(quad);
-                        } else {
-                            // cache hit, but the stored glyph was empty, like a space. Do nothing.
-                        }
-                    } else {
-                        if let Some(quad) = self.store_glyph(&full_glyph, &mut scaler) {
-                            self.quads.push(quad);
-                        }
-                    }
-                }
-                Content::SubpixelMask => unimplemented!(),
-                Content::Color => {
-                    // let alloc = self.color_atlas.allocate(size, cache_key);
-                    // let glyph_x = alloc.rectangle.min.x;
-                    // let glyph_y = alloc.rectangle.min.y;
-
-                    // let row_size = glyph_width as usize * 4;
-                    // for (pixel_y, row) in
-                    //     self.tmp_swash_image.data.chunks_exact(row_size).enumerate()
-                    // {
-                    //     // todo: surely this could just be a single memcpy?
-                    //     for (pixel_x, pixel) in row.chunks_exact(4).enumerate() {
-                    //         let (pixel_x, pixel_y) = (pixel_x as i32, pixel_y as i32);
-                    //         let x = glyph_x + pixel_x;
-                    //         let y = glyph_y + pixel_y;
-                    //         let color = Rgba(pixel.try_into().expect("Not RGBA"));
-                    //         *self.color_atlas.image.get_pixel_mut(x as u32, y as u32) = color;
-                    //     }
-                    // }
+            if let Some(stored_glyph) = self.mask_atlas.glyph_cache.get(&glyph_ctx.key()) {
+                if let Some(stored_glyph) = stored_glyph {
+                    let quad = get_quad(&glyph_ctx, stored_glyph);
+                    self.quads.push(quad);
+                } 
+                // else: cache hit, but the stored glyph was empty, like a space. Do nothing.
+            } else {
+                if let Some(quad) = self.store_glyph(&glyph_ctx, &mut scaler) {
+                    self.quads.push(quad);
                 }
             }
         }
@@ -388,32 +401,60 @@ impl ContextlessTextRenderer {
     /// Rasterizes the glyph in a texture atlas and returns a Quad that can be used to render it, or None if the glyph was just empty (like a space).
     fn store_glyph(&mut self, glyph: &GlyphWithContext, scaler: &mut Scaler) -> Option<Quad> {
         let glyph_key = glyph.key();
-
         let placement = self.render_glyph(&glyph, scaler);
-        let size = placement.size();
 
+        let size = placement.size();
         if placement.size().is_empty() {
             self.mask_atlas.glyph_cache.push(glyph_key, None);
             return None;
         }
 
-        if let Some(alloc) = self.mask_atlas.pages[0].packer.allocate(size) {
-            self.copy_glyph_to_atlas(size, &alloc);
+        let mut page = 0;
 
-            let stored_glyph = StoredGlyph {
-                page: 0,
-                alloc,
-                placement_left: placement.left,
-                placement_top: placement.top
+        loop {
+            if page >= self.mask_atlas.pages.len() {
+                self.make_new_mask_atlas_page();
+            }
+
+            if let Some(alloc) = self.mask_atlas.pages[0].packer.allocate(size) {
+                self.copy_glyph_to_atlas(size, &alloc);
+    
+                let stored_glyph = StoredGlyph {
+                    page: page as u16,
+                    frame: self.frame,
+                    alloc,
+                    placement_left: placement.left,
+                    placement_top: placement.top
+                };
+                self.mask_atlas.glyph_cache.push(glyph_key, Some(stored_glyph));
+    
+                let quad = get_quad(glyph, &stored_glyph);
+    
+                return Some(quad);
+            } else {
+                if self.mask_atlas.pages[page].needs_evicting(self.frame) {
+                    self.mask_atlas.pages[page].evict_old_glyphs();
+                    // continue loop and retry on the same page
+                } else {
+                    // retry on the next page
+                    page += 1;
+                }
             };
-            self.mask_atlas.glyph_cache.push(glyph_key, Some(stored_glyph));
+        }
 
-            let quad = get_quad(glyph, &stored_glyph);
+    }
 
-            return Some(quad);
-        } else {
-            todo!("grow the atlas or figure other reasons why the alloc fails")
-        };
+    fn make_new_mask_atlas_page(&mut self) {
+        let atlas_size = self.atlas_size;
+
+        self.mask_atlas.pages.push(AtlasPage::<GrayImage> {
+            image: GrayImage::from_pixel(atlas_size, atlas_size, Luma([0])),
+            last_frame_evicted: 0,
+            packer: BucketedAtlasAllocator::new(size2(atlas_size as i32, atlas_size as i32)),
+            texture: None,
+            texture_view: None,
+        });
+
     }
 }
 
