@@ -381,7 +381,7 @@ impl ContextlessTextRenderer {
 
     /// Render a glyph into the `self.tmp_swash_image` buffer
     fn render_glyph(&mut self, glyph: &GlyphWithContext, scaler: &mut Scaler) -> Placement {
-        // self.tmp_image.clear();
+        self.tmp_image.clear();
         Render::new(SOURCES)
             .format(Format::Alpha)
             .offset(glyph.frac_offset())
