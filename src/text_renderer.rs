@@ -29,11 +29,41 @@ pub struct ContextlessTextRenderer {
 }
 
 pub(crate) struct Atlas<ImageType> {
-    pub(crate) packer: BucketedAtlasAllocator,
     pub(crate) glyph_cache: LruCache<GlyphKey, Option<StoredGlyph>, BuildHasherDefault<FxHasher>>,
+    pub(crate) pages: Vec<AtlasPage<ImageType>>,
+}
+
+pub(crate) struct AtlasPage<ImageType> {
+    pub(crate) packer: BucketedAtlasAllocator,
     pub(crate) image: ImageType,
     pub(crate) texture: Texture, // the format here has to match the image type...
     pub(crate) texture_view: TextureView,
+}
+
+impl Atlas<GrayImage> {
+    pub fn gpu_load(&mut self, queue: &Queue) {
+        for page in &self.pages {
+            queue.write_texture(
+                TexelCopyTextureInfo {
+                    texture: &page.texture,
+                    mip_level: 0,
+                    origin: Origin3d { x: 0, y: 0, z: 0 },
+                    aspect: TextureAspect::All,
+                },
+                &page.image.as_raw(),
+                TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(page.image.width()),
+                    rows_per_image: None,
+                },
+                Extent3d {
+                    width: page.image.width(),
+                    height: page.image.height(),
+                    depth_or_array_layers: 1,
+                },
+            );
+        }
+    }
 }
 
 /// Key for building a glyph cache
@@ -120,9 +150,10 @@ fn get_quad(glyph: &GlyphWithContext, stored_glyph: &StoredGlyph) -> Quad {
 /// A glyph as stored in a glyph atlas.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct StoredGlyph {
+    page: u16,
     alloc: Allocation,
     placement_left: i32,
-    placement_top: i32
+    placement_top: i32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -223,45 +254,9 @@ impl ContextlessTextRenderer {
         let bytes: &[u8] = bytemuck::cast_slice(&self.quads);
         queue.write_buffer(&self.vertex_buffer, 0, &bytes);
         
-        queue.write_texture(
-            TexelCopyTextureInfo {
-                texture: &self.mask_atlas.texture,
-                mip_level: 0,
-                origin: Origin3d { x: 0, y: 0, z: 0 },
-                aspect: TextureAspect::All,
-            },
-            &self.mask_atlas.image.as_raw(),
-            TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(self.mask_atlas.image.width()),
-                rows_per_image: None,
-            },
-            Extent3d {
-                width: self.mask_atlas.image.width(),
-                height: self.mask_atlas.image.height(),
-                depth_or_array_layers: 1,
-            },
-        );
+        self.mask_atlas.gpu_load(queue);
 
-        queue.write_texture(
-            TexelCopyTextureInfo {
-                texture: &self.color_atlas.texture,
-                mip_level: 0,
-                origin: Origin3d { x: 0, y: 0, z: 0 },
-                aspect: TextureAspect::All,
-            },
-            &self.color_atlas.image.as_raw(),
-            TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(self.color_atlas.image.width() * 4),
-                rows_per_image: None,
-            },
-            Extent3d {
-                width: self.color_atlas.image.width(),
-                height: self.color_atlas.image.height(),
-                depth_or_array_layers: 1,
-            },
-        );
+        // todo: color atlas
     }
 
     fn prepare_glyph_run(
@@ -368,8 +363,9 @@ impl ContextlessTextRenderer {
             let dst_y = (alloc.rectangle.min.y + y) as u32;
             let dst_x = alloc.rectangle.min.x as u32;
 
-            let layout = self.mask_atlas.image.as_flat_samples().layout;
-            let mut samples = self.mask_atlas.image.as_flat_samples_mut();
+            // todo dont do this
+            let layout = self.mask_atlas.pages[0].image.as_flat_samples().layout;
+            let mut samples = self.mask_atlas.pages[0].image.as_flat_samples_mut();
             let samples = samples.as_mut_slice();
 
             let dst_start =
@@ -401,10 +397,11 @@ impl ContextlessTextRenderer {
             return None;
         }
 
-        if let Some(alloc) = self.mask_atlas.packer.allocate(size) {
+        if let Some(alloc) = self.mask_atlas.pages[0].packer.allocate(size) {
             self.copy_glyph_to_atlas(size, &alloc);
 
             let stored_glyph = StoredGlyph {
+                page: 0,
                 alloc,
                 placement_left: placement.left,
                 placement_top: placement.top

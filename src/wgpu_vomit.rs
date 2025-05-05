@@ -24,12 +24,14 @@ impl ContextlessTextRenderer {
         });
         let mask_texture_view = mask_texture.create_view(&TextureViewDescriptor::default());
 
-        let mask_atlas = Atlas {
-            image: GrayImage::from_pixel(atlas_size, atlas_size, Luma([0])),
-            texture: mask_texture,
-            texture_view: mask_texture_view,
-            packer: BucketedAtlasAllocator::new(size2(atlas_size as i32, atlas_size as i32)),
+        let mask_atlas = Atlas::<GrayImage> {
             glyph_cache: LruCache::unbounded_with_hasher(BuildHasherDefault::<FxHasher>::default()),
+            pages: vec![AtlasPage::<GrayImage> {
+                image: GrayImage::from_pixel(atlas_size, atlas_size, Luma([0])),
+                texture: mask_texture,
+                texture_view: mask_texture_view,
+                packer: BucketedAtlasAllocator::new(size2(atlas_size as i32, atlas_size as i32)),
+            }]
         };
 
         let color_texture = device.create_texture(&TextureDescriptor {
@@ -48,12 +50,14 @@ impl ContextlessTextRenderer {
         });
         let color_texture_view = color_texture.create_view(&TextureViewDescriptor::default());
 
-        let color_atlas = Atlas {
-            image: RgbaImage::from_pixel(atlas_size, atlas_size, bg_color),
-            texture: color_texture,
-            texture_view: color_texture_view,
-            packer: BucketedAtlasAllocator::new(size2(atlas_size as i32, atlas_size as i32)),
+        let color_atlas = Atlas::<RgbaImage> {
             glyph_cache: LruCache::unbounded_with_hasher(BuildHasherDefault::<FxHasher>::default()),
+            pages: vec![AtlasPage::<RgbaImage> {
+                image: RgbaImage::from_pixel(atlas_size, atlas_size, bg_color),
+                texture: color_texture,
+                texture_view: color_texture_view,
+                packer: BucketedAtlasAllocator::new(size2(atlas_size as i32, atlas_size as i32)),
+            }]
         };
 
         let vertex_buffer_size = 4096 * 9;
@@ -180,11 +184,11 @@ impl ContextlessTextRenderer {
             entries: &[
                 BindGroupEntry {
                     binding: 0,
-                    resource: BindingResource::TextureView(&color_atlas.texture_view),
+                    resource: BindingResource::TextureView(&color_atlas.pages[0].texture_view),
                 },
                 BindGroupEntry {
                     binding: 1,
-                    resource: BindingResource::TextureView(&mask_atlas.texture_view),
+                    resource: BindingResource::TextureView(&mask_atlas.pages[0].texture_view),
                 },
                 BindGroupEntry {
                     binding: 2,
