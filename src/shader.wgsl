@@ -94,6 +94,6 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     // // debug
     // var color = textureSampleLevel(mask_atlas_texture, atlas_sampler, input.uv, 0.0);
     // return vec4<f32>(color.rgb, 1.0);
-    // return vec4f(input.uv.x, 0.0, input.uv.y, 1.0); // box
 
+    // return vec4f(input.uv.x, 0.0, input.uv.y, 1.0); // box
 }

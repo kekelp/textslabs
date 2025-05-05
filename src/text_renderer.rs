@@ -162,9 +162,12 @@ impl TextRenderer {
         }
     }
 
-    pub fn prepare(&mut self, layout: &Layout<ColorBrush>) {
-        self.text_renderer
-            .prepare(layout, &mut self.scale_cx);
+    pub fn clear(&mut self) {
+        self.text_renderer.quads.clear();
+    }
+
+    pub fn prepare_layout(&mut self, layout: &Layout<ColorBrush>) {
+        self.text_renderer.prepare_layout(layout, &mut self.scale_cx);
     }
 
     pub fn gpu_load(&mut self, queue: &Queue) {
@@ -195,11 +198,8 @@ impl ContextlessTextRenderer {
         pass.draw(0..4, 0..self.quads.len() as u32);
     }
 
-    fn prepare(&mut self, layout: &Layout<ColorBrush>, scale_cx: &mut ScaleContext) {
-        self.quads.clear();
-        // Iterate over laid out lines
+    fn prepare_layout(&mut self, layout: &Layout<ColorBrush>, scale_cx: &mut ScaleContext) {
         for line in layout.lines() {
-            // Iterate over GlyphRun's within each line
             for item in line.items() {
                 match item {
                     PositionedLayoutItem::GlyphRun(glyph_run) => {

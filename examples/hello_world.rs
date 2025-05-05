@@ -114,7 +114,8 @@ impl State {
 
 
                 let now = std::time::Instant::now();
-                self.text_renderer.prepare(&self.text_layout);
+                self.text_renderer.clear();
+                self.text_renderer.prepare_layout(&self.text_layout);
                 println!("prepare(): {:?}", now.elapsed());
 
                 self.text_renderer.gpu_load(&self.queue);
@@ -196,7 +197,8 @@ impl winit::application::ApplicationHandler for Application {
 }
 
 fn text_layout() -> Layout<ColorBrush> {
-    let text = String::from("Lorem ipsum\tdolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum. O algo."); // here1
+    let text = String::from("Lorem ipsum\tdolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum. O algo.
+    ヘッケはこれらのL-函数が全複素平面へ有理型接続を持ち、指標が自明であるときには s = 1 でオーダー 1 である極を持ち、それ以外では解析的であることを証明した。原始ヘッケ指標（原始ディリクレ指標に同じ方法である modulus に相対的に定義された）に対し、ヘッケは、これらのL-函数が指標の L-函数の函数等式を満たし、L-函数の複素共役指標であることを示した。 主イデアル上の座と、無限での座を含む全ての例外有限集合の上で 1 である単円の上への写像を取ることで、イデール類群の指標 ψ を考える。すると、ψ はイデアル群 IS の指標 χ を生成し、イデアル群は S 上に入らない素イデアル上の自由アーベル群となる。"); // here1
 
     let display_scale = 1.0;
 
