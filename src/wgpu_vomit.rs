@@ -1,5 +1,27 @@
 use crate::*;
 
+const ATLAS_BIND_GROUP_LAYOUT: BindGroupLayoutDescriptor = wgpu::BindGroupLayoutDescriptor {
+    entries: &[
+        BindGroupLayoutEntry {
+            binding: 0,
+            visibility: ShaderStages::VERTEX.union(ShaderStages::FRAGMENT),
+            ty: BindingType::Texture {
+                multisampled: false,
+                view_dimension: TextureViewDimension::D2,
+                sample_type: TextureSampleType::Float { filterable: true },
+            },
+            count: None,
+        },
+        BindGroupLayoutEntry {
+            binding: 1,
+            visibility: ShaderStages::FRAGMENT,
+            ty: BindingType::Sampler(SamplerBindingType::Filtering),
+            count: None,
+        },
+    ],
+    label: Some("atlas bind group layout"),
+};
+
 impl ContextlessTextRenderer {
     pub(crate) fn new(device: &Device, _queue: &Queue) -> Self {
         let bg_color = Rgba([255, 0, 255, 255]);
@@ -7,7 +29,7 @@ impl ContextlessTextRenderer {
         // todo
         // unused memory is wasted memory...?
         // let atlas_size = Limits::downlevel_webgl2_defaults().max_texture_dimension_2d;
-        let atlas_size = 512;
+        let atlas_size = 256;
 
         let mask_texture = device.create_texture(&TextureDescriptor {
             label: Some("atlas"),
@@ -33,20 +55,6 @@ impl ContextlessTextRenderer {
             mapped_at_creation: false,
         });
 
-        let mask_atlas = Atlas::<GrayImage> {
-            glyph_cache: LruCache::unbounded_with_hasher(BuildHasherDefault::<FxHasher>::default()),
-            pages: vec![AtlasPage::<GrayImage> {
-                image: GrayImage::from_pixel(atlas_size, atlas_size, Luma([0])),
-                last_frame_evicted: 0,
-                packer: BucketedAtlasAllocator::new(size2(atlas_size as i32, atlas_size as i32)),
-                texture: Some(mask_texture),
-                texture_view: Some(mask_texture_view),
-                quads: Vec::<Quad>::with_capacity(300),
-                vertex_buffer: Some(mask_vertex_buffer),
-                vertex_buffer_size: mask_vertex_buffer_size,
-            }],
-        };
-
         let color_texture = device.create_texture(&TextureDescriptor {
             label: Some("atlas"),
             size: Extent3d {
@@ -70,21 +78,6 @@ impl ContextlessTextRenderer {
             usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-
-
-        let color_atlas = Atlas::<RgbaImage> {
-            glyph_cache: LruCache::unbounded_with_hasher(BuildHasherDefault::<FxHasher>::default()),
-            pages: vec![AtlasPage::<RgbaImage> {
-                last_frame_evicted: 0,
-                image: RgbaImage::from_pixel(atlas_size, atlas_size, bg_color),
-                texture: Some(color_texture),
-                texture_view: Some(color_texture_view),
-                packer: BucketedAtlasAllocator::new(size2(atlas_size as i32, atlas_size as i32)),
-                quads: Vec::<Quad>::with_capacity(50),
-                vertex_buffer: Some(color_vertex_buffer),
-                vertex_buffer_size: color_vertex_buffer_size,
-            }]
-        };
 
         let sampler = device.create_sampler(&SamplerDescriptor {
             label: Some("sampler"),
@@ -165,7 +158,7 @@ impl ContextlessTextRenderer {
             label: Some("uniforms bind group layout"),
         });
 
-        let atlas_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        let atlas_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             entries: &[
                 BindGroupLayoutEntry {
                     binding: 0,
@@ -179,16 +172,6 @@ impl ContextlessTextRenderer {
                 },
                 BindGroupLayoutEntry {
                     binding: 1,
-                    visibility: ShaderStages::VERTEX | ShaderStages::FRAGMENT,
-                    ty: BindingType::Texture {
-                        multisampled: false,
-                        view_dimension: TextureViewDimension::D2,
-                        sample_type: TextureSampleType::Float { filterable: true },
-                    },
-                    count: None,
-                },
-                BindGroupLayoutEntry {
-                    binding: 2,
                     visibility: ShaderStages::FRAGMENT,
                     ty: BindingType::Sampler(SamplerBindingType::Filtering),
                     count: None,
@@ -198,27 +181,38 @@ impl ContextlessTextRenderer {
         });
 
         let bind_group = device.create_bind_group(&BindGroupDescriptor {
-            layout: &atlas_layout,
+            layout: &atlas_bind_group_layout,
             entries: &[
                 BindGroupEntry {
                     binding: 0,
-                    resource: BindingResource::TextureView(&color_atlas.pages[0].texture_view.as_ref().unwrap()),
+                    resource: BindingResource::TextureView(&mask_texture_view),
                 },
                 BindGroupEntry {
                     binding: 1,
-                    resource: BindingResource::TextureView(&mask_atlas.pages[0].texture_view.as_ref().unwrap()),
-                },
-                BindGroupEntry {
-                    binding: 2,
                     resource: BindingResource::Sampler(&sampler),
                 },
             ],
             label: Some("atlas bind group"),
         });
 
+        let mask_atlas = Atlas::<GrayImage> {
+            glyph_cache: LruCache::unbounded_with_hasher(BuildHasherDefault::<FxHasher>::default()),
+            pages: vec![AtlasPage::<GrayImage> {
+                image: GrayImage::from_pixel(atlas_size, atlas_size, Luma([0])),
+                last_frame_evicted: 0,
+                packer: BucketedAtlasAllocator::new(size2(atlas_size as i32, atlas_size as i32)),
+                texture: Some(mask_texture),
+                texture_view: Some(mask_texture_view),
+                quads: Vec::<Quad>::with_capacity(300),
+                vertex_buffer: Some(mask_vertex_buffer),
+                vertex_buffer_size: mask_vertex_buffer_size,
+                bind_group: Some(bind_group),
+            }],
+        };
+
         let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: None,
-            bind_group_layouts: &[&atlas_layout, &uniforms_layout],
+            bind_group_layouts: &[&atlas_bind_group_layout, &uniforms_layout],
             push_constant_ranges: &[],
         });
 
@@ -257,10 +251,11 @@ impl ContextlessTextRenderer {
             tmp_image: Image::new(),
             font_cx: FontContext::new(),
             layout_cx: LayoutContext::new(),
-            color_atlas,
             mask_atlas,
             pipeline,
-            bind_group,
+            
+            atlas_bind_group_layout,
+            sampler,
 
             params,
             params_buffer,

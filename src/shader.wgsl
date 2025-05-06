@@ -20,12 +20,9 @@ struct Params {
 };
 
 @group(0) @binding(0)
-var color_atlas_texture: texture_2d<f32>;
-
-@group(0) @binding(1)
 var mask_atlas_texture: texture_2d<f32>;
 
-@group(0) @binding(2)
+@group(0) @binding(1)
 var atlas_sampler: sampler;
 
 @group(1) @binding(0)
@@ -88,12 +85,6 @@ fn vs_main(input: VertexInput) -> VertexOutput {
 
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {    
-    // var glyph_alpha = textureSampleLevel(mask_atlas_texture, atlas_sampler, input.uv, 0.0).r;
-    // return vec4<f32>(input.color.rgb, input.color.a * glyph_alpha);
-
-    // // debug
-    var color = textureSampleLevel(mask_atlas_texture, atlas_sampler, input.uv, 0.0);
-    return vec4<f32>(color.rgb, 1.0);
-
-    // return vec4f(input.uv.x, 0.0, input.uv.y, 1.0); // box
+    var glyph_alpha = textureSampleLevel(mask_atlas_texture, atlas_sampler, input.uv, 0.0).r;
+    return vec4<f32>(input.color.rgb, input.color.a * glyph_alpha);
 }

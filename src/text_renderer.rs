@@ -13,12 +13,12 @@ pub struct ContextlessTextRenderer {
     pub font_cx: FontContext,
     pub layout_cx: LayoutContext<ColorBrush>,
 
-    pub color_atlas: Atlas<RgbaImage>,
     pub mask_atlas: Atlas<GrayImage>,
     
-    pub bind_group: BindGroup,
+    pub atlas_bind_group_layout: BindGroupLayout,
     
     pub params: Params,
+    pub sampler: Sampler,
     pub params_buffer: Buffer,
     pub params_bind_group: BindGroup,
 
@@ -37,21 +37,28 @@ pub(crate) struct AtlasPage<ImageType> {
     pub(crate) last_frame_evicted: u64,
     pub(crate) image: ImageType,
     pub vertex_buffer_size: u64,
-    pub vertex_buffer: Option<Buffer>,
+    pub vertex_buffer: Option<Buffer>, // todo, move all these to a single option
     pub(crate) texture: Option<Texture>, // the format here has to match the image type...
     pub(crate) texture_view: Option<TextureView>,
+    pub bind_group: Option<BindGroup>,
 }
 
+impl ContextlessTextRenderer {
+    pub fn gpu_load(&mut self, device: &Device, queue: &Queue) {
+        queue.write_buffer(&self.params_buffer, 0, unsafe {
+            core::slice::from_raw_parts(
+                &self.params as *const Params as *const u8,
+                mem::size_of::<Params>(),
+            )
+        });
 
-impl Atlas<GrayImage> {
-    pub fn gpu_load(&mut self, queue: &Queue, device: &Device, atlas_size: u32) {
-        for page in &mut self.pages {
+        for page in &mut self.mask_atlas.pages {
             if page.texture.is_none() {
                 let texture = device.create_texture(&TextureDescriptor {
                     label: Some("atlas"),
                     size: Extent3d {
-                        width: atlas_size,
-                        height: atlas_size,
+                        width: self.atlas_size,
+                        height: self.atlas_size,
                         depth_or_array_layers: 1,
                     },
                     mip_level_count: 1,
@@ -69,10 +76,26 @@ impl Atlas<GrayImage> {
                     usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
                     mapped_at_creation: false,
                 });
+
+                let bind_group = device.create_bind_group(&BindGroupDescriptor {
+                    layout: &self.atlas_bind_group_layout,
+                    entries: &[
+                        BindGroupEntry {
+                            binding: 0,
+                            resource: BindingResource::TextureView(&texture_view),
+                        },
+                        BindGroupEntry {
+                            binding: 1,
+                            resource: BindingResource::Sampler(&self.sampler),
+                        },
+                    ],
+                    label: Some("atlas bind group"),
+                });
         
                 page.texture = Some(texture);       
                 page.texture_view = Some(texture_view);
-                page.vertex_buffer = Some(vertex_buffer); 
+                page.vertex_buffer = Some(vertex_buffer);
+                page.bind_group = Some(bind_group);
             }
 
             let bytes: &[u8] = bytemuck::cast_slice(&page.quads);
@@ -273,7 +296,7 @@ impl TextRenderer {
             pos: [9999, 0],
             dim: [atlas_size as u16, atlas_size as u16],
             uv_origin: [0, 0],
-            color: 0,
+            color: 0xff0000ff,
             depth: 0.0,
         }];
         let bytes: &[u8] = bytemuck::cast_slice(&big_quad);
@@ -281,17 +304,17 @@ impl TextRenderer {
     }
 
     pub fn render_atlas_debug(&self, pass: &mut RenderPass<'_>) {
-        if self.text_renderer.mask_atlas.pages[0].quads.is_empty() { return }
-                
-        pass.set_pipeline(&self.text_renderer.pipeline);
-        pass.set_bind_group(0, &self.text_renderer.bind_group, &[]);
-        pass.set_bind_group(1, &self.text_renderer.params_bind_group, &[]);
-        pass.set_vertex_buffer(0, self.text_renderer.mask_atlas.pages[0].vertex_buffer.as_ref().unwrap().slice(..));
-        pass.draw(0..4, 0..1 as u32);
+        for page in &self.text_renderer.mask_atlas.pages {
+            if self.text_renderer.mask_atlas.pages[0].quads.is_empty() { return }
+            
+            pass.set_pipeline(&self.text_renderer.pipeline);
+            pass.set_bind_group(0, &page.bind_group, &[]);
+            pass.set_bind_group(1, &self.text_renderer.params_bind_group, &[]);
+            pass.set_vertex_buffer(0, self.text_renderer.mask_atlas.pages[0].vertex_buffer.as_ref().unwrap().slice(..));
+            pass.draw(0..4, 0..1 as u32);
+        }
     }
-
 }
-
 
 const SOURCES: &[Source; 3] = &[
     Source::ColorOutline(0),
@@ -301,13 +324,13 @@ const SOURCES: &[Source; 3] = &[
 
 impl ContextlessTextRenderer {
     pub fn render(&self, pass: &mut RenderPass<'_>) {
+        pass.set_pipeline(&self.pipeline);
+        pass.set_bind_group(1, &self.params_bind_group, &[]);
 
         for page in &self.mask_atlas.pages {
             if page.quads.is_empty() { continue }
 
-            pass.set_pipeline(&self.pipeline);
-            pass.set_bind_group(0, &self.bind_group, &[]);
-            pass.set_bind_group(1, &self.params_bind_group, &[]);
+            pass.set_bind_group(0, &page.bind_group, &[]);
             pass.set_vertex_buffer(0, page.vertex_buffer.as_ref().unwrap().slice(..));
             pass.draw(0..4, 0..page.quads.len() as u32);
         }
@@ -317,9 +340,6 @@ impl ContextlessTextRenderer {
         self.frame += 1;
 
         for page in &mut self.mask_atlas.pages {
-            page.quads.clear();
-        }
-        for page in &mut self.color_atlas.pages {
             page.quads.clear();
         }
     }
@@ -335,19 +355,6 @@ impl ContextlessTextRenderer {
                 }
             }
         }
-    }
-
-    fn gpu_load(&mut self, device: &Device, queue: &Queue) {
-        // todo: check what is actually needed
-        queue.write_buffer(&self.params_buffer, 0, unsafe {
-            core::slice::from_raw_parts(
-                &self.params as *const Params as *const u8,
-                mem::size_of::<Params>(),
-            )
-        });
-        
-        self.mask_atlas.gpu_load(queue, device, self.atlas_size);
-        // todo: color atlas
     }
 
     fn prepare_glyph_run(
@@ -419,7 +426,7 @@ impl ContextlessTextRenderer {
     //     self.quads.push(quad);
     // }
 
-    fn copy_glyph_to_atlas(&mut self, size: Size2D<i32, UnknownUnit>, alloc: &Allocation) {
+    fn copy_glyph_to_atlas(&mut self, size: Size2D<i32, UnknownUnit>, alloc: &Allocation, page: usize) {
         for y in 0..size.height as i32 {
             let src_start = (y as usize) * (size.width as usize);
             let src_slice =
@@ -429,8 +436,8 @@ impl ContextlessTextRenderer {
             let dst_x = alloc.rectangle.min.x as u32;
 
             // todo dont do this
-            let layout = self.mask_atlas.pages[0].image.as_flat_samples().layout;
-            let mut samples = self.mask_atlas.pages[0].image.as_flat_samples_mut();
+            let layout = self.mask_atlas.pages[page].image.as_flat_samples().layout;
+            let mut samples = self.mask_atlas.pages[page].image.as_flat_samples_mut();
             let samples = samples.as_mut_slice();
 
             let dst_start =
@@ -470,7 +477,7 @@ impl ContextlessTextRenderer {
             }
 
             if let Some(alloc) = self.mask_atlas.pages[page].packer.allocate(size) {
-                self.copy_glyph_to_atlas(size, &alloc);
+                self.copy_glyph_to_atlas(size, &alloc, page);
     
                 let stored_glyph = StoredGlyph::create(&alloc, &placement, page, self.frame);
                 self.mask_atlas.glyph_cache.push(glyph_key, Some(stored_glyph));
@@ -506,6 +513,7 @@ impl ContextlessTextRenderer {
             texture: None,
             texture_view: None,
             vertex_buffer: None,
+            bind_group: None,
         });
     }
 }
