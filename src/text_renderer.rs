@@ -49,8 +49,8 @@ impl ContextlessTextRenderer {
 
     fn page_needs_evicting(&self, current_frame: u64, content_type: Content, page: usize) -> bool {
         match content_type {
-            Content::Mask => self.mask_atlas_pages[page].last_frame_evicted == current_frame,
-            Content::Color => self.color_atlas_pages[page].last_frame_evicted == current_frame,
+            Content::Mask => self.mask_atlas_pages[page].last_frame_evicted != current_frame,
+            Content::Color => self.color_atlas_pages[page].last_frame_evicted != current_frame,
             Content::SubpixelMask => unreachable!()
         }
     }
