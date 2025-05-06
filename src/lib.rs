@@ -1,11 +1,11 @@
-mod wgpu_vomit;
+mod setup;
 
 mod text_renderer;
 pub use text_renderer::*;
 
 use bytemuck::{Pod, Zeroable};
 use etagere::euclid::{Size2D, UnknownUnit};
-use etagere::{size2, AllocId, Allocation, BucketedAtlasAllocator};
+use etagere::{size2, Allocation, BucketedAtlasAllocator};
 use lru::LruCache;
 use rustc_hash::FxHasher;
 use swash::zeno::{Format, Vector};
@@ -26,5 +26,6 @@ use swash::scale::{Render, ScaleContext, Scaler, Source, StrikeWith};
 use swash::{FontRef, GlyphId};
 use wgpu::{
     MultisampleState, Texture, TextureFormat,
-    TextureUsages, TextureView, TextureViewDescriptor,
+    TextureUsages, TextureViewDescriptor,
 };
+use swash::zeno::Placement;

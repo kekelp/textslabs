@@ -1,5 +1,3 @@
-use swash::zeno::Placement;
-
 use crate::*;
 
 pub struct TextRenderer {
@@ -13,7 +11,7 @@ pub struct ContextlessTextRenderer {
     pub font_cx: FontContext,
     pub layout_cx: LayoutContext<ColorBrush>,
 
-    pub mask_atlas: Atlas<GrayImage>,
+    pub(crate) mask_atlas: Atlas<GrayImage>,
     
     pub atlas_bind_group_layout: BindGroupLayout,
     
@@ -37,10 +35,13 @@ pub(crate) struct AtlasPage<ImageType> {
     pub(crate) last_frame_evicted: u64,
     pub(crate) image: ImageType,
     pub vertex_buffer_size: u64,
-    pub vertex_buffer: Option<Buffer>, // todo, move all these to a single option
-    pub(crate) texture: Option<Texture>, // the format here has to match the image type...
-    pub(crate) texture_view: Option<TextureView>,
-    pub bind_group: Option<BindGroup>,
+    pub gpu: Option<GpuAtlasPage>,
+}
+
+pub(crate) struct GpuAtlasPage {
+    pub vertex_buffer: Buffer,
+    pub texture: Texture, // the format here has to match the image type...
+    pub bind_group: BindGroup,
 }
 
 impl ContextlessTextRenderer {
@@ -53,7 +54,7 @@ impl ContextlessTextRenderer {
         });
 
         for page in &mut self.mask_atlas.pages {
-            if page.texture.is_none() {
+            if page.gpu.is_none() {
                 let texture = device.create_texture(&TextureDescriptor {
                     label: Some("atlas"),
                     size: Extent3d {
@@ -92,18 +93,19 @@ impl ContextlessTextRenderer {
                     label: Some("atlas bind group"),
                 });
         
-                page.texture = Some(texture);       
-                page.texture_view = Some(texture_view);
-                page.vertex_buffer = Some(vertex_buffer);
-                page.bind_group = Some(bind_group);
+                page.gpu = Some(GpuAtlasPage {
+                    vertex_buffer,
+                    texture,
+                    bind_group,
+                })
             }
 
             let bytes: &[u8] = bytemuck::cast_slice(&page.quads);
-            queue.write_buffer(&page.vertex_buffer.as_ref().unwrap(), 0, &bytes);
+            queue.write_buffer(&page.gpu.as_ref().unwrap().vertex_buffer, 0, &bytes);
 
             queue.write_texture(
                 TexelCopyTextureInfo {
-                    texture: &page.texture.as_ref().unwrap(),
+                    texture: &page.gpu.as_ref().unwrap().texture,
                     mip_level: 0,
                     origin: Origin3d { x: 0, y: 0, z: 0 },
                     aspect: TextureAspect::All,
@@ -292,26 +294,33 @@ impl TextRenderer {
 
     pub fn gpu_load_atlas_debug(&self, _device: &Device, queue: &Queue) {
         let atlas_size = self.text_renderer.atlas_size;
-        let big_quad = vec![Quad {
-            pos: [9999, 0],
-            dim: [atlas_size as u16, atlas_size as u16],
-            uv_origin: [0, 0],
-            color: 0xff0000ff,
-            depth: 0.0,
-        }];
-        let bytes: &[u8] = bytemuck::cast_slice(&big_quad);
-        queue.write_buffer(&self.text_renderer.mask_atlas.pages[0].vertex_buffer.as_ref().unwrap(), 0, &bytes);
-    }
-
-    pub fn render_atlas_debug(&self, pass: &mut RenderPass<'_>) {
-        for page in &self.text_renderer.mask_atlas.pages {
-            if self.text_renderer.mask_atlas.pages[0].quads.is_empty() { return }
+        
+        for (i, page) in self.text_renderer.mask_atlas.pages.iter().enumerate() {
+            let x_offset = i as i32 * (atlas_size as i32 + 10);
             
-            pass.set_pipeline(&self.text_renderer.pipeline);
-            pass.set_bind_group(0, &page.bind_group, &[]);
-            pass.set_bind_group(1, &self.text_renderer.params_bind_group, &[]);
-            pass.set_vertex_buffer(0, self.text_renderer.mask_atlas.pages[0].vertex_buffer.as_ref().unwrap().slice(..));
-            pass.draw(0..4, 0..1 as u32);
+            let quad = vec![Quad {
+                pos: [x_offset, 0],
+                dim: [atlas_size as u16, atlas_size as u16],
+                uv_origin: [0, 0],
+                color: 0xff0000ff,
+                depth: 0.0,
+            }];
+            
+            let bytes: &[u8] = bytemuck::cast_slice(&quad);
+            queue.write_buffer(&page.gpu.as_ref().unwrap().vertex_buffer, 0, &bytes);
+        }
+    }
+    
+    pub fn render_atlas_debug(&self, pass: &mut RenderPass<'_>) {
+        if self.text_renderer.mask_atlas.pages[0].quads.is_empty() { return }
+        
+        pass.set_pipeline(&self.text_renderer.pipeline);
+        pass.set_bind_group(1, &self.text_renderer.params_bind_group, &[]);
+        
+        for page in &self.text_renderer.mask_atlas.pages {
+            pass.set_bind_group(0, &page.gpu.as_ref().unwrap().bind_group, &[]);
+            pass.set_vertex_buffer(0, page.gpu.as_ref().unwrap().vertex_buffer.slice(..));
+            pass.draw(0..4, 0..1);
         }
     }
 }
@@ -328,11 +337,11 @@ impl ContextlessTextRenderer {
         pass.set_bind_group(1, &self.params_bind_group, &[]);
 
         for page in &self.mask_atlas.pages {
-            if page.quads.is_empty() { continue }
-
-            pass.set_bind_group(0, &page.bind_group, &[]);
-            pass.set_vertex_buffer(0, page.vertex_buffer.as_ref().unwrap().slice(..));
-            pass.draw(0..4, 0..page.quads.len() as u32);
+            if !page.quads.is_empty() {
+                pass.set_bind_group(0, &page.gpu.as_ref().unwrap().bind_group, &[]);
+                pass.set_vertex_buffer(0, page.gpu.as_ref().unwrap().vertex_buffer.slice(..));
+                pass.draw(0..4, 0..page.quads.len() as u32);
+            }
         }
     }
 
@@ -510,10 +519,7 @@ impl ContextlessTextRenderer {
             packer: BucketedAtlasAllocator::new(size2(atlas_size as i32, atlas_size as i32)),
             vertex_buffer_size: 4096 * 9,
             quads: Vec::<Quad>::with_capacity(300),
-            texture: None,
-            texture_view: None,
-            vertex_buffer: None,
-            bind_group: None,
+            gpu: None, // will be created later
         });
     }
 }
@@ -546,19 +552,7 @@ impl GlyphWithContext {
             + ((color[2] as u32) << 16)
             + ((color[3] as u32) << 24);
 
-        Self {
-            glyph,
-            color,
-            run_y,
-            font_key,
-            font_size,
-            quantized_pos_x,
-            quantized_pos_y,
-            frac_pos_x,
-            frac_pos_y,
-            subpixel_bin_x,
-            subpixel_bin_y,
-        }
+        Self { glyph, color, run_y, font_key, font_size, quantized_pos_x, quantized_pos_y, frac_pos_x, frac_pos_y, subpixel_bin_x, subpixel_bin_y,}
     }
 
     fn key(&self) -> GlyphKey {

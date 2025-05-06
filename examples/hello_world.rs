@@ -1,17 +1,8 @@
 use parley_atlas_renderer::*;
-
 use image::Rgba;
-use parley::{
-    Alignment, AlignmentOptions, FontContext, FontStack,
-    Layout, LayoutContext, StyleProperty,
-};
 use std::sync::Arc;
-use wgpu::{
-    CommandEncoderDescriptor, CompositeAlphaMode, DeviceDescriptor, Instance, InstanceDescriptor,
-    LoadOp, Operations, PresentMode, RenderPassColorAttachment,
-    RenderPassDescriptor, RequestAdapterOptions, SurfaceConfiguration, TextureFormat,
-    TextureUsages, TextureViewDescriptor,
-};
+use parley::*;
+use wgpu::*;
 use winit::{dpi::LogicalSize, event::WindowEvent, event_loop::EventLoop, window::Window};
 
 fn main() {
@@ -26,14 +17,9 @@ struct State {
     queue: wgpu::Queue,
     surface: wgpu::Surface<'static>,
     surface_config: SurfaceConfiguration,
-
-    // Make sure that the winit window is last in the struct so that
-    // it is dropped after the wgpu surface is dropped, otherwise the
-    // program may crash when closed. This is probably a bug in wgpu.
     window: Arc<Window>,
 
     text_renderer: TextRenderer,
-
     text_layout: Layout<ColorBrush>,
     show_atlas: bool,
 }
@@ -41,15 +27,12 @@ struct State {
 impl State {
     fn new(window: Arc<Window>) -> Self {
         let physical_size = window.inner_size();
-
-        // Set up surface
         let instance = Instance::new(&InstanceDescriptor::default());
         let adapter =
             pollster::block_on(instance.request_adapter(&RequestAdapterOptions::default()))
                 .unwrap();
         let (device, queue) =
             pollster::block_on(adapter.request_device(&DeviceDescriptor::default())).unwrap();
-
         let surface = instance
             .create_surface(window.clone())
             .expect("Create surface");
@@ -111,7 +94,6 @@ impl State {
 
                 let frame = self.surface.get_current_texture().unwrap();
                 let view = frame.texture.create_view(&TextureViewDescriptor::default());
-
 
                 let now = std::time::Instant::now();
                 self.text_renderer.clear();
@@ -190,7 +172,8 @@ impl winit::application::ApplicationHandler for Application {
 }
 
 fn text_layout() -> Layout<ColorBrush> {
-    let text = String::from("
+    let text = String::from("Press F1 to see the atlas
+    Lorem ipsum\tdolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum. O algo.
     ヘッケはこれらのL-函数が全複素平面へ有理型接続を持ち、指標が自明であるときには s = 1 でオーダー 1 である極を持ち、それ以外では解析的であることを証明した。原始ヘッケ指標（原始ディリクレ指標に同じ方法である modulus に相対的に定義された）に対し、ヘッケは、これらのL-函数が指標の L-函数の函数等式を満たし、L-函数の複素共役指標であることを示した。 主イデアル上の座と、無限での座を含む全ての例外有限集合の上で 1 である単円の上への写像を取ることで、イデール類群の指標 ψ を考える。すると、ψ はイデアル群 IS の指標 χ を生成し、イデアル群は S 上に入らない素イデアル上の自由アーベル群となる。"); // here1
 
     let display_scale = 1.0;
@@ -211,7 +194,7 @@ fn text_layout() -> Layout<ColorBrush> {
     builder.push_default(StyleProperty::LineHeight(0.5));
     builder.push_default(StyleProperty::FontSize(24.0));
 
-    // builder.push(StyleProperty::FontWeight(FontWeight::new(600.0)), 0..4);
+    builder.push(StyleProperty::FontWeight(parley::FontWeight::new(600.0)), 0..30);
 
     // builder.push(StyleProperty::Underline(true), 141..150);
     // builder.push(StyleProperty::Strikethrough(true), 155..168);
