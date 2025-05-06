@@ -13,7 +13,10 @@ pub struct ContextlessTextRenderer {
 
     pub(crate) glyph_cache: LruCache<GlyphKey, Option<StoredGlyph>, BuildHasherDefault<FxHasher>>,
     pub(crate) mask_atlas_pages: Vec<AtlasPage<GrayImage>>,
+    pub(crate) last_frame_evicted_mask: u64,
+    
     pub(crate) color_atlas_pages: Vec<AtlasPage<RgbaImage>>,
+    pub(crate) last_frame_evicted_color: u64,
     
     pub atlas_bind_group_layout: BindGroupLayout,
     
@@ -29,7 +32,6 @@ pub struct ContextlessTextRenderer {
 pub(crate) struct AtlasPage<ImageType> {
     pub quads: Vec<Quad>,
     pub(crate) packer: BucketedAtlasAllocator,
-    pub(crate) last_frame_evicted: u64,
     pub(crate) image: ImageType,
     pub vertex_buffer_size: u64,
     pub gpu: Option<GpuAtlasPage>,
@@ -43,14 +45,42 @@ pub(crate) struct GpuAtlasPage {
 
 
 impl ContextlessTextRenderer {
-    fn evict_old_glyphs(&mut self, content_type: Content, page: usize) {
-        todo!()
+    fn evict_old_glyphs(&mut self, content_type: Content) {
+        eprintln!("trying to evict ({:?})", content_type);
+
+        match content_type {
+            Content::Mask => self.last_frame_evicted_mask = self.frame,
+            Content::Color => self.last_frame_evicted_color = self.frame,
+            Content::SubpixelMask => unreachable!()
+        }
+
+        while let Some((_key, value)) = self.glyph_cache.peek_lru() {
+            
+            if let Some(stored_glyph) = value {
+                if stored_glyph.frame == self.frame {
+                    break;
+                }
+                
+                let page = stored_glyph.page as usize;
+                if stored_glyph.content_type == content_type {
+                    match content_type {
+                        Content::Mask => self.mask_atlas_pages[page].packer.deallocate(stored_glyph.alloc.id),
+                        Content::Color => self.color_atlas_pages[page].packer.deallocate(stored_glyph.alloc.id),
+                        Content::SubpixelMask => unreachable!()
+                    }
+                }
+                eprintln!("evicting ({:?})", stored_glyph.content_type);
+
+            }
+            
+            self.glyph_cache.pop_lru();
+        }
     }
 
-    fn page_needs_evicting(&self, current_frame: u64, content_type: Content, page: usize) -> bool {
+    fn needs_evicting(&self, current_frame: u64, content_type: Content) -> bool {
         match content_type {
-            Content::Mask => self.mask_atlas_pages[page].last_frame_evicted != current_frame,
-            Content::Color => self.color_atlas_pages[page].last_frame_evicted != current_frame,
+            Content::Mask => self.last_frame_evicted_mask != current_frame,
+            Content::Color => self.last_frame_evicted_color != current_frame,
             Content::SubpixelMask => unreachable!()
         }
     }
@@ -161,7 +191,7 @@ impl StoredGlyph {
         StoredGlyph {
             content_type,
             page: page as u16,
-            frame: frame,
+            frame,
             alloc: alloc.clone(),
             placement_left: placement.left,
             placement_top: placement.top
@@ -424,6 +454,7 @@ impl ContextlessTextRenderer {
                 samples[dst_start..(dst_start + size.width as usize)].copy_from_slice(src_slice);
                 },
                 Content::Color => {
+                    // todo: rewrite this with a cool copy_from_slice
                     let layout = self.color_atlas_pages[page].image.as_flat_samples().layout;
                     let mut samples = self.color_atlas_pages[page].image.as_flat_samples_mut();
                     let samples = samples.as_mut_slice();
@@ -466,16 +497,20 @@ impl ContextlessTextRenderer {
             return None;
         }
         
+        let n_pages = match content {
+            Content::Mask => self.mask_atlas_pages.len(),
+            Content::Color => self.color_atlas_pages.len(),
+            Content::SubpixelMask => unreachable!(),
+        };
         // Try to allocate on existing pages
-        for page in 0..self.mask_atlas_pages.len() {
+        for page in 0..n_pages {
             if let Some(alloc) = self.pack_rectangle(size, content, page) {
                 return self.store_glyph(glyph, size, &alloc, page, &placement, content);
             }
             
             // Try evicting glyphs from previous frames and retry
-            if self.page_needs_evicting(self.frame, content, page) {
-                eprintln!("trying to evict [page {}]", page);
-                self.evict_old_glyphs(content, page);
+            if self.needs_evicting(self.frame, content) {
+                self.evict_old_glyphs(content);
                 
                 if let Some(alloc) = self.pack_rectangle(size, content, page) {
                     return self.store_glyph(glyph, size, &alloc, page, &placement, content);
@@ -529,7 +564,6 @@ impl ContextlessTextRenderer {
                 // todo, deduplicate these with the ones in Setup
                 self.mask_atlas_pages.push(AtlasPage::<GrayImage> {
                     image: GrayImage::from_pixel(atlas_size, atlas_size, Luma([0])),
-                    last_frame_evicted: 0,
                     packer: BucketedAtlasAllocator::new(size2(atlas_size as i32, atlas_size as i32)),
                     vertex_buffer_size: 4096 * 9,
                     quads: Vec::<Quad>::with_capacity(300),
@@ -540,7 +574,6 @@ impl ContextlessTextRenderer {
             Content::Color => {
                 self.color_atlas_pages.push(AtlasPage::<RgbaImage> {
                     image: RgbaImage::from_pixel(atlas_size, atlas_size, Rgba([0, 0, 0, 0])),
-                    last_frame_evicted: 0,
                     packer: BucketedAtlasAllocator::new(size2(atlas_size as i32, atlas_size as i32)),
                     vertex_buffer_size: 4096 * 9,
                     quads: Vec::<Quad>::with_capacity(300),

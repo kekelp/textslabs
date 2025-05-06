@@ -180,7 +180,6 @@ impl ContextlessTextRenderer {
 
         let mask_atlas_pages = vec![AtlasPage::<GrayImage> {
             image: GrayImage::from_pixel(atlas_size, atlas_size, Luma([0])),
-            last_frame_evicted: 0,
             packer: BucketedAtlasAllocator::new(size2(atlas_size as i32, atlas_size as i32)),
             quads: Vec::<Quad>::with_capacity(300),
             vertex_buffer_size: mask_vertex_buffer_size,
@@ -232,7 +231,6 @@ impl ContextlessTextRenderer {
 
         let color_atlas_pages = vec![AtlasPage::<RgbaImage> {
             image: RgbaImage::from_pixel(atlas_size, atlas_size, Rgba([0, 0, 0, 0])),
-            last_frame_evicted: 0,
             packer: BucketedAtlasAllocator::new(size2(atlas_size as i32, atlas_size as i32)),
             quads: Vec::<Quad>::with_capacity(300),
             vertex_buffer_size: mask_vertex_buffer_size,
@@ -298,6 +296,8 @@ impl ContextlessTextRenderer {
             params_buffer,
             params_bind_group,
             glyph_cache,
+            last_frame_evicted_mask: 0,
+            last_frame_evicted_color: 0,
         }
     }
 }
