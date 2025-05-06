@@ -60,12 +60,6 @@ fn vs_main(input: VertexInput) -> VertexOutput {
 
     var pos = vec2f(input.pos) + dim * coords;
     
-    // atlas debug. todo: remove
-    if input.pos.x == 9999 {
-        vert_output.uv = coords;
-        pos = vec2f(0.0, 0.0) + dim * coords;
-    }
-
     vert_output.position = vec4f(
         2.0 * (pos / params.screen_resolution) - 1.0,
         input.depth,

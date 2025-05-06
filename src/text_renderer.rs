@@ -448,7 +448,6 @@ impl ContextlessTextRenderer {
             let dst_y = (alloc.rectangle.min.y + y) as u32;
             let dst_x = alloc.rectangle.min.x as u32;
 
-            // todo dont do this
             let layout = self.mask_atlas.pages[page].image.as_flat_samples().layout;
             let mut samples = self.mask_atlas.pages[page].image.as_flat_samples_mut();
             let samples = samples.as_mut_slice();

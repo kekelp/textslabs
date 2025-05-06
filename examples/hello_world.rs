@@ -124,7 +124,6 @@ impl State {
                         occlusion_query_set: None,
                     });
 
-                    // todo: remove
                     if self.show_atlas {
                         self.text_renderer.gpu_load_atlas_debug(&self.device, &self.queue);
                         self.text_renderer.render_atlas_debug(&mut pass);
