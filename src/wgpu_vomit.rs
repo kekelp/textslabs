@@ -7,7 +7,7 @@ impl ContextlessTextRenderer {
         // todo
         // unused memory is wasted memory...?
         // let atlas_size = Limits::downlevel_webgl2_defaults().max_texture_dimension_2d;
-        let atlas_size = 256;
+        let atlas_size = 512;
 
         let mask_texture = device.create_texture(&TextureDescriptor {
             label: Some("atlas"),
@@ -25,6 +25,14 @@ impl ContextlessTextRenderer {
         });
         let mask_texture_view = mask_texture.create_view(&TextureViewDescriptor::default());
 
+        let mask_vertex_buffer_size = 4096 * 9;
+        let mask_vertex_buffer = device.create_buffer(&BufferDescriptor {
+            label: Some("vertices"),
+            size: mask_vertex_buffer_size,
+            usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
         let mask_atlas = Atlas::<GrayImage> {
             glyph_cache: LruCache::unbounded_with_hasher(BuildHasherDefault::<FxHasher>::default()),
             pages: vec![AtlasPage::<GrayImage> {
@@ -33,6 +41,9 @@ impl ContextlessTextRenderer {
                 packer: BucketedAtlasAllocator::new(size2(atlas_size as i32, atlas_size as i32)),
                 texture: Some(mask_texture),
                 texture_view: Some(mask_texture_view),
+                quads: Vec::<Quad>::with_capacity(300),
+                vertex_buffer: Some(mask_vertex_buffer),
+                vertex_buffer_size: mask_vertex_buffer_size,
             }],
         };
 
@@ -52,6 +63,15 @@ impl ContextlessTextRenderer {
         });
         let color_texture_view = color_texture.create_view(&TextureViewDescriptor::default());
 
+        let color_vertex_buffer_size = 4096 * 9;
+        let color_vertex_buffer = device.create_buffer(&BufferDescriptor {
+            label: Some("vertices"),
+            size: color_vertex_buffer_size,
+            usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+
         let color_atlas = Atlas::<RgbaImage> {
             glyph_cache: LruCache::unbounded_with_hasher(BuildHasherDefault::<FxHasher>::default()),
             pages: vec![AtlasPage::<RgbaImage> {
@@ -60,16 +80,11 @@ impl ContextlessTextRenderer {
                 texture: Some(color_texture),
                 texture_view: Some(color_texture_view),
                 packer: BucketedAtlasAllocator::new(size2(atlas_size as i32, atlas_size as i32)),
+                quads: Vec::<Quad>::with_capacity(50),
+                vertex_buffer: Some(color_vertex_buffer),
+                vertex_buffer_size: color_vertex_buffer_size,
             }]
         };
-
-        let vertex_buffer_size = 4096 * 9;
-        let vertex_buffer = device.create_buffer(&BufferDescriptor {
-            label: Some("vertices"),
-            size: vertex_buffer_size,
-            usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
 
         let sampler = device.create_sampler(&SamplerDescriptor {
             label: Some("sampler"),
@@ -244,15 +259,12 @@ impl ContextlessTextRenderer {
             layout_cx: LayoutContext::new(),
             color_atlas,
             mask_atlas,
-            vertex_buffer,
-            vertex_buffer_size,
             pipeline,
             bind_group,
 
             params,
             params_buffer,
             params_bind_group,
-            quads: Vec::<Quad>::with_capacity(300),
         }
     }
 }

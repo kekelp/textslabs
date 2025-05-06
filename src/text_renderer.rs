@@ -13,8 +13,8 @@ pub struct ContextlessTextRenderer {
     pub font_cx: FontContext,
     pub layout_cx: LayoutContext<ColorBrush>,
 
-    pub(crate) color_atlas: Atlas<RgbaImage>,
-    pub(crate) mask_atlas: Atlas<GrayImage>,
+    pub color_atlas: Atlas<RgbaImage>,
+    pub mask_atlas: Atlas<GrayImage>,
     
     pub bind_group: BindGroup,
     
@@ -22,10 +22,7 @@ pub struct ContextlessTextRenderer {
     pub params_buffer: Buffer,
     pub params_bind_group: BindGroup,
 
-    pub vertex_buffer: Buffer,
-    pub vertex_buffer_size: u64,
     pub pipeline: RenderPipeline,
-    pub quads: Vec<Quad>,
     pub atlas_size: u32,
 }
 
@@ -35,9 +32,12 @@ pub(crate) struct Atlas<ImageType> {
 }
 
 pub(crate) struct AtlasPage<ImageType> {
+    pub quads: Vec<Quad>,
     pub(crate) packer: BucketedAtlasAllocator,
     pub(crate) last_frame_evicted: u64,
     pub(crate) image: ImageType,
+    pub vertex_buffer_size: u64,
+    pub vertex_buffer: Option<Buffer>,
     pub(crate) texture: Option<Texture>, // the format here has to match the image type...
     pub(crate) texture_view: Option<TextureView>,
 }
@@ -62,9 +62,21 @@ impl Atlas<GrayImage> {
                     view_formats: &[],
                 });
                 let texture_view = texture.create_view(&TextureViewDescriptor::default());
+
+                let vertex_buffer = device.create_buffer(&BufferDescriptor {
+                    label: Some("vertices"),
+                    size: page.vertex_buffer_size,
+                    usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
+                    mapped_at_creation: false,
+                });
+        
                 page.texture = Some(texture);       
-                page.texture_view = Some(texture_view);       
+                page.texture_view = Some(texture_view);
+                page.vertex_buffer = Some(vertex_buffer); 
             }
+
+            let bytes: &[u8] = bytemuck::cast_slice(&page.quads);
+            queue.write_buffer(&page.vertex_buffer.as_ref().unwrap(), 0, &bytes);
 
             queue.write_texture(
                 TexelCopyTextureInfo {
@@ -255,6 +267,29 @@ impl TextRenderer {
         self.text_renderer.render(pass);
     }
 
+    pub fn gpu_load_atlas_debug(&self, _device: &Device, queue: &Queue) {
+        let atlas_size = self.text_renderer.atlas_size;
+        let big_quad = vec![Quad {
+            pos: [9999, 0],
+            dim: [atlas_size as u16, atlas_size as u16],
+            uv_origin: [0, 0],
+            color: 0,
+            depth: 0.0,
+        }];
+        let bytes: &[u8] = bytemuck::cast_slice(&big_quad);
+        queue.write_buffer(&self.text_renderer.mask_atlas.pages[0].vertex_buffer.as_ref().unwrap(), 0, &bytes);
+    }
+
+    pub fn render_atlas_debug(&self, pass: &mut RenderPass<'_>) {
+        if self.text_renderer.mask_atlas.pages[0].quads.is_empty() { return }
+                
+        pass.set_pipeline(&self.text_renderer.pipeline);
+        pass.set_bind_group(0, &self.text_renderer.bind_group, &[]);
+        pass.set_bind_group(1, &self.text_renderer.params_bind_group, &[]);
+        pass.set_vertex_buffer(0, self.text_renderer.mask_atlas.pages[0].vertex_buffer.as_ref().unwrap().slice(..));
+        pass.draw(0..4, 0..1 as u32);
+    }
+
 }
 
 
@@ -266,18 +301,27 @@ const SOURCES: &[Source; 3] = &[
 
 impl ContextlessTextRenderer {
     pub fn render(&self, pass: &mut RenderPass<'_>) {
-        if self.quads.is_empty() { return }
 
-        pass.set_pipeline(&self.pipeline);
-        pass.set_bind_group(0, &self.bind_group, &[]);
-        pass.set_bind_group(1, &self.params_bind_group, &[]);
-        pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-        pass.draw(0..4, 0..self.quads.len() as u32);
+        for page in &self.mask_atlas.pages {
+            if page.quads.is_empty() { continue }
+
+            pass.set_pipeline(&self.pipeline);
+            pass.set_bind_group(0, &self.bind_group, &[]);
+            pass.set_bind_group(1, &self.params_bind_group, &[]);
+            pass.set_vertex_buffer(0, page.vertex_buffer.as_ref().unwrap().slice(..));
+            pass.draw(0..4, 0..page.quads.len() as u32);
+        }
     }
 
     pub fn clear(&mut self) {
         self.frame += 1;
-        self.quads.clear();
+
+        for page in &mut self.mask_atlas.pages {
+            page.quads.clear();
+        }
+        for page in &mut self.color_atlas.pages {
+            page.quads.clear();
+        }
     }
 
     fn prepare_layout(&mut self, layout: &Layout<ColorBrush>, scale_cx: &mut ScaleContext) {
@@ -301,9 +345,6 @@ impl ContextlessTextRenderer {
                 mem::size_of::<Params>(),
             )
         });
-
-        let bytes: &[u8] = bytemuck::cast_slice(&self.quads);
-        queue.write_buffer(&self.vertex_buffer, 0, &bytes);
         
         self.mask_atlas.gpu_load(queue, device, self.atlas_size);
         // todo: color atlas
@@ -338,11 +379,12 @@ impl ContextlessTextRenderer {
             if let Some(stored_glyph) = self.mask_atlas.glyph_cache.get(&glyph_ctx.key()) {
                 if let Some(stored_glyph) = stored_glyph {
                     let quad = make_quad(&glyph_ctx, stored_glyph);
-                    self.quads.push(quad);
+                    let page = stored_glyph.page as usize;
+                    self.mask_atlas.pages[page].quads.push(quad);
                 }
             } else {
-                if let Some(quad) = self.store_glyph(&glyph_ctx, &mut scaler) {
-                    self.quads.push(quad);
+                if let Some((quad, page)) = self.store_glyph(&glyph_ctx, &mut scaler) {
+                    self.mask_atlas.pages[page].quads.push(quad);
                 }
             }
 
@@ -410,7 +452,7 @@ impl ContextlessTextRenderer {
     }
 
     /// Rasterizes the glyph in a texture atlas and returns a Quad that can be used to render it, or None if the glyph was just empty (like a space).
-    fn store_glyph(&mut self, glyph: &GlyphWithContext, scaler: &mut Scaler) -> Option<Quad> {
+    fn store_glyph(&mut self, glyph: &GlyphWithContext, scaler: &mut Scaler) -> Option<(Quad, usize)> {
         let glyph_key = glyph.key();
         let placement = self.render_glyph(&glyph, scaler);
 
@@ -435,7 +477,7 @@ impl ContextlessTextRenderer {
     
                 let quad = make_quad(glyph, &stored_glyph);
     
-                return Some(quad);
+                return Some((quad, page));
             } else {
                 eprintln!("couldn't allocate [page {}]", page);
                 if self.mask_atlas.pages[page].needs_evicting(self.frame) {
@@ -459,10 +501,12 @@ impl ContextlessTextRenderer {
             image: GrayImage::from_pixel(atlas_size, atlas_size, Luma([0])),
             last_frame_evicted: 0,
             packer: BucketedAtlasAllocator::new(size2(atlas_size as i32, atlas_size as i32)),
+            vertex_buffer_size: 4096 * 9,
+            quads: Vec::<Quad>::with_capacity(300),
             texture: None,
             texture_view: None,
+            vertex_buffer: None,
         });
-
     }
 }
 

@@ -120,19 +120,6 @@ impl State {
 
                 self.text_renderer.gpu_load(&self.device, &self.queue);
 
-                if self.show_atlas {
-                    let atlas_size = self.text_renderer.text_renderer.atlas_size;
-                    let big_quad = vec![Quad {
-                        pos: [9999, 0],
-                        dim: [atlas_size as u16, atlas_size as u16],
-                        uv_origin: [0, 0],
-                        color: 0,
-                        depth: 0.0,
-                    }];
-                    let bytes: &[u8] = bytemuck::cast_slice(&big_quad);
-                    self.queue.write_buffer(&self.text_renderer.text_renderer.vertex_buffer, 0, &bytes);
-                }
-
                 let mut encoder = self
                     .device
                     .create_command_encoder(&CommandEncoderDescriptor { label: None });
@@ -154,13 +141,8 @@ impl State {
 
                     // todo: remove
                     if self.show_atlas {
-                        if self.text_renderer.text_renderer.quads.is_empty() { return }
-                
-                        pass.set_pipeline(&self.text_renderer.text_renderer.pipeline);
-                        pass.set_bind_group(0, &self.text_renderer.text_renderer.bind_group, &[]);
-                        pass.set_bind_group(1, &self.text_renderer.text_renderer.params_bind_group, &[]);
-                        pass.set_vertex_buffer(0, self.text_renderer.text_renderer.vertex_buffer.slice(..));
-                        pass.draw(0..4, 0..1 as u32);
+                        self.text_renderer.gpu_load_atlas_debug(&self.device, &self.queue);
+                        self.text_renderer.render_atlas_debug(&mut pass);
                     } else {
                         self.text_renderer.render(&mut pass);
                     }
