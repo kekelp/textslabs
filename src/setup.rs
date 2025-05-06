@@ -109,10 +109,8 @@ impl ContextlessTextRenderer {
         };
 
         let params = Params {
-            screen_resolution: Resolution {
-                width: 0.0,
-                height: 0.0,
-            },
+            screen_resolution_width: 0.0,
+            screen_resolution_height: 0.0,
             _pad: [0, 0],
         };
 

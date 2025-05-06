@@ -203,18 +203,11 @@ impl Default for ColorBrush {
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Params {
-    pub screen_resolution: Resolution,
-    pub _pad: [u32; 2],
-}
-
-/// The screen resolution to use when rendering text.
-#[repr(C)]
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Resolution {
     /// The width of the screen in pixels.
-    pub width: f32,
+    pub screen_resolution_width: f32,
     /// The height of the screen in pixels.
-    pub height: f32,
+    pub screen_resolution_height: f32,
+    pub _pad: [u32; 2],
 }
 
 impl TextRenderer {
@@ -227,6 +220,10 @@ impl TextRenderer {
 
     pub fn new(device: &Device, queue: &Queue) -> Self {
         Self::new_with_params(device, queue, TextRendererParams::default())
+    }
+
+    pub fn update_resolution(&mut self, width: f32, height: f32) {
+        self.text_renderer.update_resolution(width, height);
     }
 
     pub fn clear(&mut self) {
@@ -327,6 +324,11 @@ impl ContextlessTextRenderer {
                 pass.draw(0..4, 0..page.quads.len() as u32);
             }
         }
+    }
+
+    pub fn update_resolution(&mut self, width: f32, height: f32) {
+        self.params.screen_resolution_width = width;
+        self.params.screen_resolution_height = height;
     }
 
     pub fn clear(&mut self) {

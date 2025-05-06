@@ -107,15 +107,10 @@ impl State {
                 self.surface_config.width = size.width;
                 self.surface_config.height = size.height;
                 self.surface.configure(&self.device, &self.surface_config);
+                self.text_renderer.update_resolution(size.width as f32, size.height as f32);
                 self.window.request_redraw();
             }
             WindowEvent::RedrawRequested => {
-                // todo: move
-                self.text_renderer.text_renderer.params.screen_resolution = Resolution {
-                    width: self.surface_config.width as f32,
-                    height: self.surface_config.height as f32,
-                };
-
                 let frame = self.surface.get_current_texture().unwrap();
                 let view = frame.texture.create_view(&TextureViewDescriptor::default());
 
