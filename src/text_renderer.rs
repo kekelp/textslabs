@@ -403,7 +403,7 @@ impl ContextlessTextRenderer {
                     self.mask_atlas.pages[page].quads.push(quad);
                 }
             } else {
-                if let Some((quad, page)) = self.store_glyph(&glyph_ctx, &mut scaler) {
+                if let Some((quad, page)) = self.prepare_glyph(&glyph_ctx, &mut scaler) {
                     self.mask_atlas.pages[page].quads.push(quad);
                 }
             }
@@ -472,57 +472,63 @@ impl ContextlessTextRenderer {
     }
 
     /// Rasterizes the glyph in a texture atlas and returns a Quad that can be used to render it, or None if the glyph was just empty (like a space).
-    fn store_glyph(&mut self, glyph: &GlyphWithContext, scaler: &mut Scaler) -> Option<(Quad, usize)> {
-        let glyph_key = glyph.key();
+    fn prepare_glyph(&mut self, glyph: &GlyphWithContext, scaler: &mut Scaler) -> Option<(Quad, usize)> {
         let placement = self.render_glyph(&glyph, scaler);
-
         let size = placement.size();
-        if placement.size().is_empty() {
-            self.mask_atlas.glyph_cache.push(glyph_key, None);
+        
+        // For some glyphs there's no image to store, like spaces.
+        if size.is_empty() {
+            self.mask_atlas.glyph_cache.push(glyph.key(), None);
             return None;
         }
-
-        let mut page = 0;
-        let mut made_new_page = false;
-
-        loop {
-            if page >= self.mask_atlas.pages.len() {
-                self.make_new_mask_atlas_page();
-            }
-
+        
+        // Try to allocate on existing pages
+        for page in 0..self.mask_atlas.pages.len() {
             if let Some(alloc) = self.mask_atlas.pages[page].packer.allocate(size) {
-                self.copy_glyph_to_atlas(size, &alloc, page);
-    
-                let stored_glyph = StoredGlyph::create(&alloc, &placement, page, self.frame);
-                self.mask_atlas.glyph_cache.push(glyph_key, Some(stored_glyph));
-    
-                let quad = make_quad(glyph, &stored_glyph);
-    
-                return Some((quad, page));
-            } else {
-                eprintln!("couldn't allocate [page {}]", page);
-                if made_new_page {
-                    // the glyph can't be stored even in a new empty page. It's time to give up.
-                    // todo: should probably try to catch these earlier by checking for unreasonable font sizes
-                    // todo2: technically, we could split the huge glyph across multiple pages, or render it on the surface directly.
-                    self.mask_atlas.glyph_cache.push(glyph_key, None);
-                    return None;
-                } else if self.mask_atlas.pages[page].needs_evicting(self.frame) {
-                    eprintln!("trying to evict [page {}]", page);
-                    self.mask_atlas.pages[page].evict_old_glyphs();
-                    // continue loop and retry on the same page
-                } else {
-                    // retry on the next page
-                    page += 1;
-                    made_new_page = true;
-                    eprintln!("going to next page [page {}]", page);
+                return self.store_glyph(glyph, size, &alloc, page, &placement);
+            }
+            
+            // Try evicting glyphs from previous frames and retry
+            if self.mask_atlas.pages[page].needs_evicting(self.frame) {
+                eprintln!("trying to evict [page {}]", page);
+                self.mask_atlas.pages[page].evict_old_glyphs();
+                
+                if let Some(alloc) = self.mask_atlas.pages[page].packer.allocate(size) {
+                    return self.store_glyph(glyph, size, &alloc, page, &placement);
                 }
-            };
+            }
         }
-
+        
+        // Create a new page and try to allocate there
+        let new_page: usize = self.make_new_mask_atlas_page();
+        if let Some(alloc) = self.mask_atlas.pages[new_page].packer.allocate(size) {
+            return self.store_glyph(glyph, size, &alloc, new_page, &placement);
+        }
+        
+        // Glyph is too large to fit even in a new empty page. It's time to give up.
+        // todo: should probably try to catch these earlier by checking for unreasonable font sizes
+        // todo2: technically, we could split the huge glyph across multiple pages, or render it on the surface directly.
+        self.mask_atlas.glyph_cache.push(glyph.key(), None);
+        return None;
+    }
+    
+    // Helper method to store glyph once allocation is successful
+    // todo: don't carry around `size`, alloc probably has the same data
+    fn store_glyph(&mut self, 
+            glyph: &GlyphWithContext,
+            size: Size2D<i32, UnknownUnit>                            , 
+            alloc: &Allocation, 
+            page: usize, 
+            placement: &Placement
+        ) -> Option<(Quad, usize)> {
+        self.copy_glyph_to_atlas(size, alloc, page);
+        let stored_glyph = StoredGlyph::create(alloc, placement, page, self.frame);
+        self.mask_atlas.glyph_cache.push(glyph.key(), Some(stored_glyph));
+        let quad = make_quad(glyph, &stored_glyph);
+        Some((quad, page))
     }
 
-    fn make_new_mask_atlas_page(&mut self) {
+    fn make_new_mask_atlas_page(&mut self) -> usize {
         let atlas_size = self.atlas_size;
 
         self.mask_atlas.pages.push(AtlasPage::<GrayImage> {
@@ -533,6 +539,8 @@ impl ContextlessTextRenderer {
             quads: Vec::<Quad>::with_capacity(300),
             gpu: None, // will be created later
         });
+
+        return self.mask_atlas.pages.len() - 1;
     }
 }
 
