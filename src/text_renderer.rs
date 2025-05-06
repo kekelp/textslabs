@@ -427,7 +427,7 @@ impl ContextlessTextRenderer {
                 self.make_new_mask_atlas_page();
             }
 
-            if let Some(alloc) = self.mask_atlas.pages[0].packer.allocate(size) {
+            if let Some(alloc) = self.mask_atlas.pages[page].packer.allocate(size) {
                 self.copy_glyph_to_atlas(size, &alloc);
     
                 let stored_glyph = StoredGlyph::create(&alloc, &placement, page, self.frame);
@@ -437,12 +437,15 @@ impl ContextlessTextRenderer {
     
                 return Some(quad);
             } else {
+                eprintln!("couldn't allocate [page {}]", page);
                 if self.mask_atlas.pages[page].needs_evicting(self.frame) {
+                    eprintln!("trying to evict [page {}]", page);
                     self.mask_atlas.pages[page].evict_old_glyphs();
                     // continue loop and retry on the same page
                 } else {
                     // retry on the next page
                     page += 1;
+                    eprintln!("going to next page [page {}]", page);
                 }
             };
         }

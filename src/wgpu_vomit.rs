@@ -7,7 +7,7 @@ impl ContextlessTextRenderer {
         // todo
         // unused memory is wasted memory...?
         // let atlas_size = Limits::downlevel_webgl2_defaults().max_texture_dimension_2d;
-        let atlas_size = 512;
+        let atlas_size = 256;
 
         let mask_texture = device.create_texture(&TextureDescriptor {
             label: Some("atlas"),
