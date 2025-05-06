@@ -226,13 +226,13 @@ impl TextRenderer {
         self.text_renderer.render(pass);
     }
 
-    pub fn gpu_load_atlas_debug(&self, _device: &Device, queue: &Queue) {
+    pub fn gpu_load_atlas_debug(&mut self, _device: &Device, queue: &Queue) {
         let atlas_size = self.text_renderer.atlas_size;
         
-        for (i, page) in self.text_renderer.mask_atlas_pages.iter().enumerate() {
+        for (i, page) in self.text_renderer.mask_atlas_pages.iter_mut().enumerate() {
             let x_offset = i as i32 * (atlas_size as i32 + 10);
-            
-            let quad = vec![Quad {
+
+            page.quads = vec![Quad {
                 pos: [x_offset, 0],
                 dim: [atlas_size as u16, atlas_size as u16],
                 uv_origin: [0, 0],
@@ -241,14 +241,14 @@ impl TextRenderer {
                 flags: 0,
             }];
             
-            let bytes: &[u8] = bytemuck::cast_slice(&quad);
+            let bytes: &[u8] = bytemuck::cast_slice(&page.quads);
             queue.write_buffer(&page.gpu.as_ref().unwrap().vertex_buffer, 0, &bytes);
         }
     
-        for (i, page) in self.text_renderer.color_atlas_pages.iter().enumerate() {
+        for (i, page) in self.text_renderer.color_atlas_pages.iter_mut().enumerate() {
             let x_offset = i as i32 * (atlas_size as i32 + 10);
             
-            let quad = vec![Quad {
+            page.quads = vec![Quad {
                 pos: [x_offset, atlas_size as i32 + 10],
                 dim: [atlas_size as u16, atlas_size as u16],
                 uv_origin: [0, 0],
@@ -257,7 +257,7 @@ impl TextRenderer {
                 flags: 1,
             }];
             
-            let bytes: &[u8] = bytemuck::cast_slice(&quad);
+            let bytes: &[u8] = bytemuck::cast_slice(&page.quads);
             queue.write_buffer(&page.gpu.as_ref().unwrap().vertex_buffer, 0, &bytes);
         }
     }
