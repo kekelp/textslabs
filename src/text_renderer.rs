@@ -11,6 +11,7 @@ pub struct ContextlessTextRenderer {
     pub font_cx: FontContext,
     pub layout_cx: LayoutContext<ColorBrush>,
 
+    pub(crate) glyph_cache: LruCache<GlyphKey, Option<StoredGlyph>, BuildHasherDefault<FxHasher>>,
     pub(crate) mask_atlas: Atlas<GrayImage>,
     
     pub atlas_bind_group_layout: BindGroupLayout,
@@ -24,8 +25,8 @@ pub struct ContextlessTextRenderer {
     pub atlas_size: u32,
 }
 
+// todo: remove this struct 
 pub(crate) struct Atlas<ImageType> {
-    pub(crate) glyph_cache: LruCache<GlyphKey, Option<StoredGlyph>, BuildHasherDefault<FxHasher>>,
     pub(crate) pages: Vec<AtlasPage<ImageType>>,
 }
 
@@ -221,6 +222,7 @@ fn make_quad(glyph: &GlyphWithContext, stored_glyph: &StoredGlyph) -> Quad {
 /// A glyph as stored in a glyph atlas.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct StoredGlyph {
+    content_type: Content,
     page: u16,
     frame: u64,
     alloc: Allocation,
@@ -228,8 +230,9 @@ pub(crate) struct StoredGlyph {
     placement_top: i32,
 }
 impl StoredGlyph {
-    fn create(alloc: &Allocation, placement: &Placement, page: usize, frame: u64) -> StoredGlyph {
+    fn create(alloc: &Allocation, placement: &Placement, page: usize, frame: u64, content_type: Content) -> StoredGlyph {
         StoredGlyph {
+            content_type,
             page: page as u16,
             frame: frame,
             alloc: alloc.clone(),
@@ -396,7 +399,7 @@ impl ContextlessTextRenderer {
         for glyph in glyph_run.glyphs() {
             let glyph_ctx = GlyphWithContext::new(glyph, run_x, run_y, font_key, font_size, style.brush.color);
 
-            if let Some(stored_glyph) = self.mask_atlas.glyph_cache.get(&glyph_ctx.key()) {
+            if let Some(stored_glyph) = self.glyph_cache.get(&glyph_ctx.key()) {
                 if let Some(stored_glyph) = stored_glyph {
                     let quad = make_quad(&glyph_ctx, stored_glyph);
                     let page = stored_glyph.page as usize;
@@ -427,17 +430,6 @@ impl ContextlessTextRenderer {
         //     render_decoration(img, glyph_run, decoration.brush, offset, size, padding);
         // }
     }
-
-    // fn push_quad(&mut self) {
-    //     let quad = Quad {
-    //         pos: [x, y],
-    //         dim: [size.width as u16, size.height as u16],
-    //         uv: [alloc.rectangle.min.x as u16, alloc.rectangle.min.y as u16],
-    //         color,
-    //         depth: 0.0,
-    //     };
-    //     self.quads.push(quad);
-    // }
 
     fn copy_glyph_to_atlas(&mut self, size: Size2D<i32, UnknownUnit>, alloc: &Allocation, page: usize) {
         for y in 0..size.height as i32 {
@@ -477,14 +469,14 @@ impl ContextlessTextRenderer {
         
         // For some glyphs there's no image to store, like spaces.
         if size.is_empty() {
-            self.mask_atlas.glyph_cache.push(glyph.key(), None);
+            self.glyph_cache.push(glyph.key(), None);
             return None;
         }
         
         // Try to allocate on existing pages
         for page in 0..self.mask_atlas.pages.len() {
             if let Some(alloc) = self.mask_atlas.pages[page].packer.allocate(size) {
-                return self.store_glyph(glyph, size, &alloc, page, &placement);
+                return self.store_glyph(glyph, size, &alloc, page, &placement, Content::Mask);
             }
             
             // Try evicting glyphs from previous frames and retry
@@ -493,7 +485,7 @@ impl ContextlessTextRenderer {
                 self.mask_atlas.pages[page].evict_old_glyphs();
                 
                 if let Some(alloc) = self.mask_atlas.pages[page].packer.allocate(size) {
-                    return self.store_glyph(glyph, size, &alloc, page, &placement);
+                    return self.store_glyph(glyph, size, &alloc, page, &placement, Content::Mask);
                 }
             }
         }
@@ -501,13 +493,13 @@ impl ContextlessTextRenderer {
         // Create a new page and try to allocate there
         let new_page: usize = self.make_new_mask_atlas_page();
         if let Some(alloc) = self.mask_atlas.pages[new_page].packer.allocate(size) {
-            return self.store_glyph(glyph, size, &alloc, new_page, &placement);
+            return self.store_glyph(glyph, size, &alloc, new_page, &placement, Content::Mask);
         }
         
         // Glyph is too large to fit even in a new empty page. It's time to give up.
         // todo: should probably try to catch these earlier by checking for unreasonable font sizes
         // todo2: technically, we could split the huge glyph across multiple pages, or render it on the surface directly.
-        self.mask_atlas.glyph_cache.push(glyph.key(), None);
+        self.glyph_cache.push(glyph.key(), None);
         return None;
     }
     
@@ -518,11 +510,12 @@ impl ContextlessTextRenderer {
             size: Size2D<i32, UnknownUnit>                            , 
             alloc: &Allocation, 
             page: usize, 
-            placement: &Placement
+            placement: &Placement,
+            content_type: Content,
         ) -> Option<(Quad, usize)> {
         self.copy_glyph_to_atlas(size, alloc, page);
-        let stored_glyph = StoredGlyph::create(alloc, placement, page, self.frame);
-        self.mask_atlas.glyph_cache.push(glyph.key(), Some(stored_glyph));
+        let stored_glyph = StoredGlyph::create(alloc, placement, page, self.frame, content_type);
+        self.glyph_cache.push(glyph.key(), Some(stored_glyph));
         let quad = make_quad(glyph, &stored_glyph);
         Some((quad, page))
     }

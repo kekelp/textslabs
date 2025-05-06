@@ -200,8 +200,9 @@ impl ContextlessTextRenderer {
             label: Some("atlas bind group"),
         });
 
+        let glyph_cache = LruCache::unbounded_with_hasher(BuildHasherDefault::<FxHasher>::default());
+
         let mask_atlas = Atlas::<GrayImage> {
-            glyph_cache: LruCache::unbounded_with_hasher(BuildHasherDefault::<FxHasher>::default()),
             pages: vec![AtlasPage::<GrayImage> {
                 image: GrayImage::from_pixel(atlas_size, atlas_size, Luma([0])),
                 last_frame_evicted: 0,
@@ -255,6 +256,20 @@ impl ContextlessTextRenderer {
         let font_cx = FontContext::new();
         let layout_cx = LayoutContext::<ColorBrush>::new();
         let frame = 1;
-        Self { frame, atlas_size, tmp_image, font_cx, layout_cx, mask_atlas, pipeline, atlas_bind_group_layout, sampler, params, params_buffer, params_bind_group, }
+        Self {
+            frame,
+            atlas_size,
+            tmp_image,
+            font_cx,
+            layout_cx,
+            mask_atlas,
+            pipeline,
+            atlas_bind_group_layout,
+            sampler,
+            params,
+            params_buffer,
+            params_bind_group,
+            glyph_cache,
+        }
     }
 }
