@@ -88,6 +88,12 @@ impl State {
                         self.show_atlas = ! self.show_atlas;
                     }
                 }
+                if let winit::keyboard::Key::Named(winit::keyboard::NamedKey::F2) = event.logical_key {
+                    if event.state.is_pressed() && ! event.repeat {
+                        self.current_layout = (self.current_layout + 1) % self.text_layouts.len();
+                        self.window.request_redraw();
+                    }
+                }
             }
             WindowEvent::Resized(size) => {
                 self.surface_config.width = size.width;
