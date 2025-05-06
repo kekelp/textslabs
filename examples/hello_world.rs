@@ -53,12 +53,12 @@ impl State {
         let layout = vec![
             rich_layout(),
             layout(JAPANESE_TEXT),
-            // layout(CHINESE_TEXT),
-            // layout(CYRILLIC_TEXT),
+            layout(CHINESE_TEXT),
+            layout(CYRILLIC_TEXT),
         ];
 
         let text_renderer_params = TextRendererParams {
-            atlas_page_size: AtlasPageSize::Flat(256), // tiny page to test out multi-page stuff
+            atlas_page_size: AtlasPageSize::Flat(300), // tiny page to test out multi-page stuff
         };
         let text_renderer = TextRenderer::new_with_params(&device, &queue, text_renderer_params);
 
@@ -196,7 +196,9 @@ fn rich_layout() -> Layout<ColorBrush> {
     let _too_advanced_for_parley = "𒀀𐎠𐤀𓀀𐊀𐌀𐍁𐐀𐑀𐒀𐓀🪨🪩༺࿐ཀླུ𓂀𓃰꧁꧂𝕳𝖊𝖑𝖑𝖔𝓗𝓮𝓵𝓵𝓸𝔸𝕓𝕔ᚠᚢᚦᚨᚱᚲ᚛᚜ᚫᚹᛁᛋ𐤈𐤉𐤊𐤋𐌸𐌰𐌽𐌺𐍃𝌆𝍖ꜰʟᴀꜱᴋʇxǝʇ⣿⣷⣄⠋⠕⠝⠞⍼⎋ﬡﷺ𐊗𐊕𐊐𐊎𐊆𐊍𐎅𐎟𐎚𐎗𐎛𐬀𐬁𐬂𐬃𐡀𐡁𐡂𐡃𒈙𒐫𒊒𒄆𓏤𓆉𓀀𓀁𓀂𓀃ඞ⋮⋰⋱≋≌≍≎≏꧅꧞🜁🜂🜃🜄🝰🝱🝲🝳𖡄𖤍𗼇𗼈𗼉𗼊༄༅༆༇࿈࿉࿊࿋⟦⟧⟨⟩⟪⟫⦃⦄⦅⦆⦇⦈᯼᯽᯾᯿᰻᰼᰽᰾⯑⮾⮿⯀⯁⿰⿱⿲⿳⿴⿵⿶⿷⿸⿹⿺⿻
     ｜｝～Ｈｅｌｌｏ　Ｗｏｒｌｄ！";
 
-    let text = String::from("Press
+    let text = String::from("Press F1 to see the atlas pages
+    Press F2 to cycle through different layouts
+    Lorem ipsum\tdolor sit amet, conse🤡💯🧠🔥ctetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in r🔥👁️👄👁️🥶🤣😂eprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidata🤣😂💅🙃🤦‍♀️✨t non proident, sunt in culpa qui officia deserunt mollit anim id est laborum. O algo.
     ");    
 
     let display_scale = 1.0;
@@ -245,7 +247,7 @@ const CYRILLIC_TEXT: &str = "Мунди деленит молестиае усу
 
 const CHINESE_TEXT: &str = "此后，人民文学出版社和齐鲁书社的做法被诸多出版社效仿，可见文化部出版局1985年的一纸批文并没有打消各地出版社出版此书的念头。所以，1988年新闻出版署发出了《关于整理出版〈金瓶梅〉及其研究资料的通知》。《通知》首先说明《金瓶梅》及其研究资料的需求“日益增大”，“先后有十余家出版社向我署提出报告，分别要求出版《金瓶梅》的各种版本及改编本，包括图录、连环画及影视文学剧本等”，但话锋一转，明确提出“《金瓶梅》一书虽在文学史上占有重要地位，但该书存在大量自然主义的秽亵描写，不宜广泛印行";
 
-const JAPANESE_TEXT: &str = "はこれら";
+const JAPANESE_TEXT: &str = "ヘッケはこれらのL-函数が全複素平面へ有理型接続を持ち、指標が自明であるときには s = 1 でオーダー 1 である極を持ち、それ以外では解析的であることを証明した。原始ヘッケ指標（原始ディリクレ指標に同じ方法である modulus に相対的に定義された）に対し、ヘッケは、これらのL-函数が指標の L-函数の函数等式を満たし、L-函数の複素共役指標であることを示した。 主イデアル上の座と、無限での座を含む全ての例外有限集合の上で 1 である単円の上への写像を取ることで、イデール類群の指標 ψ を考える。すると、ψ はイデアル群 IS の指標 χ を生成し、イデアル群は S 上に入らない素イデアル上の自由アーベル群となる。";
 
 fn layout(text: &str) -> Layout<ColorBrush> {
     let display_scale = 1.0;

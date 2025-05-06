@@ -296,17 +296,10 @@ impl ContextlessTextRenderer {
             params_buffer,
             params_bind_group,
             glyph_cache,
-            last_frame_evicted_mask: 0,
-            last_frame_evicted_color: 0,
+            last_frame_evicted: 0,
         }
     }
 }
-
-
-
-
-
-
 
 impl ContextlessTextRenderer {
     pub fn gpu_load(&mut self, device: &Device, queue: &Queue) {

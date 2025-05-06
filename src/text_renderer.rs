@@ -13,10 +13,9 @@ pub struct ContextlessTextRenderer {
 
     pub(crate) glyph_cache: LruCache<GlyphKey, Option<StoredGlyph>, BuildHasherDefault<FxHasher>>,
     pub(crate) mask_atlas_pages: Vec<AtlasPage<GrayImage>>,
-    pub(crate) last_frame_evicted_mask: u64,
+    pub(crate) last_frame_evicted: u64,
     
     pub(crate) color_atlas_pages: Vec<AtlasPage<RgbaImage>>,
-    pub(crate) last_frame_evicted_color: u64,
     
     pub atlas_bind_group_layout: BindGroupLayout,
     
@@ -45,9 +44,10 @@ pub(crate) struct GpuAtlasPage {
 
 
 impl ContextlessTextRenderer {
+    // for now, we're evicting both masks and colors at the same time even if only one spills over
+    // separating them would mean that they can't share the same cache and it would make things more complex 
     fn evict_old_glyphs(&mut self) {
-        self.last_frame_evicted_mask = self.frame;
-        self.last_frame_evicted_color = self.frame;
+        self.last_frame_evicted = self.frame;
 
         while let Some((_key, value)) = self.glyph_cache.peek_lru() {
             
@@ -69,7 +69,7 @@ impl ContextlessTextRenderer {
     }
 
     fn needs_evicting(&self, current_frame: u64) -> bool {
-        self.last_frame_evicted_mask != current_frame
+        self.last_frame_evicted != current_frame
     }
 }
 
@@ -479,10 +479,6 @@ impl ContextlessTextRenderer {
     fn prepare_glyph(&mut self, glyph: &GlyphWithContext, scaler: &mut Scaler) -> Option<(Quad, StoredGlyph)> {
         let (content, placement) = self.render_glyph(&glyph, scaler);
         let size = placement.size();
-
-        // evict everything every time (just for testing, todo: remove this)
-        self.evict_old_glyphs();
-
         
         // For some glyphs there's no image to store, like spaces.
         if size.is_empty() {
@@ -502,13 +498,13 @@ impl ContextlessTextRenderer {
             }
             
             // Try evicting glyphs from previous frames and retry
-            // if self.needs_evicting(self.frame) {
-            //     self.evict_old_glyphs();
+            if self.needs_evicting(self.frame) {
+                self.evict_old_glyphs();
                 
-            //     if let Some(alloc) = self.pack_rectangle(size, content, page) {
-            //         return self.store_glyph(glyph, size, &alloc, page, &placement, content);
-            //     }
-            // }
+                if let Some(alloc) = self.pack_rectangle(size, content, page) {
+                    return self.store_glyph(glyph, size, &alloc, page, &placement, content);
+                }
+            }
         }
         
         // Create a new page and try to allocate there
