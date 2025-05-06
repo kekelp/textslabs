@@ -5,13 +5,14 @@ struct VertexInput {
     @location(2) uv_origin: u32,
     @location(3) color: u32,
     @location(4) depth: f32,
+    @location(5) flags: u32,
 }
 
 struct VertexOutput {
     @invariant @builtin(position) position: vec4<f32>,
     @location(0) color: vec4<f32>,
     @location(1) uv: vec2f,
-    @location(2) @interpolate(flat) content_type: u32,
+    @location(2) @interpolate(flat) flags: u32,
 };
 
 struct Params {
@@ -74,11 +75,18 @@ fn vs_main(input: VertexInput) -> VertexOutput {
         f32((input.color & 0xff000000u) >> 24u) / 255.0,
     );
 
+    vert_output.flags = input.flags;
+
     return vert_output;
 }
 
 @fragment
-fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {    
-    var glyph_alpha = textureSampleLevel(mask_atlas_texture, atlas_sampler, input.uv, 0.0).r;
-    return vec4<f32>(input.color.rgb, input.color.a * glyph_alpha);
+fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
+    if input.flags == 1 {
+        var color = textureSampleLevel(mask_atlas_texture, atlas_sampler, input.uv, 0.0);
+        return vec4<f32>(input.color * color);
+    } else {
+        var glyph_alpha = textureSampleLevel(mask_atlas_texture, atlas_sampler, input.uv, 0.0).r;
+        return vec4<f32>(input.color.rgb, input.color.a * glyph_alpha);
+    }
 }

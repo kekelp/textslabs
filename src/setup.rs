@@ -80,30 +80,6 @@ impl ContextlessTextRenderer {
             mapped_at_creation: false,
         });
 
-        // let color_texture = device.create_texture(&TextureDescriptor {
-        //     label: Some("atlas"),
-        //     size: Extent3d {
-        //         width: atlas_size,
-        //         height: atlas_size,
-        //         depth_or_array_layers: 1,
-        //     },
-        //     mip_level_count: 1,
-        //     sample_count: 1,
-        //     dimension: TextureDimension::D2,
-        //     format: TextureFormat::Rgba8Unorm,
-        //     usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
-        //     view_formats: &[],
-        // });
-        // let color_texture_view = color_texture.create_view(&TextureViewDescriptor::default());
-
-        // let color_vertex_buffer_size = 4096 * 9;
-        // let color_vertex_buffer = device.create_buffer(&BufferDescriptor {
-        //     label: Some("vertices"),
-        //     size: color_vertex_buffer_size,
-        //     usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
-        //     mapped_at_creation: false,
-        // });
-
         let sampler = device.create_sampler(&SamplerDescriptor {
             label: Some("sampler"),
             min_filter: FilterMode::Nearest,
@@ -128,6 +104,7 @@ impl ContextlessTextRenderer {
                 2 => Uint32,
                 3 => Uint32,
                 4 => Float32,
+                5 => Uint32,
             ],
         };
 
@@ -184,8 +161,7 @@ impl ContextlessTextRenderer {
         });
 
         let atlas_bind_group_layout = device.create_bind_group_layout(&ATLAS_BIND_GROUP_LAYOUT);
-
-        let bind_group = device.create_bind_group(&BindGroupDescriptor {
+        let mask_bind_group = device.create_bind_group(&BindGroupDescriptor {
             layout: &atlas_bind_group_layout,
             entries: &[
                 BindGroupEntry {
@@ -202,20 +178,70 @@ impl ContextlessTextRenderer {
 
         let glyph_cache = LruCache::unbounded_with_hasher(BuildHasherDefault::<FxHasher>::default());
 
-        let mask_atlas = Atlas::<GrayImage> {
-            pages: vec![AtlasPage::<GrayImage> {
-                image: GrayImage::from_pixel(atlas_size, atlas_size, Luma([0])),
-                last_frame_evicted: 0,
-                packer: BucketedAtlasAllocator::new(size2(atlas_size as i32, atlas_size as i32)),
-                quads: Vec::<Quad>::with_capacity(300),
-                vertex_buffer_size: mask_vertex_buffer_size,
-                gpu: Some(GpuAtlasPage {
-                    texture: mask_texture,
-                    vertex_buffer: mask_vertex_buffer,
-                    bind_group: bind_group,
-                })
-            }],
-        };
+        let mask_atlas_pages = vec![AtlasPage::<GrayImage> {
+            image: GrayImage::from_pixel(atlas_size, atlas_size, Luma([0])),
+            last_frame_evicted: 0,
+            packer: BucketedAtlasAllocator::new(size2(atlas_size as i32, atlas_size as i32)),
+            quads: Vec::<Quad>::with_capacity(300),
+            vertex_buffer_size: mask_vertex_buffer_size,
+            gpu: Some(GpuAtlasPage {
+                texture: mask_texture,
+                vertex_buffer: mask_vertex_buffer,
+                bind_group: mask_bind_group,
+            })
+        }];
+
+        let color_texture = device.create_texture(&TextureDescriptor {
+            label: Some("atlas"),
+            size: Extent3d {
+                width: atlas_size,
+                height: atlas_size,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format: TextureFormat::Rgba8Unorm,
+            usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        let color_texture_view = color_texture.create_view(&TextureViewDescriptor::default());
+
+        let color_vertex_buffer_size = 4096 * 9;
+        let color_vertex_buffer = device.create_buffer(&BufferDescriptor {
+            label: Some("vertices"),
+            size: color_vertex_buffer_size,
+            usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let color_bind_group = device.create_bind_group(&BindGroupDescriptor {
+            layout: &atlas_bind_group_layout,
+            entries: &[
+                BindGroupEntry {
+                    binding: 0,
+                    resource: BindingResource::TextureView(&color_texture_view),
+                },
+                BindGroupEntry {
+                    binding: 1,
+                    resource: BindingResource::Sampler(&sampler),
+                },
+            ],
+            label: Some("atlas bind group"),
+        });
+
+        let color_atlas_pages = vec![AtlasPage::<RgbaImage> {
+            image: RgbaImage::from_pixel(atlas_size, atlas_size, Rgba([0, 0, 0, 0])),
+            last_frame_evicted: 0,
+            packer: BucketedAtlasAllocator::new(size2(atlas_size as i32, atlas_size as i32)),
+            quads: Vec::<Quad>::with_capacity(300),
+            vertex_buffer_size: mask_vertex_buffer_size,
+            gpu: Some(GpuAtlasPage {
+                texture: color_texture,
+                vertex_buffer: color_vertex_buffer,
+                bind_group: color_bind_group,
+            })
+        }];
 
         let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: None,
@@ -236,6 +262,7 @@ impl ContextlessTextRenderer {
                 module: &shader,
                 entry_point: Some("fs_main"),
                 targets: &[Some(ColorTargetState {
+                    // todo: is this the format that needs to be the same as outside?
                     format: TextureFormat::Bgra8Unorm,
                     blend: Some(BlendState::ALPHA_BLENDING),
                     write_mask: ColorWrites::default(),
@@ -262,7 +289,8 @@ impl ContextlessTextRenderer {
             tmp_image,
             font_cx,
             layout_cx,
-            mask_atlas,
+            mask_atlas_pages,
+            color_atlas_pages,
             pipeline,
             atlas_bind_group_layout,
             sampler,
@@ -270,6 +298,165 @@ impl ContextlessTextRenderer {
             params_buffer,
             params_bind_group,
             glyph_cache,
+        }
+    }
+}
+
+
+
+
+
+
+
+impl ContextlessTextRenderer {
+    pub fn gpu_load(&mut self, device: &Device, queue: &Queue) {
+        queue.write_buffer(&self.params_buffer, 0, unsafe {
+            core::slice::from_raw_parts(
+                &self.params as *const Params as *const u8,
+                mem::size_of::<Params>(),
+            )
+        });
+
+        for page in &mut self.mask_atlas_pages {
+            if page.gpu.is_none() {
+                let texture = device.create_texture(&TextureDescriptor {
+                    label: Some("atlas"),
+                    size: Extent3d {
+                        width: self.atlas_size,
+                        height: self.atlas_size,
+                        depth_or_array_layers: 1,
+                    },
+                    mip_level_count: 1,
+                    sample_count: 1,
+                    dimension: TextureDimension::D2,
+                    format: TextureFormat::R8Unorm,
+                    usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
+                    view_formats: &[],
+                });
+                let texture_view = texture.create_view(&TextureViewDescriptor::default());
+
+                let vertex_buffer = device.create_buffer(&BufferDescriptor {
+                    label: Some("vertices"),
+                    size: page.vertex_buffer_size,
+                    usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
+                    mapped_at_creation: false,
+                });
+
+                let bind_group = device.create_bind_group(&BindGroupDescriptor {
+                    layout: &self.atlas_bind_group_layout,
+                    entries: &[
+                        BindGroupEntry {
+                            binding: 0,
+                            resource: BindingResource::TextureView(&texture_view),
+                        },
+                        BindGroupEntry {
+                            binding: 1,
+                            resource: BindingResource::Sampler(&self.sampler),
+                        },
+                    ],
+                    label: Some("atlas bind group"),
+                });
+        
+                page.gpu = Some(GpuAtlasPage {
+                    vertex_buffer,
+                    texture,
+                    bind_group,
+                })
+            }
+
+            let bytes: &[u8] = bytemuck::cast_slice(&page.quads);
+            queue.write_buffer(&page.gpu.as_ref().unwrap().vertex_buffer, 0, &bytes);
+
+            queue.write_texture(
+                TexelCopyTextureInfo {
+                    texture: &page.gpu.as_ref().unwrap().texture,
+                    mip_level: 0,
+                    origin: Origin3d { x: 0, y: 0, z: 0 },
+                    aspect: TextureAspect::All,
+                },
+                &page.image.as_raw(),
+                TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(page.image.width()),
+                    rows_per_image: None,
+                },
+                Extent3d {
+                    width: page.image.width(),
+                    height: page.image.height(),
+                    depth_or_array_layers: 1,
+                },
+            );
+        }
+
+        for page in &mut self.color_atlas_pages {
+            if page.gpu.is_none() {
+                let texture = device.create_texture(&TextureDescriptor {
+                    label: Some("atlas"),
+                    size: Extent3d {
+                        width: self.atlas_size,
+                        height: self.atlas_size,
+                        depth_or_array_layers: 1,
+                    },
+                    mip_level_count: 1,
+                    sample_count: 1,
+                    dimension: TextureDimension::D2,
+                    format: TextureFormat::Rgba8Unorm,
+                    usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
+                    view_formats: &[],
+                });
+                let texture_view = texture.create_view(&TextureViewDescriptor::default());
+
+                let vertex_buffer = device.create_buffer(&BufferDescriptor {
+                    label: Some("vertices"),
+                    size: page.vertex_buffer_size,
+                    usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
+                    mapped_at_creation: false,
+                });
+
+                let bind_group = device.create_bind_group(&BindGroupDescriptor {
+                    layout: &self.atlas_bind_group_layout,
+                    entries: &[
+                        BindGroupEntry {
+                            binding: 0,
+                            resource: BindingResource::TextureView(&texture_view),
+                        },
+                        BindGroupEntry {
+                            binding: 1,
+                            resource: BindingResource::Sampler(&self.sampler),
+                        },
+                    ],
+                    label: Some("atlas bind group"),
+                });
+        
+                page.gpu = Some(GpuAtlasPage {
+                    vertex_buffer,
+                    texture,
+                    bind_group,
+                })
+            }
+        
+            let bytes: &[u8] = bytemuck::cast_slice(&page.quads);
+            queue.write_buffer(&page.gpu.as_ref().unwrap().vertex_buffer, 0, &bytes);
+    
+            queue.write_texture(
+                TexelCopyTextureInfo {
+                    texture: &page.gpu.as_ref().unwrap().texture,
+                    mip_level: 0,
+                    origin: Origin3d { x: 0, y: 0, z: 0 },
+                    aspect: TextureAspect::All,
+                },
+                &page.image.as_raw(),
+                TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(page.image.width() * 4),
+                    rows_per_image: None,
+                },
+                Extent3d {
+                    width: page.image.width(),
+                    height: page.image.height(),
+                    depth_or_array_layers: 1,
+                },
+            );
         }
     }
 }
