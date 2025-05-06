@@ -22,12 +22,39 @@ const ATLAS_BIND_GROUP_LAYOUT: BindGroupLayoutDescriptor = wgpu::BindGroupLayout
     label: Some("atlas bind group layout"),
 };
 
-impl ContextlessTextRenderer {
-    pub(crate) fn new(device: &Device, _queue: &Queue) -> Self {
+pub struct TextRendererParams {
+    atlas_page_size: AtlasPageSize,
+}
+impl Default for TextRendererParams {
+    fn default() -> Self {
         // 2048 is guaranteed to work everywhere that webgpu supports, and it seems both small enough that it's fine to allocate it upfront even if a smaller one would have been fine, and big enough that even on gpus that could hold 8k textures, I don't feel too bad about using multiple 2k pages instead of a single big 8k one
-        // Ideally you'd still with small pages and grow them until the max texture dim, but having both cache eviction, multiple pages, AND page growing seems a bit too much for now
-        let atlas_size = Limits::downlevel_webgl2_defaults().max_texture_dimension_2d; // 2048
-        // let atlas_size = 256;
+        // Ideally you'd still with small pages and grow them until the max texture dim, but having cache eviction, multiple pages, AND page growing seems a bit too much for now
+        let atlas_page_size = AtlasPageSize::DownlevelWrbgl2Max; // 2048
+        Self { atlas_page_size }
+    }
+}
+pub enum AtlasPageSize {
+    Flat(u32),
+    CurrentDeviceMax,
+    DownlevelWrbgl2Max, // 2048
+    DownlevelMax, // 2048
+    WgpuMax, // 8192
+}
+impl AtlasPageSize {
+    fn size(self, device: &Device) -> u32 {
+        match self {
+            AtlasPageSize::Flat(i) => i,
+            AtlasPageSize::DownlevelWrbgl2Max => Limits::downlevel_defaults().max_texture_dimension_2d,
+            AtlasPageSize::DownlevelMax => Limits::downlevel_webgl2_defaults().max_texture_dimension_2d,
+            AtlasPageSize::WgpuMax => Limits::default().max_texture_dimension_2d,
+            AtlasPageSize::CurrentDeviceMax => device.limits().max_texture_dimension_2d,
+        }
+    }
+}
+
+impl ContextlessTextRenderer {
+    pub fn new_with_params(device: &Device, _queue: &Queue, params: TextRendererParams) -> Self {
+        let atlas_size = params.atlas_page_size.size(device);
 
         let mask_texture = device.create_texture(&TextureDescriptor {
             label: Some("atlas"),

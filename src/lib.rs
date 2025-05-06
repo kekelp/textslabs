@@ -1,4 +1,5 @@
 mod setup;
+pub use setup::*;
 
 mod text_renderer;
 pub use text_renderer::*;

@@ -269,11 +269,15 @@ pub struct Resolution {
 }
 
 impl TextRenderer {
-    pub fn new(device: &Device, _queue: &Queue) -> Self {
+    pub fn new_with_params(device: &Device, _queue: &Queue, params: TextRendererParams) -> Self {
         Self {
             scale_cx: ScaleContext::new(),
-            text_renderer: ContextlessTextRenderer::new(device, _queue),
+            text_renderer: ContextlessTextRenderer::new_with_params(device, _queue, params),
         }
+    }
+
+    pub fn new(device: &Device, queue: &Queue) -> Self {
+        Self::new_with_params(device, queue, TextRendererParams::default())
     }
 
     pub fn clear(&mut self) {
@@ -479,6 +483,7 @@ impl ContextlessTextRenderer {
         }
 
         let mut page = 0;
+        let mut made_new_page = false;
 
         loop {
             if page >= self.mask_atlas.pages.len() {
@@ -496,13 +501,20 @@ impl ContextlessTextRenderer {
                 return Some((quad, page));
             } else {
                 eprintln!("couldn't allocate [page {}]", page);
-                if self.mask_atlas.pages[page].needs_evicting(self.frame) {
+                if made_new_page {
+                    // the glyph can't be stored even in a new empty page. It's time to give up.
+                    // todo: should probably try to catch these earlier by checking for unreasonable font sizes
+                    // todo2: technically, we could split the huge glyph across multiple pages, or render it on the surface directly.
+                    self.mask_atlas.glyph_cache.push(glyph_key, None);
+                    return None;
+                } else if self.mask_atlas.pages[page].needs_evicting(self.frame) {
                     eprintln!("trying to evict [page {}]", page);
                     self.mask_atlas.pages[page].evict_old_glyphs();
                     // continue loop and retry on the same page
                 } else {
                     // retry on the next page
                     page += 1;
+                    made_new_page = true;
                     eprintln!("going to next page [page {}]", page);
                 }
             };
