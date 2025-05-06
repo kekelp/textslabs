@@ -152,7 +152,18 @@ impl State {
                         occlusion_query_set: None,
                     });
 
-                    self.text_renderer.render(&mut pass);
+                    // todo: remove
+                    if self.show_atlas {
+                        if self.text_renderer.text_renderer.quads.is_empty() { return }
+                
+                        pass.set_pipeline(&self.text_renderer.text_renderer.pipeline);
+                        pass.set_bind_group(0, &self.text_renderer.text_renderer.bind_group, &[]);
+                        pass.set_bind_group(1, &self.text_renderer.text_renderer.params_bind_group, &[]);
+                        pass.set_vertex_buffer(0, self.text_renderer.text_renderer.vertex_buffer.slice(..));
+                        pass.draw(0..4, 0..1 as u32);
+                    } else {
+                        self.text_renderer.render(&mut pass);
+                    }
                 }
 
                 self.queue.submit(Some(encoder.finish()));

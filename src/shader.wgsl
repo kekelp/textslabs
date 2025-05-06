@@ -88,12 +88,12 @@ fn vs_main(input: VertexInput) -> VertexOutput {
 
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {    
-    var glyph_alpha = textureSampleLevel(mask_atlas_texture, atlas_sampler, input.uv, 0.0).r;
-    return vec4<f32>(input.color.rgb, input.color.a * glyph_alpha);
+    // var glyph_alpha = textureSampleLevel(mask_atlas_texture, atlas_sampler, input.uv, 0.0).r;
+    // return vec4<f32>(input.color.rgb, input.color.a * glyph_alpha);
 
     // // debug
-    // var color = textureSampleLevel(mask_atlas_texture, atlas_sampler, input.uv, 0.0);
-    // return vec4<f32>(color.rgb, 1.0);
+    var color = textureSampleLevel(mask_atlas_texture, atlas_sampler, input.uv, 0.0);
+    return vec4<f32>(color.rgb, 1.0);
 
     // return vec4f(input.uv.x, 0.0, input.uv.y, 1.0); // box
 }

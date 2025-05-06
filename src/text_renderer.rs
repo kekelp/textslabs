@@ -164,7 +164,7 @@ pub struct Quad {
     pub depth: f32,
 }
 
-fn get_quad(glyph: &GlyphWithContext, stored_glyph: &StoredGlyph) -> Quad {
+fn make_quad(glyph: &GlyphWithContext, stored_glyph: &StoredGlyph) -> Quad {
     let scale_factor = 1.0; // todo, what is this
     let line_y = (glyph.run_y * scale_factor).round() as i32;
     let y = line_y + glyph.quantized_pos_y - stored_glyph.placement_top as i32;
@@ -189,6 +189,17 @@ pub(crate) struct StoredGlyph {
     alloc: Allocation,
     placement_left: i32,
     placement_top: i32,
+}
+impl StoredGlyph {
+    fn create(alloc: &Allocation, placement: &Placement, page: usize, frame: u64) -> StoredGlyph {
+        StoredGlyph {
+            page: page as u16,
+            frame: frame,
+            alloc: alloc.clone(),
+            placement_left: placement.left,
+            placement_top: placement.top
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -254,7 +265,7 @@ const SOURCES: &[Source; 3] = &[
 ];
 
 impl ContextlessTextRenderer {
-        pub fn render(&self, pass: &mut RenderPass<'_>) {
+    pub fn render(&self, pass: &mut RenderPass<'_>) {
         if self.quads.is_empty() { return }
 
         pass.set_pipeline(&self.pipeline);
@@ -324,19 +335,18 @@ impl ContextlessTextRenderer {
         for glyph in glyph_run.glyphs() {
             let glyph_ctx = GlyphWithContext::new(glyph, run_x, run_y, font_key, font_size, style.brush.color);
 
-            run_x += glyph.advance;
-
             if let Some(stored_glyph) = self.mask_atlas.glyph_cache.get(&glyph_ctx.key()) {
                 if let Some(stored_glyph) = stored_glyph {
-                    let quad = get_quad(&glyph_ctx, stored_glyph);
+                    let quad = make_quad(&glyph_ctx, stored_glyph);
                     self.quads.push(quad);
-                } 
-                // else: cache hit, but the stored glyph was empty, like a space. Do nothing.
+                }
             } else {
                 if let Some(quad) = self.store_glyph(&glyph_ctx, &mut scaler) {
                     self.quads.push(quad);
                 }
             }
+
+            run_x += glyph.advance;
         }
 
         // Draw decorations: underline & strikethrough
@@ -389,6 +399,7 @@ impl ContextlessTextRenderer {
     }
 
     /// Render a glyph into the `self.tmp_swash_image` buffer
+    // this is going to have to return the Content (color/mask) as well
     fn render_glyph(&mut self, glyph: &GlyphWithContext, scaler: &mut Scaler) -> Placement {
         self.tmp_image.clear();
         Render::new(SOURCES)
@@ -419,16 +430,10 @@ impl ContextlessTextRenderer {
             if let Some(alloc) = self.mask_atlas.pages[0].packer.allocate(size) {
                 self.copy_glyph_to_atlas(size, &alloc);
     
-                let stored_glyph = StoredGlyph {
-                    page: page as u16,
-                    frame: self.frame,
-                    alloc,
-                    placement_left: placement.left,
-                    placement_top: placement.top
-                };
+                let stored_glyph = StoredGlyph::create(&alloc, &placement, page, self.frame);
                 self.mask_atlas.glyph_cache.push(glyph_key, Some(stored_glyph));
     
-                let quad = get_quad(glyph, &stored_glyph);
+                let quad = make_quad(glyph, &stored_glyph);
     
                 return Some(quad);
             } else {
