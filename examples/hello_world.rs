@@ -20,8 +20,9 @@ struct State {
     window: Arc<Window>,
 
     text_renderer: TextRenderer,
-    text_layout: Layout<ColorBrush>,
+    text_layouts: Vec<Layout<ColorBrush>>,
     show_atlas: bool,
+    current_layout: usize,
 }
 
 impl State {
@@ -49,7 +50,12 @@ impl State {
         };
         surface.configure(&device, &surface_config);
 
-        let layout = text_layout();
+        let layout = vec![
+            rich_layout(),
+            layout(CHINESE_TEXT),
+            layout(CYRILLIC_TEXT),
+            layout(JAPANESE_TEXT),
+        ];
 
         let text_renderer_params = TextRendererParams {
             atlas_page_size: AtlasPageSize::Flat(256), // tiny page to test out multi-page stuff
@@ -63,7 +69,8 @@ impl State {
             surface_config,
             window,
             text_renderer,
-            text_layout: layout,
+            text_layouts: layout,
+            current_layout: 0,
             show_atlas: false,
         }
     }
@@ -100,7 +107,7 @@ impl State {
 
                 let now = std::time::Instant::now();
                 self.text_renderer.clear();
-                self.text_renderer.prepare_layout(&self.text_layout);
+                self.text_renderer.prepare_layout(&self.text_layouts[self.current_layout]);
                 println!("prepare(): {:?}", now.elapsed());
 
                 self.text_renderer.gpu_load(&self.device, &self.queue);
@@ -173,7 +180,7 @@ impl winit::application::ApplicationHandler for Application {
     }
 }
 
-fn text_layout() -> Layout<ColorBrush> {
+fn rich_layout() -> Layout<ColorBrush> {
     let _too_advanced_for_parley = "𒀀𐎠𐤀𓀀𐊀𐌀𐍁𐐀𐑀𐒀𐓀🪨🪩༺࿐ཀླུ𓂀𓃰꧁꧂𝕳𝖊𝖑𝖑𝖔𝓗𝓮𝓵𝓵𝓸𝔸𝕓𝕔ᚠᚢᚦᚨᚱᚲ᚛᚜ᚫᚹᛁᛋ𐤈𐤉𐤊𐤋𐌸𐌰𐌽𐌺𐍃𝌆𝍖ꜰʟᴀꜱᴋʇxǝʇ⣿⣷⣄⠋⠕⠝⠞⍼⎋ﬡﷺ𐊗𐊕𐊐𐊎𐊆𐊍𐎅𐎟𐎚𐎗𐎛𐬀𐬁𐬂𐬃𐡀𐡁𐡂𐡃𒈙𒐫𒊒𒄆𓏤𓆉𓀀𓀁𓀂𓀃ඞ⋮⋰⋱≋≌≍≎≏꧅꧞🜁🜂🜃🜄🝰🝱🝲🝳𖡄𖤍𗼇𗼈𗼉𗼊༄༅༆༇࿈࿉࿊࿋⟦⟧⟨⟩⟪⟫⦃⦄⦅⦆⦇⦈᯼᯽᯾᯿᰻᰼᰽᰾⯑⮾⮿⯀⯁⿰⿱⿲⿳⿴⿵⿶⿷⿸⿹⿺⿻
     ｜｝～Ｈｅｌｌｏ　Ｗｏｒｌｄ！";
 
@@ -195,11 +202,9 @@ fn text_layout() -> Layout<ColorBrush> {
     let mut builder = layout_cx.ranged_builder(&mut font_cx, &text, display_scale);
 
     builder.push_default(StyleProperty::Brush(text_brush));
-
     builder.push_default(FontStack::from("system-ui"));
     builder.push_default(StyleProperty::LineHeight(0.5));
     builder.push_default(StyleProperty::FontSize(24.0));
-
     builder.push(StyleProperty::FontWeight(parley::FontWeight::new(600.0)), 0..31);
 
     // builder.push(StyleProperty::Underline(true), 141..150);
@@ -218,11 +223,36 @@ fn text_layout() -> Layout<ColorBrush> {
     //     height: 30.0,
     // });
 
-    // Build the builder into a Layout
-    // let mut layout: Layout<ColorBrush> = builder.build(&text);
     let mut layout: Layout<ColorBrush> = builder.build(&text);
 
-    // Perform layout (including bidi resolution and shaping) with start alignment
+    layout.break_all_lines(max_advance);
+    layout.align(max_advance, Alignment::Start, AlignmentOptions::default());
+
+    return layout;
+}
+
+const CYRILLIC_TEXT: &str = "Мунди деленит молестиае усу ад, пертинах глориатур диссентиас ет нец. Ессент иудицабит маиестатис яуи ад, про ут дицо лорем легере. Вис те цоммодо сцрипта цорпора, тритани интеллегат аргументум цу еум, меи те яуем феугаит. При дисцере интеллегат ат, аеяуе афферт фуиссет ех вих. Цу хас интегре тхеопхрастус. Диам волуптатибус про еа.";
+
+const CHINESE_TEXT: &str = "此后，人民文学出版社和齐鲁书社的做法被诸多出版社效仿，可见文化部出版局1985年的一纸批文并没有打消各地出版社出版此书的念头。所以，1988年新闻出版署发出了《关于整理出版〈金瓶梅〉及其研究资料的通知》。《通知》首先说明《金瓶梅》及其研究资料的需求“日益增大”，“先后有十余家出版社向我署提出报告，分别要求出版《金瓶梅》的各种版本及改编本，包括图录、连环画及影视文学剧本等”，但话锋一转，明确提出“《金瓶梅》一书虽在文学史上占有重要地位，但该书存在大量自然主义的秽亵描写，不宜广泛印行";
+
+const JAPANESE_TEXT: &str = "ヘッケはこれらのL-函数が全複素平面へ有理型接続を持ち、指標が自明であるときには s = 1 でオーダー 1 である極を持ち、それ以外では解析的であることを証明した。原始ヘッケ指標（原始ディリクレ指標に同じ方法である modulus に相対的に定義された）に対し、ヘッケは、これらのL-函数が指標の L-函数の函数等式を満たし、L-函数の複素共役指標であることを示した。 主イデアル上の座と、無限での座を含む全ての例外有限集合の上で 1 である単円の上への写像を取ることで、イデール類群の指標 ψ を考える。すると、ψ はイデアル群 IS の指標 χ を生成し、イデアル群は S 上に入らない素イデアル上の自由アーベル群となる。";
+
+fn layout(text: &str) -> Layout<ColorBrush> {
+    let display_scale = 1.0;
+    let max_advance = Some(500.0 * display_scale);
+    let text_color = Rgba([0, 0, 0, 255]);
+    let mut font_cx = FontContext::new();
+    let mut layout_cx = LayoutContext::new();
+
+    let text_brush = ColorBrush { color: text_color };
+    let mut builder = layout_cx.ranged_builder(&mut font_cx, &text, display_scale);
+    builder.push_default(StyleProperty::Brush(text_brush));
+    builder.push_default(FontStack::from("system-ui"));
+    builder.push_default(StyleProperty::LineHeight(0.5));
+    builder.push_default(StyleProperty::FontSize(24.0));
+
+    let mut layout: Layout<ColorBrush> = builder.build(&text);
+
     layout.break_all_lines(max_advance);
     layout.align(max_advance, Alignment::Start, AlignmentOptions::default());
 
