@@ -45,14 +45,9 @@ pub(crate) struct GpuAtlasPage {
 
 
 impl ContextlessTextRenderer {
-    fn evict_old_glyphs(&mut self, content_type: Content) {
-        eprintln!("trying to evict ({:?})", content_type);
-
-        match content_type {
-            Content::Mask => self.last_frame_evicted_mask = self.frame,
-            Content::Color => self.last_frame_evicted_color = self.frame,
-            Content::SubpixelMask => unreachable!()
-        }
+    fn evict_old_glyphs(&mut self) {
+        self.last_frame_evicted_mask = self.frame;
+        self.last_frame_evicted_color = self.frame;
 
         while let Some((_key, value)) = self.glyph_cache.peek_lru() {
             
@@ -62,27 +57,19 @@ impl ContextlessTextRenderer {
                 }
                 
                 let page = stored_glyph.page as usize;
-                if stored_glyph.content_type == content_type {
-                    match content_type {
-                        Content::Mask => self.mask_atlas_pages[page].packer.deallocate(stored_glyph.alloc.id),
-                        Content::Color => self.color_atlas_pages[page].packer.deallocate(stored_glyph.alloc.id),
-                        Content::SubpixelMask => unreachable!()
-                    }
+                match stored_glyph.content_type {
+                    Content::Mask => self.mask_atlas_pages[page].packer.deallocate(stored_glyph.alloc.id),
+                    Content::Color => self.color_atlas_pages[page].packer.deallocate(stored_glyph.alloc.id),
+                    Content::SubpixelMask => unreachable!()
                 }
-                eprintln!("evicting ({:?})", stored_glyph.content_type);
-
             }
             
             self.glyph_cache.pop_lru();
         }
     }
 
-    fn needs_evicting(&self, current_frame: u64, content_type: Content) -> bool {
-        match content_type {
-            Content::Mask => self.last_frame_evicted_mask != current_frame,
-            Content::Color => self.last_frame_evicted_color != current_frame,
-            Content::SubpixelMask => unreachable!()
-        }
+    fn needs_evicting(&self, current_frame: u64) -> bool {
+        self.last_frame_evicted_mask != current_frame
     }
 }
 
@@ -490,6 +477,10 @@ impl ContextlessTextRenderer {
     fn prepare_glyph(&mut self, glyph: &GlyphWithContext, scaler: &mut Scaler) -> Option<(Quad, StoredGlyph)> {
         let (content, placement) = self.render_glyph(&glyph, scaler);
         let size = placement.size();
+
+        // evict everything every time (just for testing, todo: remove this)
+        self.evict_old_glyphs();
+
         
         // For some glyphs there's no image to store, like spaces.
         if size.is_empty() {
@@ -509,13 +500,13 @@ impl ContextlessTextRenderer {
             }
             
             // Try evicting glyphs from previous frames and retry
-            if self.needs_evicting(self.frame, content) {
-                self.evict_old_glyphs(content);
+            // if self.needs_evicting(self.frame) {
+            //     self.evict_old_glyphs();
                 
-                if let Some(alloc) = self.pack_rectangle(size, content, page) {
-                    return self.store_glyph(glyph, size, &alloc, page, &placement, content);
-                }
-            }
+            //     if let Some(alloc) = self.pack_rectangle(size, content, page) {
+            //         return self.store_glyph(glyph, size, &alloc, page, &placement, content);
+            //     }
+            // }
         }
         
         // Create a new page and try to allocate there
