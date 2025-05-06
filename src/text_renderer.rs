@@ -146,7 +146,7 @@ fn make_quad(glyph: &GlyphWithContext, stored_glyph: &StoredGlyph) -> Quad {
     let x = glyph.quantized_pos_x + stored_glyph.placement_left as i32;
 
     let (dim_x, dim_y) = (stored_glyph.alloc.rectangle.min.x, stored_glyph.alloc.rectangle.min.y);
-    let (size_x, size_y) = (stored_glyph.alloc.rectangle.width(), stored_glyph.alloc.rectangle.height());
+    let (size_x, size_y) = (stored_glyph.size.width, stored_glyph.size.height);
 
     let (color, flags) = match stored_glyph.content_type {
         Content::Mask => (glyph.color, 0),
@@ -172,6 +172,7 @@ pub(crate) struct StoredGlyph {
     alloc: Allocation,
     placement_left: i32,
     placement_top: i32,
+    size: Size2D<i32, UnknownUnit>,
 }
 impl StoredGlyph {
     fn create(alloc: &Allocation, placement: &Placement, page: usize, frame: u64, content_type: Content) -> StoredGlyph {
@@ -181,7 +182,8 @@ impl StoredGlyph {
             frame,
             alloc: alloc.clone(),
             placement_left: placement.left,
-            placement_top: placement.top
+            placement_top: placement.top,
+            size: placement.size(),
         }
     }
 }
