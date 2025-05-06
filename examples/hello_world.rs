@@ -51,7 +51,10 @@ impl State {
 
         let layout = text_layout();
 
-        let text_renderer = TextRenderer::new(&device, &queue);
+        let text_renderer_params = TextRendererParams {
+            atlas_page_size: AtlasPageSize::Flat(256), // tiny page to test out multi-page stuff
+        };
+        let text_renderer = TextRenderer::new_with_params(&device, &queue, text_renderer_params);
 
         Self {
             device,

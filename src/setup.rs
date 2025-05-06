@@ -23,7 +23,7 @@ const ATLAS_BIND_GROUP_LAYOUT: BindGroupLayoutDescriptor = wgpu::BindGroupLayout
 };
 
 pub struct TextRendererParams {
-    atlas_page_size: AtlasPageSize,
+    pub atlas_page_size: AtlasPageSize,
 }
 impl Default for TextRendererParams {
     fn default() -> Self {
