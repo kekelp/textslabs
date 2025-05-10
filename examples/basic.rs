@@ -49,9 +49,9 @@ impl State {
         surface.configure(&device, &surface_config);
 
         let text_boxes = vec![
-            TextBox::new("Text box???????????????????????????????????????????????????????".to_string()),
-            TextBox::new("Saddy".to_string()),
-            TextBox::new("Okayeg".to_string()),
+            TextBox::new("Text box???????????????????????????????????????????????????????".to_string(), 10.0, 10.0, 500.0, 0.0),
+            TextBox::new("Saddy".to_string(), 10.0, 50.0, 500.0, 0.0),
+            TextBox::new("Okayeg".to_string(), 10.0, 70.0, 500.0, 0.0),
         ];
 
         let text_renderer_params = TextRendererParams {
@@ -105,9 +105,9 @@ impl State {
 
                 self.text_renderer.clear();
                 for text_box in &mut self.text_boxes {
-                    self.text_renderer.prepare_layout(text_box.layout());
-                    // self.text_renderer.prepare_layout(&rich_layout());
-                    dbg!(&text_box.text);
+                    let (left, top) = text_box.pos();
+                    self.text_renderer.prepare_layout(text_box.layout(), left, top);
+                    dbg!(&text_box.text());
                 }
                 self.text_renderer.gpu_load(&self.device, &self.queue);
 

@@ -140,9 +140,7 @@ pub struct Quad {
 }
 
 fn make_quad(glyph: &GlyphWithContext, stored_glyph: &StoredGlyph) -> Quad {
-    let scale_factor = 1.0; // todo, what is this
-    let line_y = (glyph.run_y * scale_factor).round() as i32;
-    let y = line_y + glyph.quantized_pos_y - stored_glyph.placement_top as i32;
+    let y = glyph.quantized_pos_y - stored_glyph.placement_top as i32;
     let x = glyph.quantized_pos_x + stored_glyph.placement_left as i32;
 
     let (dim_x, dim_y) = (stored_glyph.alloc.rectangle.min.x, stored_glyph.alloc.rectangle.min.y);
@@ -226,8 +224,8 @@ impl TextRenderer {
         self.text_renderer.clear();
     }
 
-    pub fn prepare_layout(&mut self, layout: &Layout<ColorBrush>) {
-        self.text_renderer.prepare_layout(layout, &mut self.scale_cx);
+    pub fn prepare_layout(&mut self, layout: &Layout<ColorBrush>, left: f32, top: f32) {
+        self.text_renderer.prepare_layout(layout, &mut self.scale_cx, left, top);
     }
 
     pub fn gpu_load(&mut self, device: &Device, queue: &Queue) {
@@ -338,12 +336,12 @@ impl ContextlessTextRenderer {
         }
     }
 
-    fn prepare_layout(&mut self, layout: &Layout<ColorBrush>, scale_cx: &mut ScaleContext) {
+    fn prepare_layout(&mut self, layout: &Layout<ColorBrush>, scale_cx: &mut ScaleContext, left: f32, top: f32) {
         for line in layout.lines() {
             for item in line.items() {
                 match item {
                     PositionedLayoutItem::GlyphRun(glyph_run) => {
-                        self.prepare_glyph_run(&glyph_run, scale_cx);
+                        self.prepare_glyph_run(&glyph_run, scale_cx, left, top);
                     }
                     PositionedLayoutItem::InlineBox(_inline_box) => {}
                 }
@@ -355,9 +353,11 @@ impl ContextlessTextRenderer {
         &mut self,
         glyph_run: &GlyphRun<'_, ColorBrush>,
         scale_cx: &mut ScaleContext,
+        left: f32,
+        top: f32
     ) {
-        let mut run_x = glyph_run.offset();
-        let run_y = glyph_run.baseline();
+        let mut run_x = left + glyph_run.offset();
+        let run_y = top + glyph_run.baseline();
         let style = glyph_run.style();
 
         let run = glyph_run.run();
@@ -577,7 +577,6 @@ impl ContextlessTextRenderer {
 struct GlyphWithContext {
     glyph: Glyph,
     color: u32,
-    run_y: f32,
     font_key: u64,
     font_size: f32,
     quantized_pos_x: i32,
@@ -601,7 +600,7 @@ impl GlyphWithContext {
             + ((color.0[2] as u32) << 16)
             + ((color.0[3] as u32) << 24);
 
-        Self { glyph, color, run_y, font_key, font_size, quantized_pos_x, quantized_pos_y, frac_pos_x, frac_pos_y, subpixel_bin_x, subpixel_bin_y,}
+        Self { glyph, color, font_key, font_size, quantized_pos_x, quantized_pos_y, frac_pos_x, frac_pos_y, subpixel_bin_x, subpixel_bin_y,}
     }
 
     fn key(&self) -> GlyphKey {

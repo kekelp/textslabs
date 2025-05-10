@@ -29,19 +29,19 @@ fn with_text_cx<R>(f: impl FnOnce(&mut TextContext) -> R) -> R {
 pub struct TextBox {
     text: String,
     layout: Layout<ColorBrush>,
-    need_reyalout: bool,
-    left: i32,
-    top: i32,
-    max_width: i32,
+    needs_relayout: bool,
+    left: f32,
+    top: f32,
+    max_width: f32,
     pub depth: f32,
 }
 
 impl TextBox {
-    pub fn new(text: String, left: i32, top: i32, max_width: i32, depth: f32) -> Self {
+    pub fn new(text: String, left: f32, top: f32, max_width: f32, depth: f32) -> Self {
         Self {
             text,
             layout: Layout::new(),
-            need_reyalout: true,
+            needs_relayout: true,
             left,
             top,
             max_width,
@@ -50,27 +50,54 @@ impl TextBox {
     }
 
     pub fn layout(&mut self) -> &Layout<ColorBrush> {
-        if self.need_reyalout {
-            self.relayout();
-        }
+        self.relayout_if_needed();
         &self.layout
     }
 
-    fn relayout(&mut self) {
-        self.layout = with_text_cx(|text_cx| {
-            let mut builder =
-                text_cx
-                    .layout_cx
-                    .ranged_builder(&mut text_cx.font_cx, &self.text, 1.0);
-            let mut layout: Layout<ColorBrush> = builder.build(&self.text);
-            let max_advance = 200.0;
-            layout.break_all_lines(Some(max_advance));
-            layout.align(
-                Some(max_advance),
-                Alignment::Start,
-                AlignmentOptions::default(),
-            );
-            layout
-        });
+    fn relayout_if_needed(&mut self) {
+        if self.needs_relayout {
+            self.layout = with_text_cx(|text_cx| {
+                let mut builder =
+                    text_cx
+                        .layout_cx
+                        .ranged_builder(&mut text_cx.font_cx, &self.text, 1.0);
+                let mut layout: Layout<ColorBrush> = builder.build(&self.text);
+                let max_advance = 200.0;
+                layout.break_all_lines(Some(max_advance));
+                layout.align(
+                    Some(max_advance),
+                    Alignment::Start,
+                    AlignmentOptions::default(),
+                );
+                layout
+            });
+        }
+    }
+}
+
+impl TextBox {
+    pub fn text(&self) -> &String {
+        &self.text
+    }
+    pub fn text_mut(&mut self) -> &mut String {
+        &mut self.text
+    }
+    
+    pub fn pos(&self) -> (f32, f32) {
+        (self.left, self.top)
+    }
+    
+    pub fn set_position(&mut self, left: f32, top: f32) {
+        (self.left, self.top) = (left, top)
+    }
+
+    pub fn max_width(&self) -> f32 {
+        self.max_width
+    }
+    pub fn set_max_width(&mut self, max_width: f32) {
+        if self.max_width != max_width {
+            self.max_width = max_width;
+            self.needs_relayout = true;
+        }
     }
 }

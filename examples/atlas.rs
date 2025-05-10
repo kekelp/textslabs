@@ -115,7 +115,7 @@ impl State {
 
                 let now = std::time::Instant::now();
                 self.text_renderer.clear();
-                self.text_renderer.prepare_layout(&self.text_layouts[self.current_layout]);
+                self.text_renderer.prepare_layout(&self.text_layouts[self.current_layout], 50.0, 50.0);
                 println!("prepare(): {:?}", now.elapsed());
 
                 self.text_renderer.gpu_load(&self.device, &self.queue);
@@ -210,7 +210,7 @@ fn rich_layout() -> Layout<ColorBrush> {
 
     builder.push_default(StyleProperty::Brush(text_brush));
     builder.push_default(FontStack::from("system-ui"));
-    builder.push_default(StyleProperty::LineHeight(0.5));
+    builder.push_default(StyleProperty::LineHeight(1.2));
     builder.push_default(StyleProperty::FontSize(24.0));
     builder.push(StyleProperty::FontWeight(parley::FontWeight::new(800.0)), 0..31);
     builder.push(StyleProperty::FontWeight(parley::FontWeight::new(600.0)), 32..105);
@@ -259,7 +259,7 @@ fn layout(text: &str) -> Layout<ColorBrush> {
     let mut builder = layout_cx.ranged_builder(&mut font_cx, &text, display_scale);
     builder.push_default(StyleProperty::Brush(text_brush));
     builder.push_default(FontStack::from("system-ui"));
-    builder.push_default(StyleProperty::LineHeight(0.5));
+    builder.push_default(StyleProperty::LineHeight(1.2));
     builder.push_default(StyleProperty::FontSize(24.0));
 
     let mut layout: Layout<ColorBrush> = builder.build(&text);
