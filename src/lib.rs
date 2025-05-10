@@ -4,6 +4,9 @@ pub use setup::*;
 mod text_renderer;
 pub use text_renderer::*;
 
+mod text_box;
+pub use text_box::*;
+
 use bytemuck::{Pod, Zeroable};
 use etagere::euclid::{Size2D, UnknownUnit};
 use etagere::{size2, Allocation, BucketedAtlasAllocator};

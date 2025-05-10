@@ -189,14 +189,10 @@ impl StoredGlyph {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct ColorBrush {
-    pub color: Rgba<u8>,
-}
+pub struct ColorBrush(pub [u8; 4]);
 impl Default for ColorBrush {
     fn default() -> Self {
-        Self {
-            color: Rgba([0, 0, 0, 255]),
-        }
+        Self([0, 0, 0, 255])
     }
 }
 
@@ -379,7 +375,7 @@ impl ContextlessTextRenderer {
             .build();
 
         for glyph in glyph_run.glyphs() {
-            let glyph_ctx = GlyphWithContext::new(glyph, run_x, run_y, font_key, font_size, style.brush.color);
+            let glyph_ctx = GlyphWithContext::new(glyph, run_x, run_y, font_key, font_size, style.brush);
 
             if let Some(stored_glyph) = self.glyph_cache.get(&glyph_ctx.key()) {
                 if let Some(stored_glyph) = stored_glyph {
@@ -593,17 +589,17 @@ struct GlyphWithContext {
 }
 
 impl GlyphWithContext {
-    fn new(glyph: Glyph, run_x: f32, run_y: f32, font_key: u64, font_size: f32, color: Rgba<u8>) -> Self {
+    fn new(glyph: Glyph, run_x: f32, run_y: f32, font_key: u64, font_size: f32, color: ColorBrush) -> Self {
         let glyph_x = run_x + glyph.x;
         let glyph_y = run_y - glyph.y;
 
         let (quantized_pos_x, frac_pos_x, subpixel_bin_x) = quantize(glyph_x);
         let (quantized_pos_y, frac_pos_y, subpixel_bin_y) = quantize(glyph_y);
 
-        let color = ((color[0] as u32) << 0)
-            + ((color[1] as u32) << 8)
-            + ((color[2] as u32) << 16)
-            + ((color[3] as u32) << 24);
+        let color = ((color.0[0] as u32) << 0)
+            + ((color.0[1] as u32) << 8)
+            + ((color.0[2] as u32) << 16)
+            + ((color.0[3] as u32) << 24);
 
         Self { glyph, color, run_y, font_key, font_size, quantized_pos_x, quantized_pos_y, frac_pos_x, frac_pos_y, subpixel_bin_x, subpixel_bin_y,}
     }

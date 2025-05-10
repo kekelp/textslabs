@@ -1,5 +1,4 @@
 use parley_atlas_renderer::*;
-use image::Rgba;
 use std::sync::Arc;
 use parley::*;
 use wgpu::*;
@@ -203,12 +202,10 @@ fn rich_layout() -> Layout<ColorBrush> {
 
     let max_advance = Some(500.0 * display_scale);
 
-    let text_color = Rgba([0, 0, 0, 255]);
-
     let mut font_cx = FontContext::new();
     let mut layout_cx = LayoutContext::new();
 
-    let text_brush = ColorBrush { color: text_color };
+    let text_brush = ColorBrush([0, 0, 0, 255]);
     let mut builder = layout_cx.ranged_builder(&mut font_cx, &RICH_TEXT, display_scale);
 
     builder.push_default(StyleProperty::Brush(text_brush));
@@ -255,11 +252,10 @@ const TOO_ADVANCED: &str = "Whoops! Parley is not able to show this stuff proper
 fn layout(text: &str) -> Layout<ColorBrush> {
     let display_scale = 1.0;
     let max_advance = Some(500.0 * display_scale);
-    let text_color = Rgba([0, 0, 0, 255]);
     let mut font_cx = FontContext::new();
     let mut layout_cx = LayoutContext::new();
 
-    let text_brush = ColorBrush { color: text_color };
+    let text_brush = ColorBrush([0, 0, 0, 255]);
     let mut builder = layout_cx.ranged_builder(&mut font_cx, &text, display_scale);
     builder.push_default(StyleProperty::Brush(text_brush));
     builder.push_default(FontStack::from("system-ui"));
