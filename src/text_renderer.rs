@@ -228,6 +228,11 @@ impl TextRenderer {
         self.text_renderer.prepare_layout(layout, &mut self.scale_cx, left, top);
     }
 
+    pub fn prepare_text_box(&mut self, text_box: &mut TextBox) {
+        let (left, top) = text_box.pos();
+        self.text_renderer.prepare_layout(text_box.layout(), &mut self.scale_cx, left, top);
+    }
+
     pub fn gpu_load(&mut self, device: &Device, queue: &Queue) {
         self.text_renderer.gpu_load(device, queue);
     }

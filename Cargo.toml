@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-parley = "0.3"
+parley = { path = "../../clones/parley/parley" }
 wgpu = "25"
 etagere = "0.2.10"
 lru = { version = "0.12.1", default-features = false }
@@ -12,8 +12,8 @@ rustc-hash = "2.0"
 swash = "0.2.2"
 image = "0.25.6"
 bytemuck = "1.23.0"
+winit = "0.30.9"
 
 
 [dev-dependencies]
 pollster = "0.4.0"
-winit = "0.30.9"

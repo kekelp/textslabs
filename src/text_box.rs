@@ -1,6 +1,7 @@
-use std::cell::RefCell;
+use std::{cell::RefCell, time::Instant};
 
-use parley::{Alignment, AlignmentOptions};
+use parley::{Alignment, AlignmentOptions, Selection};
+use winit::event::{Modifiers, WindowEvent};
 
 use crate::*;
 
@@ -34,6 +35,29 @@ pub struct TextBox {
     top: f32,
     max_width: f32,
     pub depth: f32,
+    selection: SelectionState,
+}
+
+pub struct SelectionState {
+    selection: Selection,
+    prev_anchor: Option<Selection>,
+
+    pointer_down: bool,
+    last_click_time: Option<Instant>,
+    click_count: u32,
+    cursor_pos: (f32, f32),
+}
+impl SelectionState {
+    pub fn new() -> Self {
+        Self {
+            pointer_down: false,
+            last_click_time: None,
+            click_count: 0,
+            cursor_pos: (0.0, 0.0),
+            selection: Default::default(),
+            prev_anchor: Default::default(),
+        }
+    }
 }
 
 impl TextBox {
@@ -46,15 +70,16 @@ impl TextBox {
             top,
             max_width,
             depth,
+            selection: SelectionState::new(),
         }
     }
 
     pub fn layout(&mut self) -> &Layout<ColorBrush> {
-        self.relayout_if_needed();
+        self.refresh_layout();
         &self.layout
     }
 
-    fn relayout_if_needed(&mut self) {
+    fn refresh_layout(&mut self) {
         if self.needs_relayout {
             self.layout = with_text_cx(|text_cx| {
                 let mut builder =
@@ -72,6 +97,116 @@ impl TextBox {
                 layout
             });
         }
+    }
+
+    pub fn handle_event(&mut self, event: &winit::event::WindowEvent, modifiers: &Modifiers) {
+        self.refresh_layout();
+        self.selection.handle_event(&self.layout, event, modifiers);
+    }
+}
+
+impl SelectionState {
+    pub fn handle_event(&mut self, layout: &Layout<ColorBrush>, event: &winit::event::WindowEvent, modifiers: &Modifiers) {
+        match event {
+            WindowEvent::MouseInput { state, button, .. } => {
+                let shift = modifiers.state().shift_key();
+
+                if *button == winit::event::MouseButton::Left {
+                    self.pointer_down = state.is_pressed();
+                    if self.pointer_down {
+                        let now = Instant::now();
+                        if let Some(last) = self.last_click_time.take() {
+                            if now.duration_since(last).as_secs_f64() < 0.25 {
+                                self.click_count = (self.click_count + 1) % 4;
+                            } else {
+                                self.click_count = 1;
+                            }
+                        } else {
+                            self.click_count = 1;
+                        }
+                        self.last_click_time = Some(now);
+                        let click_count = self.click_count;
+                        let cursor_pos = self.cursor_pos;
+                        match click_count {
+                            2 => self.select_word_at_point(layout, cursor_pos.0, cursor_pos.1),
+                            3 => self.select_line_at_point(layout, cursor_pos.0, cursor_pos.1),
+                            _ => if shift {
+                                self.extend_selection_with_anchor(layout, cursor_pos.0, cursor_pos.1)
+                            } else {
+                                self.move_to_point(layout, cursor_pos.0, cursor_pos.1)
+                            }
+                        }
+                    }
+                }
+            }
+            WindowEvent::CursorMoved { position, .. } => {
+                let prev_pos = self.cursor_pos;
+                self.cursor_pos = (position.x as f32, position.y as f32);
+                // self.cursor_pos = (position.x as f32 - INSET, position.y as f32 - INSET);
+                // macOS seems to generate a spurious move after selecting word?
+                if self.pointer_down && prev_pos != self.cursor_pos {
+                    let cursor_pos = self.cursor_pos;
+                    self.extend_selection_to_point(layout, cursor_pos.0, cursor_pos.1, true);
+                }
+            }
+            _ => {}
+        }
+
+        dbg!(self.selection);
+    }
+
+    /// Move the cursor to the cluster boundary nearest this point in the layout.
+    pub fn move_to_point(&mut self, layout: &Layout<ColorBrush>, x: f32, y: f32) {
+        self.set_selection(Selection::from_point(layout, x, y));
+    }
+
+    pub fn select_word_at_point(&mut self, layout: &Layout<ColorBrush>, x: f32, y: f32) {
+        self.set_selection(Selection::word_from_point(layout, x, y));
+    }
+
+    /// Select the physical line at the point.
+    pub fn select_line_at_point(&mut self, layout: &Layout<ColorBrush>, x: f32, y: f32) {
+        let line = Selection::line_from_point(layout, x, y);
+        self.set_selection(line);
+    }
+
+    /// Move the selection focus point to the cluster boundary closest to point.
+    pub fn extend_selection_to_point(&mut self, layout: &Layout<ColorBrush>, x: f32, y: f32, keep_granularity: bool) {
+        // FIXME: This is usually the wrong way to handle selection extension for mouse moves, but not a regression.
+        self.set_selection(
+            self.selection.extend_to_point(layout, x, y, keep_granularity),
+        );
+    }
+
+    /// Extend the selection starting from the previous anchor, moving the selection focus point to the cluster boundary closest to point.
+    /// 
+    /// Used for shift-click behavior. 
+    pub fn extend_selection_with_anchor(&mut self, layout: &Layout<ColorBrush>, x: f32, y: f32) {
+        if let Some(prev_selection) = self.prev_anchor {
+            self.set_selection_with_old_anchor(prev_selection);
+        } else {
+            self.prev_anchor = Some(self.selection);
+        }
+        // FIXME: This is usually the wrong way to handle selection extension for mouse moves, but not a regression.
+        self.set_selection_with_old_anchor(
+            self.selection.extend_to_point(layout, x, y, false),
+        );
+    }
+
+
+    /// Update the selection, and nudge the `Generation` if something other than `h_pos` changed.
+    fn set_selection(&mut self, new_sel: Selection) {
+        self.set_selection_inner(new_sel);
+        self.prev_anchor = None;
+    }
+
+    /// Update the selection without resetting the previous anchor.
+    fn set_selection_with_old_anchor(&mut self, new_sel: Selection) {
+        self.set_selection_inner(new_sel);
+    }
+
+    fn set_selection_inner(&mut self, new_sel: Selection) {
+        self.selection = new_sel;
     }
 }
 

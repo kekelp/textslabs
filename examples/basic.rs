@@ -2,7 +2,7 @@ use parley_atlas_renderer::*;
 use std::sync::Arc;
 use parley::*;
 use wgpu::*;
-use winit::{dpi::LogicalSize, event::WindowEvent, event_loop::EventLoop, window::Window};
+use winit::{dpi::LogicalSize, event::{Modifiers, WindowEvent}, event_loop::EventLoop, window::Window};
 
 fn main() {
     let event_loop = EventLoop::new().unwrap();
@@ -17,6 +17,7 @@ struct State {
     surface: wgpu::Surface<'static>,
     surface_config: SurfaceConfiguration,
     window: Arc<Window>,
+    modifiers: Modifiers,
 
     text_renderer: TextRenderer,
     text_boxes: Vec<TextBox>,
@@ -49,7 +50,7 @@ impl State {
         surface.configure(&device, &surface_config);
 
         let text_boxes = vec![
-            TextBox::new("Text box???????????????????????????????????????????????????????".to_string(), 10.0, 10.0, 500.0, 0.0),
+            TextBox::new("Text box".to_string(), 10.0, 10.0, 500.0, 0.0),
             TextBox::new("Saddy".to_string(), 10.0, 50.0, 500.0, 0.0),
             TextBox::new("Okayeg".to_string(), 10.0, 70.0, 500.0, 0.0),
         ];
@@ -68,6 +69,7 @@ impl State {
             text_renderer,
             text_boxes,
             current_text: 0,
+            modifiers: Modifiers::default(),
         }
     }
 
@@ -76,6 +78,10 @@ impl State {
         event_loop: &winit::event_loop::ActiveEventLoop,
         event: WindowEvent,
     ) {
+        for text_box in &mut self.text_boxes {
+            text_box.handle_event(&event, &self.modifiers);
+        }
+
         match event {
             WindowEvent::KeyboardInput { event, .. } => {
                 if let winit::keyboard::Key::Named(winit::keyboard::NamedKey::ArrowLeft) = event.logical_key {
@@ -105,9 +111,7 @@ impl State {
 
                 self.text_renderer.clear();
                 for text_box in &mut self.text_boxes {
-                    let (left, top) = text_box.pos();
-                    self.text_renderer.prepare_layout(text_box.layout(), left, top);
-                    dbg!(&text_box.text());
+                    self.text_renderer.prepare_text_box(text_box);
                 }
                 self.text_renderer.gpu_load(&self.device, &self.queue);
 
@@ -152,7 +156,6 @@ impl winit::application::ApplicationHandler for Application {
             return;
         }
 
-        // Set up window
         let (width, height) = (800, 600);
         let window_attributes = Window::default_attributes()
             .with_inner_size(LogicalSize::new(width as f64, height as f64))
