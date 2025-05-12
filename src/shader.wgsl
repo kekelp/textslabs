@@ -85,8 +85,10 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     if input.flags == 1 {
         var color = textureSampleLevel(mask_atlas_texture, atlas_sampler, input.uv, 0.0);
         return vec4<f32>(input.color * color);
-    } else {
+    } else if input.flags == 0 {
         var glyph_alpha = textureSampleLevel(mask_atlas_texture, atlas_sampler, input.uv, 0.0).r;
         return vec4<f32>(input.color.rgb, input.color.a * glyph_alpha);
+    } else {
+        return vec4f(4.0, 0.6, 4.0, 0.5);
     }
 }

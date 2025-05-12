@@ -50,9 +50,9 @@ impl State {
         surface.configure(&device, &surface_config);
 
         let text_boxes = vec![
-            TextBox::new("Text box".to_string(), 10.0, 10.0, 500.0, 0.0),
-            TextBox::new("Saddy".to_string(), 10.0, 50.0, 500.0, 0.0),
-            TextBox::new("Okayeg".to_string(), 10.0, 70.0, 500.0, 0.0),
+            TextBox::new("Text box".to_string(), Rect::new(10.0, 10.0, 500.0, 30.0), 0.0),
+            // TextBox::new("Saddy"   .to_string(), Rect::new(10.0, 60.0, 500.0, 80.0), 0.0),
+            // TextBox::new("Okayeg"  .to_string(), Rect::new(10.0, 110.0, 500.0, 130.0), 0.0),
         ];
 
         let text_renderer_params = TextRendererParams {
@@ -139,6 +139,8 @@ impl State {
 
                 self.queue.submit(Some(encoder.finish()));
                 frame.present();
+
+                self.window.request_redraw();
             }
             WindowEvent::CloseRequested => event_loop.exit(),
             _ => {}

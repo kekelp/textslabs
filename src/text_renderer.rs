@@ -1,3 +1,5 @@
+use parley::Rect;
+
 use crate::*;
 
 pub struct TextRenderer {
@@ -70,6 +72,29 @@ impl ContextlessTextRenderer {
 
     fn needs_evicting(&self, current_frame: u64) -> bool {
         self.last_frame_evicted != current_frame
+    }
+
+    fn prepare_selection_rect(&mut self, rect: parley::Rect, left: f32, top: f32) {
+        
+        let left = left as i32;
+        let top = top as i32;
+
+        let x0 = left + rect.x0 as i32;
+        let x1 = left + rect.x1 as i32;
+        let y0 = top + rect.y0 as i32;
+        let y1 = top + rect.y1 as i32;
+
+
+        let quad = Quad {
+            pos: [x0, y0],
+            dim: [(x1 - x0) as u16, (y1 - y0) as u16],
+            // dim: [(rect.x1 - rect.x0) as u16, (rect.y1 - rect.y0) as u16],
+            color: 0x00_00_55_ff,
+            uv_origin: [0, 0],
+            depth: 0.0,
+            flags: 2, // todo make names for these
+        };
+        self.mask_atlas_pages[0].quads.push(quad);
     }
 }
 
@@ -230,7 +255,14 @@ impl TextRenderer {
 
     pub fn prepare_text_box(&mut self, text_box: &mut TextBox) {
         let (left, top) = text_box.pos();
+        let (left, top) = (left as f32, top as f32);
         self.text_renderer.prepare_layout(text_box.layout(), &mut self.scale_cx, left, top);
+
+        dbg!(text_box.selection().geometry(&text_box.layout));
+        text_box.selection().geometry_with(&text_box.layout, |rect, _line_i| {
+            dbg!(rect);
+            self.text_renderer.prepare_selection_rect(rect, left, top);
+        });
     }
 
     pub fn gpu_load(&mut self, device: &Device, queue: &Queue) {
