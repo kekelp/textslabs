@@ -42,6 +42,7 @@ pub struct SelectionState {
     prev_anchor: Option<Selection>,
 
     pointer_down: bool,
+    focused: bool,
     last_click_time: Option<Instant>,
     click_count: u32,
     cursor_pos: (f32, f32),
@@ -50,6 +51,7 @@ impl SelectionState {
     pub fn new() -> Self {
         Self {
             pointer_down: false,
+            focused: false,
             last_click_time: None,
             click_count: 0,
             cursor_pos: (0.0, 0.0),
@@ -135,8 +137,14 @@ impl TextBox {
                             && cursor_pos.1 > 0.0
                             && cursor_pos.1 < self.layout.height() as f64 {
                             self.selection.pointer_down = true;
+                            self.selection.focused = true;
                         } else {
                             self.selection.set_selection(self.selection.selection.collapse());
+                            self.selection.focused = false;
+                            // todo: this will get messed up with overlapping text boxes
+                            // we need to always take in the event to be able to run this
+                            // I guess the caller could pass a "already_absorbed" bool where we just do nothing except this
+                            // Or just centralize...
                         }
 
                     } else {
@@ -184,7 +192,7 @@ impl TextBox {
                 }
             }
             WindowEvent::KeyboardInput { event, .. } => {
-                if ! self.selection.pointer_down {
+                if ! self.selection.focused {
                     return;
                 }
                 if !event.state.is_pressed() {
@@ -199,8 +207,6 @@ impl TextBox {
                 } else {
                     mods_state.control_key()
                 };
-
-                dbg!(shift);
 
                 match &event.logical_key {
                     #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
@@ -228,22 +234,18 @@ impl TextBox {
                     //         _ => (),
                     //     }
                     // }
-                    // Key::Character(c) if action_mod && matches!(c.to_lowercase().as_str(), "a") => {
-                    //     if shift {
-                    //         self.selection.selection.collapse();
-                    //     } else {
-                    //         // todo move somewhere
-                    //         Selection::from_byte_index(&self.layout, 0_usize, Affinity::default())
-                    //         .move_lines(&self.layout, isize::MAX, true);
-                    //     }
-                    // }
+                    Key::Character(c) if action_mod && matches!(c.to_lowercase().as_str(), "a") => {
+                        if shift {
+                            self.selection.selection = self.selection.selection.collapse();
+                        } else {
+                            // todo move somewhere
+                            self.selection.selection = Selection::from_byte_index(&self.layout, 0_usize, Affinity::default())
+                            .move_lines(&self.layout, isize::MAX, true);
+                        }
+                    }
                     Key::Named(NamedKey::ArrowLeft) => {
-                        // dbg!(&event);
-
                         if action_mod {
                             if shift {
-                                dbg!(&event);
-
                                 self.selection.select_word_left(&self.layout);
                             }
                         } else if shift {
@@ -403,7 +405,6 @@ impl SelectionState {
 
     /// Move the selection focus point to the next word boundary left.
     pub fn select_word_left(&mut self, layout: &Layout<ColorBrush>) {
-        dbg!("Saddy2");
         self.selection = self.selection.previous_visual_word(layout, true);
     }
 
