@@ -51,8 +51,8 @@ impl State {
 
         let text_boxes = vec![
             TextBox::new("Text box".to_string(), Rect::new(10.0, 10.0, 500.0, 30.0), 0.0),
-            // TextBox::new("Saddy"   .to_string(), Rect::new(10.0, 60.0, 500.0, 80.0), 0.0),
-            // TextBox::new("Okayeg"  .to_string(), Rect::new(10.0, 110.0, 500.0, 130.0), 0.0),
+            TextBox::new("Saddy (rare) "   .to_string(), Rect::new(100.0, 200.0, 200.0, 680.0), 0.0),
+            TextBox::new("Amogus"  .to_string(), Rect::new(10.0, 110.0, 500.0, 130.0), 0.0),
         ];
 
         let text_renderer_params = TextRendererParams {
@@ -83,6 +83,9 @@ impl State {
         }
 
         match event {
+            WindowEvent::ModifiersChanged(mods) => {
+                self.modifiers = mods;
+            },
             WindowEvent::KeyboardInput { event, .. } => {
                 if let winit::keyboard::Key::Named(winit::keyboard::NamedKey::ArrowLeft) = event.logical_key {
                     if event.state.is_pressed() && !event.repeat {

@@ -1,7 +1,7 @@
 use std::{cell::RefCell, time::Instant};
 
-use parley::{Alignment, AlignmentOptions, Rect, Selection, StyleProperty};
-use winit::event::{Modifiers, WindowEvent};
+use parley::{Affinity, Alignment, AlignmentOptions, Rect, Selection, StyleProperty};
+use winit::{event::{Modifiers, WindowEvent}, keyboard::{Key, NamedKey}};
 
 use crate::*;
 
@@ -44,7 +44,7 @@ pub struct SelectionState {
     pointer_down: bool,
     last_click_time: Option<Instant>,
     click_count: u32,
-    cursor_pos: Option<(f32, f32)>,
+    cursor_pos: (f32, f32),
 }
 impl SelectionState {
     pub fn new() -> Self {
@@ -52,7 +52,7 @@ impl SelectionState {
             pointer_down: false,
             last_click_time: None,
             click_count: 0,
-            cursor_pos: None,
+            cursor_pos: (0.0, 0.0),
             selection: Default::default(),
             prev_anchor: Default::default(),
         }
@@ -78,7 +78,7 @@ impl TextBox {
 
     fn refresh_layout(&mut self) {
         if self.needs_relayout {
-            self.layout = with_text_cx(|text_cx| {
+            with_text_cx(|text_cx| {
                 let mut builder =
                     text_cx
                         .layout_cx
@@ -95,16 +95,12 @@ impl TextBox {
                     Alignment::Start,
                     AlignmentOptions::default(),
                 );
-                layout
+
+                self.layout = layout;
+                self.needs_relayout = false;
             });
         }
     }
-
-    // pub fn handle_event(&mut self, event: &winit::event::WindowEvent, modifiers: &Modifiers) {
-    //     // do we really need relayout for all events?
-    //     self.refresh_layout();
-    //     self.selection.handle_event(&self.layout, event, modifiers);
-    // }
 
     pub fn handle_event(&mut self, event: &winit::event::WindowEvent, modifiers: &Modifiers) {       
         // do we really need relayout for all events?
@@ -113,44 +109,185 @@ impl TextBox {
         match event {
             WindowEvent::MouseInput { state, button, .. } => {
                 let shift = modifiers.state().shift_key();
+                if *button == winit::event::MouseButton::Left {
 
-                if let Some(cursor_pos) = self.selection.cursor_pos {
-                    if *button == winit::event::MouseButton::Left {
-                        self.selection.pointer_down = state.is_pressed();
-                        if self.selection.pointer_down {
-                            let now = Instant::now();
-                            if let Some(last) = self.selection.last_click_time.take() {
-                                if now.duration_since(last).as_secs_f64() < 0.25 {
-                                    self.selection.click_count = (self.selection.click_count + 1) % 4;
-                                } else {
-                                    self.selection.click_count = 1;
-                                }
+                    let cursor_pos = (self.selection.cursor_pos.0 as f64 - self.rect.x0, self.selection.cursor_pos.1 as f64 - self.rect.y0);
+                    
+                    if state.is_pressed() {
+
+                        // dbg!( cursor_pos.0 > self.rect.x0
+                        //     , cursor_pos.0 < self.rect.x0 + self.layout.max_content_width() as f64
+                        //     , cursor_pos.1 > self.rect.y0
+                        //     , cursor_pos.1 < self.rect.y0 + self.layout.height() as f64,
+                        // );
+
+                        // dbg!( cursor_pos.0, self.rect.x0
+                        //     , cursor_pos.0, self.rect.x0 + self.layout.max_content_width() as f64
+                        //     , cursor_pos.1, self.rect.y0
+                        //     , cursor_pos.1, self.rect.y0 + self.layout.height() as f64,
+                        // );
+                        // println!();
+
+                        let x_tolerance = 7.0;
+
+                        if cursor_pos.0 > - x_tolerance
+                            && cursor_pos.0 < self.layout.max_content_width() as f64 + x_tolerance
+                            && cursor_pos.1 > 0.0
+                            && cursor_pos.1 < self.layout.height() as f64 {
+                            self.selection.pointer_down = true;
+                        } else {
+                            self.selection.set_selection(self.selection.selection.collapse());
+                        }
+
+                    } else {
+                        self.selection.pointer_down = false;
+                    }
+
+                    let cursor_pos = (cursor_pos.0 as f32, cursor_pos.1 as f32);
+
+                    if self.selection.pointer_down {
+                        let now = Instant::now();
+                        if let Some(last) = self.selection.last_click_time.take() {
+                            if now.duration_since(last).as_secs_f64() < 0.25 {
+                                self.selection.click_count = (self.selection.click_count + 1) % 4;
                             } else {
                                 self.selection.click_count = 1;
                             }
-                            self.selection.last_click_time = Some(now);
-                            let click_count = self.selection.click_count;
-                            match click_count {
-                                2 => self.selection.select_word_at_point(&self.layout, cursor_pos.0, cursor_pos.1),
-                                3 => self.selection.select_line_at_point(&self.layout, cursor_pos.0, cursor_pos.1),
-                                _ => if shift {
-                                    self.selection.extend_selection_with_anchor(&self.layout, cursor_pos.0, cursor_pos.1)
-                                } else {
-                                    self.selection.move_to_point(&self.layout, cursor_pos.0, cursor_pos.1)
-                                }
+                        } else {
+                            self.selection.click_count = 1;
+                        }
+                        self.selection.last_click_time = Some(now);
+                        let click_count = self.selection.click_count;
+                        match click_count {
+                            2 => self.selection.select_word_at_point(&self.layout, cursor_pos.0, cursor_pos.1),
+                            3 => self.selection.select_line_at_point(&self.layout, cursor_pos.0, cursor_pos.1),
+                            _ => if shift {
+                                self.selection.extend_selection_with_anchor(&self.layout, cursor_pos.0, cursor_pos.1)
+                            } else {
+                                self.selection.move_to_point(&self.layout, cursor_pos.0, cursor_pos.1)
                             }
                         }
                     }
                 }
+                
             }
             WindowEvent::CursorMoved { position, .. } => {
                 let prev_pos = self.selection.cursor_pos;
-                let cursor_pos = (position.x as f32 - self.rect.x0 as f32, position.y as f32 - self.rect.y0 as f32);
-                self.selection.cursor_pos = Some(cursor_pos);
+                
+                let cursor_pos = (position.x as f32, position.y as f32);
+                self.selection.cursor_pos = cursor_pos;
                 
                 // macOS seems to generate a spurious move after selecting word?
                 if self.selection.pointer_down && prev_pos != self.selection.cursor_pos {
+                    let cursor_pos = (cursor_pos.0 - self.rect.x0 as f32, cursor_pos.1 - self.rect.y0 as f32);                    
                     self.selection.extend_selection_to_point(&self.layout, cursor_pos.0, cursor_pos.1, true);
+                }
+            }
+            WindowEvent::KeyboardInput { event, .. } => {
+                if ! self.selection.pointer_down {
+                    return;
+                }
+                if !event.state.is_pressed() {
+                    return;
+                }
+                #[allow(unused)]
+
+                let mods_state = modifiers.state();
+                let shift = mods_state.shift_key();
+                let action_mod = if cfg!(target_os = "macos") {
+                    mods_state.super_key()
+                } else {
+                    mods_state.control_key()
+                };
+
+                dbg!(shift);
+
+                match &event.logical_key {
+                    #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+                    // Key::Character(c) if action_mod && matches!(c.as_str(), "c" | "x" | "v") => {
+                    //     use clipboard_rs::{Clipboard, ClipboardContext};
+                    //     match c.to_lowercase().as_str() {
+                    //         "c" => {
+                    //             if let Some(text) = self.selection.editor.&self.layoutselected_text() {
+                    //                 let cb = ClipboardContext::new().unwrap();
+                    //                 cb.set_text(text.to_owned()).ok();
+                    //             }
+                    //         }
+                    //         "x" => {
+                    //             if let Some(text) = self.selection.editor.&self.layoutselected_text() {
+                    //                 let cb = ClipboardContext::new().unwrap();
+                    //                 cb.set_text(text.to_owned()).ok();
+                    //                 self.selection.delete_selection(&self.layout);
+                    //             }
+                    //         }
+                    //         "v" => {
+                    //             let cb = ClipboardContext::new().unwrap();
+                    //             let text = cb.get_text().unwrap_or_default();
+                    //             self.selection.insert_or_replace_selection(&self.layout&text);
+                    //         }
+                    //         _ => (),
+                    //     }
+                    // }
+                    // Key::Character(c) if action_mod && matches!(c.to_lowercase().as_str(), "a") => {
+                    //     if shift {
+                    //         self.selection.selection.collapse();
+                    //     } else {
+                    //         // todo move somewhere
+                    //         Selection::from_byte_index(&self.layout, 0_usize, Affinity::default())
+                    //         .move_lines(&self.layout, isize::MAX, true);
+                    //     }
+                    // }
+                    Key::Named(NamedKey::ArrowLeft) => {
+                        // dbg!(&event);
+
+                        if action_mod {
+                            if shift {
+                                dbg!(&event);
+
+                                self.selection.select_word_left(&self.layout);
+                            }
+                        } else if shift {
+                            self.selection.select_left(&self.layout);
+                        }
+                    }
+                    Key::Named(NamedKey::ArrowRight) => {
+                        if action_mod {
+                            if shift {
+                                self.selection.select_word_right(&self.layout);
+                            }
+                        } else if shift {
+                            self.selection.select_right(&self.layout);
+                        }
+                    }
+                    Key::Named(NamedKey::ArrowUp) => {
+                        if shift {
+                            self.selection.select_up(&self.layout);
+                        }
+                    }
+                    Key::Named(NamedKey::ArrowDown) => {
+                        if shift {
+                            self.selection.select_down(&self.layout);
+                        }
+                    }
+                    Key::Named(NamedKey::Home) => {
+                        if action_mod {
+                            if shift {
+                                self.selection.select_to_text_start(&self.layout);
+                            }
+                        } else if shift {
+                            self.selection.select_to_line_start(&self.layout);
+                        }
+                    }
+                    Key::Named(NamedKey::End) => {
+                        if action_mod {
+                            if shift {
+                                self.selection.select_to_text_end(&self.layout);
+                            }
+                        } else if shift {
+                            self.selection.select_to_line_end(&self.layout);
+                        }
+                    }
+                    _ => (),
                 }
             }
             _ => {}
@@ -213,6 +350,66 @@ impl SelectionState {
 
     fn set_selection_inner(&mut self, new_sel: Selection) {
         self.selection = new_sel;
+    }
+
+
+    /// Move the selection focus point to the start of the buffer.
+    pub fn select_to_text_start(&mut self, layout: &Layout<ColorBrush>) {
+        self.selection = self.selection.move_lines(
+            layout,
+            isize::MIN,
+            true,
+        );
+    }
+
+    /// Move the selection focus point to the start of the physical line.
+    pub fn select_to_line_start(&mut self, layout: &Layout<ColorBrush>) {
+        self.selection =self.selection.line_start(layout, true);
+    }
+
+    /// Move the selection focus point to the end of the buffer.
+    pub fn select_to_text_end(&mut self, layout: &Layout<ColorBrush>) {
+        self.selection = (self.selection.move_lines(
+            layout,
+            isize::MAX,
+            true,
+        ));
+    }
+
+    /// Move the selection focus point to the end of the physical line.
+    pub fn select_to_line_end(&mut self, layout: &Layout<ColorBrush>) {
+        self.selection = self.selection.line_end(layout, true);
+    }
+
+    /// Move the selection focus point up to the nearest cluster boundary on the previous line, preserving the horizontal position for repeated movements.
+    pub fn select_up(&mut self, layout: &Layout<ColorBrush>) {
+        self.selection = self.selection.previous_line(layout, true);
+    }
+
+    /// Move the selection focus point down to the nearest cluster boundary on the next line, preserving the horizontal position for repeated movements.
+    pub fn select_down(&mut self, layout: &Layout<ColorBrush>) {
+        self.selection = self.selection.next_line(layout, true);
+    }
+
+    /// Move the selection focus point to the next cluster left in visual order.
+    pub fn select_left(&mut self, layout: &Layout<ColorBrush>) {
+        self.selection = self.selection.previous_visual(layout, true);
+    }
+
+    /// Move the selection focus point to the next cluster right in visual order.
+    pub fn select_right(&mut self, layout: &Layout<ColorBrush>) {
+        self.selection = self.selection.next_visual(layout, true);
+    }
+
+    /// Move the selection focus point to the next word boundary left.
+    pub fn select_word_left(&mut self, layout: &Layout<ColorBrush>) {
+        dbg!("Saddy2");
+        self.selection = self.selection.previous_visual_word(layout, true);
+    }
+
+    /// Move the selection focus point to the next word boundary right.
+    pub fn select_word_right(&mut self, layout: &Layout<ColorBrush>) {
+        self.selection = self.selection.next_visual_word(layout, true);
     }
 }
 

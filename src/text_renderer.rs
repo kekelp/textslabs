@@ -258,9 +258,7 @@ impl TextRenderer {
         let (left, top) = (left as f32, top as f32);
         self.text_renderer.prepare_layout(text_box.layout(), &mut self.scale_cx, left, top);
 
-        dbg!(text_box.selection().geometry(&text_box.layout));
         text_box.selection().geometry_with(&text_box.layout, |rect, _line_i| {
-            dbg!(rect);
             self.text_renderer.prepare_selection_rect(rect, left, top);
         });
     }
