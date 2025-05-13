@@ -89,7 +89,7 @@ impl ContextlessTextRenderer {
             pos: [x0, y0],
             dim: [(x1 - x0) as u16, (y1 - y0) as u16],
             // dim: [(rect.x1 - rect.x0) as u16, (rect.y1 - rect.y0) as u16],
-            color: 0x00_00_55_ff,
+            color: 0x44_44_88_88,
             uv_origin: [0, 0],
             depth: 0.0,
             flags: 2, // todo make names for these
@@ -253,14 +253,15 @@ impl TextRenderer {
         self.text_renderer.prepare_layout(layout, &mut self.scale_cx, left, top);
     }
 
-    pub fn prepare_text_box(&mut self, text_box: &mut TextBox) {
+    pub fn prepare_text_box<T: AsRef<str>>(&mut self, text_box: &mut TextBox<T>) {
         let (left, top) = text_box.pos();
         let (left, top) = (left as f32, top as f32);
-        self.text_renderer.prepare_layout(text_box.layout(), &mut self.scale_cx, left, top);
 
         text_box.selection().geometry_with(&text_box.layout, |rect, _line_i| {
             self.text_renderer.prepare_selection_rect(rect, left, top);
         });
+
+        self.text_renderer.prepare_layout(text_box.layout(), &mut self.scale_cx, left, top);
     }
 
     pub fn gpu_load(&mut self, device: &Device, queue: &Queue) {

@@ -797,6 +797,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "handleslab"
+version = "0.1.0"
+dependencies = [
+ "slab",
+]
+
+[[package]]
 name = "hashbrown"
 version = "0.15.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1625,6 +1632,7 @@ version = "0.1.0"
 dependencies = [
  "bytemuck",
  "etagere",
+ "handleslab",
  "image",
  "lru",
  "parley",

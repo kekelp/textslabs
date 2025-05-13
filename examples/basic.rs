@@ -20,7 +20,7 @@ struct State {
     modifiers: Modifiers,
 
     text_renderer: TextRenderer,
-    text_boxes: Vec<TextBox>,
+    text_boxes: Vec<TextBox<String>>,
     current_text: usize,
 }
 
@@ -52,6 +52,7 @@ impl State {
         let text_boxes = vec![
             TextBox::new("Text box".to_string(), Rect::new(10.0, 10.0, 500.0, 30.0), 0.0),
             TextBox::new("Saddy (rare) "   .to_string(), Rect::new(100.0, 200.0, 200.0, 680.0), 0.0),
+            // TextBox::new("Saddy (rare) "   .to_string(), Rect::new(20.0, 20.0, 200.0, 680.0), 0.0),
             TextBox::new("Amogus"  .to_string(), Rect::new(10.0, 110.0, 500.0, 130.0), 0.0),
         ];
 

@@ -27,8 +27,8 @@ fn with_text_cx<R>(f: impl FnOnce(&mut TextContext) -> R) -> R {
     res
 }
 
-pub struct TextBox {
-    text: String,
+pub struct TextBox<T: AsRef<str>> {
+    text: T,
     // has to be pub(crate) because of partial borrows. Terrible!
     pub(crate) layout: Layout<ColorBrush>,
     needs_relayout: bool,
@@ -61,8 +61,8 @@ impl SelectionState {
     }
 }
 
-impl TextBox {
-    pub fn new(text: String, rect: Rect, depth: f32) -> Self {
+impl<T: AsRef<str>> TextBox<T> {
+    pub fn new(text: T, rect: Rect, depth: f32) -> Self {
         Self {
             text,
             layout: Layout::new(),
@@ -84,7 +84,7 @@ impl TextBox {
                 let mut builder =
                     text_cx
                         .layout_cx
-                        .ranged_builder(&mut text_cx.font_cx, &self.text, 1.0);
+                        .ranged_builder(&mut text_cx.font_cx, &self.text.as_ref(), 1.0);
 
                 builder.push_default(StyleProperty::FontSize(32.0));
                 builder.push_default(StyleProperty::LineHeight(2.0));
@@ -105,7 +105,7 @@ impl TextBox {
     }
 
     pub fn handle_event(&mut self, event: &winit::event::WindowEvent, modifiers: &Modifiers) {       
-        // do we really need relayout for all events?
+        // todo: do we really need relayout for all events?
         self.refresh_layout();
         
         match event {
@@ -414,11 +414,11 @@ impl SelectionState {
     }
 }
 
-impl TextBox {
-    pub fn text(&self) -> &String {
+impl<T: AsRef<str>> TextBox<T> {
+    pub fn text(&self) -> &T {
         &self.text
     }
-    pub fn text_mut(&mut self) -> &mut String {
+    pub fn text_mut(&mut self) -> &mut T {
         &mut self.text
     }
     
