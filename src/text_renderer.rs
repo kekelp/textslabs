@@ -1,5 +1,3 @@
-use parley::Rect;
-
 use crate::*;
 
 pub struct TextRenderer {

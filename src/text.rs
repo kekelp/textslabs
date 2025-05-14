@@ -1,5 +1,4 @@
 use handleslab::{Handle, HandleSlab};
-use parley::Rect;
 
 use crate::*;
 
@@ -16,8 +15,8 @@ impl Text {
         }
     }
 
-    pub fn new_text_box(&mut self, text: String, rect: Rect, depth: f32) -> Handle<TextBox<String>> {
-        self.text_boxes.insert(TextBox::new(text, rect, depth))
+    pub fn new_text_box(&mut self, text: String, pos: (f64, f64), depth: f32) -> Handle<TextBox<String>> {
+        self.text_boxes.insert(TextBox::new(text, pos, depth))
     }
 
     pub fn prepare(&mut self, text_renderer: &mut TextRenderer, device: &Device, queue: &Queue) {
@@ -31,7 +30,7 @@ impl Text {
         text_renderer.gpu_load(device, queue);
     }
 
-    pub fn handle_event(&mut self) {
+    pub fn handle_event(&mut self, event: &winit::event::WindowEvent) {
 
     }
 }

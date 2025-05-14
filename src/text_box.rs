@@ -1,6 +1,6 @@
 use std::{cell::RefCell, time::Instant};
 
-use parley::{Affinity, Alignment, AlignmentOptions, Rect, Selection, StyleProperty};
+use parley::{Affinity, Alignment, AlignmentOptions, Selection, StyleProperty};
 use winit::{event::{Modifiers, WindowEvent}, keyboard::{Key, NamedKey}};
 
 use crate::*;
@@ -32,7 +32,8 @@ pub struct TextBox<T: AsRef<str>> {
     // has to be pub(crate) because of partial borrows. Terrible!
     pub(crate) layout: Layout<ColorBrush>,
     needs_relayout: bool,
-    rect: Rect,
+    left: f64,
+    top: f64,
     pub depth: f32,
     selection: SelectionState,
 }
@@ -62,12 +63,13 @@ impl SelectionState {
 }
 
 impl<T: AsRef<str>> TextBox<T> {
-    pub fn new(text: T, rect: Rect, depth: f32) -> Self {
+    pub fn new(text: T, pos: (f64, f64), depth: f32) -> Self {
         Self {
             text,
             layout: Layout::new(),
             needs_relayout: true,
-            rect,
+            left: pos.0,
+            top: pos.1,
             depth,
             selection: SelectionState::new(),
         }
@@ -113,20 +115,20 @@ impl<T: AsRef<str>> TextBox<T> {
                 let shift = modifiers.state().shift_key();
                 if *button == winit::event::MouseButton::Left {
 
-                    let cursor_pos = (self.selection.cursor_pos.0 as f64 - self.rect.x0, self.selection.cursor_pos.1 as f64 - self.rect.y0);
+                    let cursor_pos = (self.selection.cursor_pos.0 as f64 - self.left, self.selection.cursor_pos.1 as f64 - self.top);
                     
                     if state.is_pressed() {
 
-                        // dbg!( cursor_pos.0 > self.rect.x0
-                        //     , cursor_pos.0 < self.rect.x0 + self.layout.max_content_width() as f64
-                        //     , cursor_pos.1 > self.rect.y0
-                        //     , cursor_pos.1 < self.rect.y0 + self.layout.height() as f64,
+                        // dbg!( cursor_pos.0 > self.x0
+                        //     , cursor_pos.0 < self.x0 + self.layout.max_content_width() as f64
+                        //     , cursor_pos.1 > self.y0
+                        //     , cursor_pos.1 < self.y0 + self.layout.height() as f64,
                         // );
 
-                        // dbg!( cursor_pos.0, self.rect.x0
-                        //     , cursor_pos.0, self.rect.x0 + self.layout.max_content_width() as f64
-                        //     , cursor_pos.1, self.rect.y0
-                        //     , cursor_pos.1, self.rect.y0 + self.layout.height() as f64,
+                        // dbg!( cursor_pos.0, self.x0
+                        //     , cursor_pos.0, self.x0 + self.layout.max_content_width() as f64
+                        //     , cursor_pos.1, self.y0
+                        //     , cursor_pos.1, self.y0 + self.layout.height() as f64,
                         // );
                         // println!();
 
@@ -187,7 +189,7 @@ impl<T: AsRef<str>> TextBox<T> {
                 
                 // macOS seems to generate a spurious move after selecting word?
                 if self.selection.pointer_down && prev_pos != self.selection.cursor_pos {
-                    let cursor_pos = (cursor_pos.0 - self.rect.x0 as f32, cursor_pos.1 - self.rect.y0 as f32);                    
+                    let cursor_pos = (cursor_pos.0 - self.left as f32, cursor_pos.1 - self.top as f32);                    
                     self.selection.extend_selection_to_point(&self.layout, cursor_pos.0, cursor_pos.1, true);
                 }
             }
@@ -371,11 +373,11 @@ impl SelectionState {
 
     /// Move the selection focus point to the end of the buffer.
     pub fn select_to_text_end(&mut self, layout: &Layout<ColorBrush>) {
-        self.selection = (self.selection.move_lines(
+        self.selection = self.selection.move_lines(
             layout,
             isize::MAX,
             true,
-        ));
+        );
     }
 
     /// Move the selection focus point to the end of the physical line.
@@ -427,10 +429,6 @@ impl<T: AsRef<str>> TextBox<T> {
     }
 
     pub fn pos(&self) -> (f64, f64) {
-        (self.rect.x0, self.rect.y0)
-    }
-
-    pub fn width(&self) -> f64 {
-        self.rect.x1 - self.rect.x0
+        (self.left, self.top)
     }
 }
