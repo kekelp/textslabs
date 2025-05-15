@@ -1,4 +1,4 @@
-use parley_atlas_renderer::*;
+use parley2::*;
 use std::sync::Arc;
 use parley::*;
 use wgpu::*;

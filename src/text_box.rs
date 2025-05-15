@@ -5,6 +5,9 @@ use winit::{event::{Modifiers, WindowEvent}, keyboard::{Key, NamedKey}};
 
 use crate::*;
 
+const X_TOLERANCE: f64 = 7.0;
+
+
 struct TextContext {
     layout_cx: LayoutContext<ColorBrush>,
     font_cx: FontContext,
@@ -106,7 +109,11 @@ impl<T: AsRef<str>> TextBox<T> {
         }
     }
 
-    pub fn handle_event(&mut self, event: &winit::event::WindowEvent, modifiers: &Modifiers) {       
+    pub fn handle_event(&mut self, event: &winit::event::WindowEvent, modifiers: &Modifiers) {
+        if ! self.selection.focused {
+            return;
+        }
+
         // todo: do we really need relayout for all events?
         self.refresh_layout();
         
@@ -115,38 +122,20 @@ impl<T: AsRef<str>> TextBox<T> {
                 let shift = modifiers.state().shift_key();
                 if *button == winit::event::MouseButton::Left {
 
+                    // todo: separate this hitbox stuff so most of the code can be on SelectionState?
                     let cursor_pos = (self.selection.cursor_pos.0 as f64 - self.left, self.selection.cursor_pos.1 as f64 - self.top);
                     
                     if state.is_pressed() {
 
-                        // dbg!( cursor_pos.0 > self.x0
-                        //     , cursor_pos.0 < self.x0 + self.layout.max_content_width() as f64
-                        //     , cursor_pos.1 > self.y0
-                        //     , cursor_pos.1 < self.y0 + self.layout.height() as f64,
-                        // );
-
-                        // dbg!( cursor_pos.0, self.x0
-                        //     , cursor_pos.0, self.x0 + self.layout.max_content_width() as f64
-                        //     , cursor_pos.1, self.y0
-                        //     , cursor_pos.1, self.y0 + self.layout.height() as f64,
-                        // );
-                        // println!();
-
-                        let x_tolerance = 7.0;
-
-                        if cursor_pos.0 > - x_tolerance
-                            && cursor_pos.0 < self.layout.max_content_width() as f64 + x_tolerance
+                        // todo: deduplicate
+                        if cursor_pos.0 > - X_TOLERANCE
+                            && cursor_pos.0 < self.layout.max_content_width() as f64 + X_TOLERANCE
                             && cursor_pos.1 > 0.0
                             && cursor_pos.1 < self.layout.height() as f64 {
-                            self.selection.pointer_down = true;
-                            self.selection.focused = true;
+                                // todo do an !if
                         } else {
                             self.selection.set_selection(self.selection.selection.collapse());
                             self.selection.focused = false;
-                            // todo: this will get messed up with overlapping text boxes
-                            // we need to always take in the event to be able to run this
-                            // I guess the caller could pass a "already_absorbed" bool where we just do nothing except this
-                            // Or just centralize...
                         }
 
                     } else {
@@ -181,22 +170,7 @@ impl<T: AsRef<str>> TextBox<T> {
                 }
                 
             }
-            WindowEvent::CursorMoved { position, .. } => {
-                let prev_pos = self.selection.cursor_pos;
-                
-                let cursor_pos = (position.x as f32, position.y as f32);
-                self.selection.cursor_pos = cursor_pos;
-                
-                // macOS seems to generate a spurious move after selecting word?
-                if self.selection.pointer_down && prev_pos != self.selection.cursor_pos {
-                    let cursor_pos = (cursor_pos.0 - self.left as f32, cursor_pos.1 - self.top as f32);                    
-                    self.selection.extend_selection_to_point(&self.layout, cursor_pos.0, cursor_pos.1, true);
-                }
-            }
             WindowEvent::KeyboardInput { event, .. } => {
-                if ! self.selection.focused {
-                    return;
-                }
                 if !event.state.is_pressed() {
                     return;
                 }
@@ -296,6 +270,49 @@ impl<T: AsRef<str>> TextBox<T> {
             }
             _ => {}
         }
+    }
+
+    pub fn try_grab_focus(&mut self, event: &WindowEvent, _modifiers: &Modifiers) -> bool {
+        self.refresh_layout();       
+        match event {
+            WindowEvent::MouseInput { state, .. } => {
+                if state.is_pressed() {
+                    let cursor_pos = (
+                        self.selection.cursor_pos.0 as f64 - self.left,
+                        self.selection.cursor_pos.1 as f64 - self.top,
+                    );
+
+                    // todo: deduplicate
+                    if cursor_pos.0 > -X_TOLERANCE
+                        && cursor_pos.0 < self.layout.max_content_width() as f64 + X_TOLERANCE
+                        && cursor_pos.1 > 0.0
+                        && cursor_pos.1 < self.layout.height() as f64
+                    {
+                        self.selection.pointer_down = true;
+                        self.selection.focused = true;
+                        return true;
+                    }
+                }
+            }
+            WindowEvent::CursorMoved { position, .. } => {
+                let prev_pos = self.selection.cursor_pos;
+                
+                let cursor_pos = (position.x as f32, position.y as f32);
+                self.selection.cursor_pos = cursor_pos;
+                
+                // macOS seems to generate a spurious move after selecting word?
+                if self.selection.pointer_down && prev_pos != self.selection.cursor_pos {
+                    let cursor_pos = (cursor_pos.0 - self.left as f32, cursor_pos.1 - self.top as f32);                    
+                    self.selection.extend_selection_to_point(&self.layout, cursor_pos.0, cursor_pos.1, true);
+                }
+            }
+            _ => {}
+        }
+        return false;
+    }
+
+    pub fn focused(&self) -> bool {
+        self.selection.focused
     }
 }   
     

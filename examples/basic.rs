@@ -1,6 +1,5 @@
-use parley_atlas_renderer::*;
+use parley2::*;
 use std::sync::Arc;
-use parley::*;
 use wgpu::*;
 use winit::{dpi::LogicalSize, event::{Modifiers, WindowEvent}, event_loop::EventLoop, window::Window};
 
@@ -50,10 +49,10 @@ impl State {
         surface.configure(&device, &surface_config);
 
         let text_boxes = vec![
-            TextBox::new("Text box".to_string(), Rect::new(10.0, 10.0, 500.0, 30.0), 0.0),
-            TextBox::new("Saddy (rare) "   .to_string(), Rect::new(100.0, 200.0, 200.0, 680.0), 0.0),
-            // TextBox::new("Saddy (rare) "   .to_string(), Rect::new(20.0, 20.0, 200.0, 680.0), 0.0),
-            TextBox::new("Amogus"  .to_string(), Rect::new(10.0, 110.0, 500.0, 130.0), 0.0),
+            TextBox::new("Text box".to_string(), (10.0, 10.0), 0.0),
+            TextBox::new("Saddy (rare) "   .to_string(), (100.0, 200.0), 0.0),
+            TextBox::new("Saddy (rare) "   .to_string(), (20.0, 20.0), 0.0),
+            TextBox::new("Amogus"  .to_string(), (10.0, 110.0), 0.0),
         ];
 
         let text_renderer_params = TextRendererParams {
@@ -79,7 +78,13 @@ impl State {
         event_loop: &winit::event_loop::ActiveEventLoop,
         event: WindowEvent,
     ) {
+
         for text_box in &mut self.text_boxes {
+            if text_box.try_grab_focus(&event, &self.modifiers) {
+                break;
+            }
+        }
+        for text_box in &mut self.text_boxes {            
             text_box.handle_event(&event, &self.modifiers);
         }
 
