@@ -1,5 +1,6 @@
+use parley::TextStyle;
 use parley2::*;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use wgpu::*;
 use winit::{dpi::LogicalSize, event::{Modifiers, WindowEvent}, event_loop::EventLoop, window::Window};
 
@@ -48,12 +49,22 @@ impl State {
         };
         surface.configure(&device, &surface_config);
 
-        let text_boxes = vec![
+        let big_text: Arc<Mutex<TextStyle<'_, ColorBrush>>> = Arc::new(Mutex::new(TextStyle {
+            font_size: 32.0,
+            ..Default::default()
+        }));
+
+        let mut text_boxes = vec![
             TextBox::new("Text box".to_string(), (10.0, 10.0), 0.0),
             TextBox::new("Saddy (rare) "   .to_string(), (100.0, 200.0), 0.0),
             TextBox::new("Saddy (rare) "   .to_string(), (20.0, 20.0), 0.0),
             TextBox::new("Amogus"  .to_string(), (10.0, 110.0), 0.0),
         ];
+
+        text_boxes[1].set_shared_style(&big_text);
+        text_boxes[2].set_shared_style(&big_text);
+
+        big_text.lock().unwrap().font_size = 64.0;
 
         let text_renderer_params = TextRendererParams {
             atlas_page_size: AtlasPageSize::Flat(300), // tiny page to test out multi-page stuff

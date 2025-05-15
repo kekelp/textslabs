@@ -1,7 +1,7 @@
-use std::{cell::RefCell, time::Instant};
+use std::{cell::RefCell, sync::{Arc, Mutex}, time::Instant};
 
-use parley::{Affinity, Alignment, AlignmentOptions, Selection, StyleProperty};
-use winit::{event::{Modifiers, WindowEvent}, keyboard::{Key, NamedKey}};
+use parley::{Affinity, Alignment, AlignmentOptions, Selection, TextStyle};
+use winit::{event::{Modifiers, WindowEvent}, keyboard::{Key, NamedKey}, platform::modifier_supplement::KeyEventExtModifierSupplement};
 
 use crate::*;
 
@@ -32,6 +32,7 @@ fn with_text_cx<R>(f: impl FnOnce(&mut TextContext) -> R) -> R {
 
 pub struct TextBox<T: AsRef<str>> {
     text: T,
+    style: Style,
     // has to be pub(crate) because of partial borrows. Terrible!
     pub(crate) layout: Layout<ColorBrush>,
     needs_relayout: bool,
@@ -39,6 +40,36 @@ pub struct TextBox<T: AsRef<str>> {
     top: f64,
     pub depth: f32,
     selection: SelectionState,
+}
+
+lazy_static::lazy_static! {
+    pub static ref DEFAULT_TEXT_STYLE: Arc<Mutex<TextStyle<'static, ColorBrush>>> = {
+        Arc::new(Mutex::new(TextStyle::default()))
+    };
+}
+
+pub enum Style {
+    Shared(Arc<Mutex<TextStyle<'static, ColorBrush>>>), // todo: should be a struct with a changed flag
+    Unique(TextStyle<'static, ColorBrush>),
+}
+impl Default for Style {
+    fn default() -> Self {
+        Self::Shared(DEFAULT_TEXT_STYLE.clone())
+    }
+}
+impl Style {
+    pub fn with_text_style<F, R>(&self, f: F) -> R
+    where
+        F: FnOnce(&TextStyle<'static, ColorBrush>) -> R,
+    {
+        match self {
+            Style::Shared(arc_mutex) => {
+                let guard = arc_mutex.lock().unwrap();
+                f(&guard)
+            },
+            Style::Unique(style) => f(style),
+        }
+    }
 }
 
 pub struct SelectionState {
@@ -75,6 +106,7 @@ impl<T: AsRef<str>> TextBox<T> {
             top: pos.1,
             depth,
             selection: SelectionState::new(),
+            style: Style::default(),
         }
     }
 
@@ -86,25 +118,23 @@ impl<T: AsRef<str>> TextBox<T> {
     fn refresh_layout(&mut self) {
         if self.needs_relayout {
             with_text_cx(|text_cx| {
-                let mut builder =
-                    text_cx
-                        .layout_cx
-                        .ranged_builder(&mut text_cx.font_cx, &self.text.as_ref(), 1.0);
+                self.style.with_text_style(|style| {
+                    let mut builder = text_cx.layout_cx.tree_builder(&mut text_cx.font_cx, 1.0, style);
 
-                builder.push_default(StyleProperty::FontSize(32.0));
-                builder.push_default(StyleProperty::LineHeight(2.0));
+                    builder.push_text(&self.text.as_ref());
 
-                let mut layout: Layout<ColorBrush> = builder.build(&self.text);
-                let max_advance = 200.0;
-                layout.break_all_lines(Some(max_advance));
-                layout.align(
-                    Some(max_advance),
-                    Alignment::Start,
-                    AlignmentOptions::default(),
-                );
-
-                self.layout = layout;
-                self.needs_relayout = false;
+                    let (mut layout, _) = builder.build();
+                    let max_advance = 200.0;
+                    layout.break_all_lines(Some(max_advance));
+                    layout.align(
+                        Some(max_advance),
+                        Alignment::Start,
+                        AlignmentOptions::default(),
+                    );
+                    
+                    self.layout = layout;
+                    self.needs_relayout = false;
+                });
             });
         }
     }
@@ -184,41 +214,31 @@ impl<T: AsRef<str>> TextBox<T> {
                     mods_state.control_key()
                 };
 
-                match &event.logical_key {
-                    #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
-                    // Key::Character(c) if action_mod && matches!(c.as_str(), "c" | "x" | "v") => {
-                    //     use clipboard_rs::{Clipboard, ClipboardContext};
-                    //     match c.to_lowercase().as_str() {
-                    //         "c" => {
-                    //             if let Some(text) = self.selection.editor.&self.layoutselected_text() {
-                    //                 let cb = ClipboardContext::new().unwrap();
-                    //                 cb.set_text(text.to_owned()).ok();
-                    //             }
-                    //         }
-                    //         "x" => {
-                    //             if let Some(text) = self.selection.editor.&self.layoutselected_text() {
-                    //                 let cb = ClipboardContext::new().unwrap();
-                    //                 cb.set_text(text.to_owned()).ok();
-                    //                 self.selection.delete_selection(&self.layout);
-                    //             }
-                    //         }
-                    //         "v" => {
-                    //             let cb = ClipboardContext::new().unwrap();
-                    //             let text = cb.get_text().unwrap_or_default();
-                    //             self.selection.insert_or_replace_selection(&self.layout&text);
-                    //         }
-                    //         _ => (),
-                    //     }
-                    // }
-                    Key::Character(c) if action_mod && matches!(c.to_lowercase().as_str(), "a") => {
-                        if shift {
-                            self.selection.selection = self.selection.selection.collapse();
-                        } else {
-                            // todo move somewhere
-                            self.selection.selection = Selection::from_byte_index(&self.layout, 0_usize, Affinity::default())
-                            .move_lines(&self.layout, isize::MAX, true);
+                #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+                if action_mod {
+                    match event.key_without_modifiers() {
+                        Key::Character(c) => {
+                            use clipboard_rs::{Clipboard, ClipboardContext};
+                            match c.as_str() {
+                                "c" if !shift => {
+                                    if let Some(text) = self.text.as_ref().get(self.selection.selection.text_range())
+                                    {
+                                        let cb = ClipboardContext::new().unwrap();
+                                        cb.set_text(text.to_owned()).ok();
+                                    }
+                                }
+                                "a" => {
+                                    self.selection.selection = Selection::from_byte_index(&self.layout, 0_usize, Affinity::default())
+                                    .move_lines(&self.layout, isize::MAX, true);
+                                }
+                                _ => (),
+                            }
                         }
-                    }
+                        _ => (),
+                    };
+                }
+
+                match &event.logical_key {
                     Key::Named(NamedKey::ArrowLeft) => {
                         if action_mod {
                             if shift {
@@ -313,6 +333,14 @@ impl<T: AsRef<str>> TextBox<T> {
 
     pub fn focused(&self) -> bool {
         self.selection.focused
+    }
+
+    pub fn set_shared_style(&mut self, style: &Arc<Mutex<TextStyle<'static, ColorBrush>>>) {
+        self.style = Style::Shared(style.clone());
+    }
+
+    pub fn set_unique_style(&mut self, style: TextStyle<'static, ColorBrush>) {
+        self.style = Style::Unique(style);
     }
 }   
     
