@@ -1,4 +1,4 @@
-use std::{cell::RefCell, sync::{Arc, Mutex}, time::Instant};
+use std::{cell::RefCell, ops::{Deref, DerefMut}, sync::{Arc, Mutex}, time::Instant};
 
 use parley::{Affinity, Alignment, AlignmentOptions, Selection, TextStyle};
 use winit::{event::{Modifiers, WindowEvent}, keyboard::{Key, NamedKey}, platform::modifier_supplement::KeyEventExtModifierSupplement};
@@ -33,6 +33,7 @@ fn with_text_cx<R>(f: impl FnOnce(&mut TextContext) -> R) -> R {
 pub struct TextBox<T: AsRef<str>> {
     text: T,
     style: Style,
+    shared_style_version: u32,
     pub selectable: bool, 
     pub(crate) layout: Layout<ColorBrush>,
     needs_relayout: bool,
@@ -43,13 +44,13 @@ pub struct TextBox<T: AsRef<str>> {
 }
 
 lazy_static::lazy_static! {
-    pub static ref DEFAULT_TEXT_STYLE: Arc<Mutex<TextStyle<'static, ColorBrush>>> = {
-        Arc::new(Mutex::new(TextStyle::default()))
+    pub static ref DEFAULT_TEXT_STYLE: Arc<Mutex<SharedStyle>> = {
+        Arc::new(Mutex::new(SharedStyle { style: TextStyle::default(), version: 1 }))
     };
 }
 
 pub enum Style {
-    Shared(Arc<Mutex<TextStyle<'static, ColorBrush>>>), // todo: should be a struct with a changed flag
+    Shared(Arc<Mutex<SharedStyle>>), // todo: should be a struct with a changed flag
     Unique(TextStyle<'static, ColorBrush>),
 }
 impl Default for Style {
@@ -65,10 +66,36 @@ impl Style {
         match self {
             Style::Shared(arc_mutex) => {
                 let guard = arc_mutex.lock().unwrap();
-                f(&guard)
+                f(&guard.style)
             },
             Style::Unique(style) => f(style),
         }
+    }
+}
+
+pub struct SharedStyle {
+    style: TextStyle<'static, ColorBrush>,
+    version: u32,
+}
+impl SharedStyle {
+    pub fn new(style: TextStyle<'static, ColorBrush>) -> Self {
+        Self {
+            style,
+            version: 0,
+        }
+    }
+}
+impl Deref for SharedStyle {
+    type Target = TextStyle<'static, ColorBrush>;
+    fn deref(&self) -> &Self::Target {
+        &self.style
+    }
+}
+
+impl DerefMut for SharedStyle {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.version += 1;
+        &mut self.style
     }
 }
 
@@ -100,6 +127,7 @@ impl<T: AsRef<str>> TextBox<T> {
     pub fn new(text: T, pos: (f64, f64), depth: f32) -> Self {
         Self {
             text,
+            shared_style_version: 0,
             layout: Layout::new(),
             selectable: true,
             needs_relayout: true,
@@ -116,8 +144,18 @@ impl<T: AsRef<str>> TextBox<T> {
         &self.layout
     }
 
-    fn refresh_layout(&mut self) {
-        if self.needs_relayout {
+    pub fn refresh_layout(&mut self) {
+        let shared_style_changed = match &self.style {
+            Style::Unique(_) => false,
+            Style::Shared(mutex) => {
+                let guard = mutex.lock().unwrap();
+                let changed = guard.version != self.shared_style_version;
+                self.shared_style_version = guard.version;
+                changed
+            },
+        };
+
+        if self.needs_relayout || shared_style_changed {
             with_text_cx(|text_cx| {
                 self.style.with_text_style(|style| {
                     let mut builder = text_cx.layout_cx.tree_builder(&mut text_cx.font_cx, 1.0, style);
@@ -345,7 +383,7 @@ impl<T: AsRef<str>> TextBox<T> {
         self.selection.focused
     }
 
-    pub fn set_shared_style(&mut self, style: &Arc<Mutex<TextStyle<'static, ColorBrush>>>) {
+    pub fn set_shared_style(&mut self, style: &Arc<Mutex<SharedStyle>>) {
         self.style = Style::Shared(style.clone());
     }
 

@@ -252,6 +252,8 @@ impl TextRenderer {
     }
 
     pub fn prepare_text_box<T: AsRef<str>>(&mut self, text_box: &mut TextBox<T>) {
+        text_box.refresh_layout();
+        
         let (left, top) = text_box.pos();
         let (left, top) = (left as f32, top as f32);
 

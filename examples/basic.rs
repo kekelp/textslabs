@@ -38,16 +38,16 @@ impl State {
         let surface_config = surface.get_default_config(&adapter, physical_size.width, physical_size.height).unwrap();
         surface.configure(&device, &surface_config);
 
-        let big_text: Arc<Mutex<TextStyle<'_, ColorBrush>>> = Arc::new(Mutex::new(TextStyle {
+        let big_text: Arc<Mutex<SharedStyle>> = Arc::new(Mutex::new(SharedStyle::new(TextStyle {
             font_size: 64.0,
             ..Default::default()
-        }));
+        })));
 
         let mut text_boxes = vec![
             TextBox::new("Text box".to_string(), (10.0, 10.0), 0.0),
             TextBox::new("Saddy (rare) " .to_string(), (100.0, 200.0), 0.0),
             TextBox::new("Saddy (rare) " .to_string(), (20.0, 20.0), 0.0),
-            TextBox::new("Amogus"  .to_string(), (10.0, 110.0), 0.0),
+            TextBox::new("Amogus (non selectable)"  .to_string(), (10.0, 110.0), 0.0),
         ];
 
         text_boxes[1].set_shared_style(&big_text);
