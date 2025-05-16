@@ -39,6 +39,7 @@ pub struct TextBox<T: AsRef<str>> {
     needs_relayout: bool,
     left: f64,
     top: f64,
+    max_advance: f32,
     pub depth: f32,
     selection: SelectionState,
 }
@@ -85,7 +86,7 @@ impl SharedStyle {
         })))
     }
 
-    pub fn mutate<R>(&self, f: impl FnOnce(&mut TextStyle<'static, ColorBrush>) -> R) -> R {
+    pub fn with_borrow_mut<R>(&self, f: impl FnOnce(&mut TextStyle<'static, ColorBrush>) -> R) -> R {
         let mut inner = self.0.lock().unwrap();
         inner.version += 1;
         f(&mut inner.style)
@@ -122,7 +123,7 @@ impl SelectionState {
 }
 
 impl<T: AsRef<str>> TextBox<T> {
-    pub fn new(text: T, pos: (f64, f64), depth: f32) -> Self {
+    pub fn new(text: T, pos: (f64, f64), max_advance: f32, depth: f32) -> Self {
         Self {
             text,
             shared_style_version: 0,
@@ -131,6 +132,7 @@ impl<T: AsRef<str>> TextBox<T> {
             needs_relayout: true,
             left: pos.0,
             top: pos.1,
+            max_advance,
             depth,
             selection: SelectionState::new(),
             style: Style::default(),
@@ -161,10 +163,10 @@ impl<T: AsRef<str>> TextBox<T> {
                     builder.push_text(&self.text.as_ref());
 
                     let (mut layout, _) = builder.build();
-                    let max_advance = 200.0;
-                    layout.break_all_lines(Some(max_advance));
+
+                    layout.break_all_lines(Some(self.max_advance));
                     layout.align(
-                        Some(max_advance),
+                        Some(self.max_advance),
                         Alignment::Start,
                         AlignmentOptions::default(),
                     );

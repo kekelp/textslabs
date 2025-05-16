@@ -2,7 +2,12 @@ use parley::TextStyle;
 use parley2::*;
 use std::sync::Arc;
 use wgpu::*;
-use winit::{dpi::LogicalSize, event::{Modifiers, WindowEvent}, event_loop::EventLoop, window::Window};
+use winit::{
+    dpi::LogicalSize,
+    event::{Modifiers, WindowEvent},
+    event_loop::EventLoop,
+    window::Window,
+};
 
 fn main() {
     let event_loop = EventLoop::new().unwrap();
@@ -35,29 +40,36 @@ impl State {
         let surface = instance
             .create_surface(window.clone())
             .expect("Create surface");
-        let surface_config = surface.get_default_config(&adapter, physical_size.width, physical_size.height).unwrap();
+        let surface_config = surface
+            .get_default_config(&adapter, physical_size.width, physical_size.height)
+            .unwrap();
         surface.configure(&device, &surface_config);
 
-        let big_text: SharedStyle = SharedStyle::new(TextStyle {
+        let big_text_style: SharedStyle = SharedStyle::new(TextStyle {
             font_size: 64.0,
             ..Default::default()
         });
 
         let mut text_boxes = vec![
-            TextBox::new("Text box".to_string(), (10.0, 10.0), 0.0),
-            TextBox::new("Saddy (rare) " .to_string(), (100.0, 200.0), 0.0),
-            TextBox::new("Saddy (rare) " .to_string(), (20.0, 20.0), 0.0),
-            TextBox::new("Amogus (non selectable)"  .to_string(), (10.0, 110.0), 0.0),
+            TextBox::new("Text box".to_string(), (10.0, 10.0), 300.0, 0.0),
+            TextBox::new("Saddy (rare) ".to_string(), (100.0, 200.0), 300.0, 0.0),
+            TextBox::new("Words words words ".to_string(), (20.0, 20.0), 300.0, 0.0),
+            TextBox::new(
+                "Amogus (non selectable)".to_string(),
+                (10.0, 110.0),
+                300.0,
+                0.0,
+            ),
         ];
 
-        text_boxes[1].set_shared_style(&big_text);
-        text_boxes[2].set_shared_style(&big_text);
+        text_boxes[1].set_shared_style(&big_text_style);
+        text_boxes[2].set_shared_style(&big_text_style);
         text_boxes[3].set_unique_style(TextStyle {
             font_size: 24.0,
             ..Default::default()
         });
 
-        big_text.mutate(|style| style.font_size = 32.0);
+        big_text_style.with_borrow_mut(|style| style.font_size = 32.0);
 
         text_boxes[3].selectable = false;
 
@@ -80,25 +92,25 @@ impl State {
         event_loop: &winit::event_loop::ActiveEventLoop,
         event: WindowEvent,
     ) {
-
         for text_box in &mut self.text_boxes {
             if text_box.try_grab_focus(&event, &self.modifiers) {
                 break;
             }
         }
-        for text_box in &mut self.text_boxes {            
+        for text_box in &mut self.text_boxes {
             text_box.handle_event(&event, &self.modifiers);
         }
 
         match event {
             WindowEvent::ModifiersChanged(mods) => {
                 self.modifiers = mods;
-            },
+            }
             WindowEvent::Resized(size) => {
                 self.surface_config.width = size.width;
                 self.surface_config.height = size.height;
                 self.surface.configure(&self.device, &self.surface_config);
-                self.text_renderer.update_resolution(size.width as f32, size.height as f32);
+                self.text_renderer
+                    .update_resolution(size.width as f32, size.height as f32);
                 self.window.request_redraw();
             }
             WindowEvent::RedrawRequested => {
