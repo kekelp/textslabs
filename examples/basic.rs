@@ -1,6 +1,6 @@
 use parley::TextStyle;
 use parley2::*;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use wgpu::*;
 use winit::{dpi::LogicalSize, event::{Modifiers, WindowEvent}, event_loop::EventLoop, window::Window};
 
@@ -38,10 +38,10 @@ impl State {
         let surface_config = surface.get_default_config(&adapter, physical_size.width, physical_size.height).unwrap();
         surface.configure(&device, &surface_config);
 
-        let big_text: Arc<Mutex<SharedStyle>> = Arc::new(Mutex::new(SharedStyle::new(TextStyle {
+        let big_text: SharedStyle = SharedStyle::new(TextStyle {
             font_size: 64.0,
             ..Default::default()
-        })));
+        });
 
         let mut text_boxes = vec![
             TextBox::new("Text box".to_string(), (10.0, 10.0), 0.0),
@@ -57,7 +57,7 @@ impl State {
             ..Default::default()
         });
 
-        big_text.lock().unwrap().font_size = 32.0;
+        big_text.mutate(|style| style.font_size = 32.0);
 
         text_boxes[3].selectable = false;
 

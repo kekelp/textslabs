@@ -1,4 +1,4 @@
-use std::{cell::RefCell, ops::{Deref, DerefMut}, sync::{Arc, Mutex}, time::Instant};
+use std::{cell::RefCell, sync::{Arc, Mutex}, time::Instant};
 
 use parley::{Affinity, Alignment, AlignmentOptions, Selection, TextStyle};
 use winit::{event::{Modifiers, WindowEvent}, keyboard::{Key, NamedKey}, platform::modifier_supplement::KeyEventExtModifierSupplement};
@@ -44,13 +44,11 @@ pub struct TextBox<T: AsRef<str>> {
 }
 
 lazy_static::lazy_static! {
-    pub static ref DEFAULT_TEXT_STYLE: Arc<Mutex<SharedStyle>> = {
-        Arc::new(Mutex::new(SharedStyle { style: TextStyle::default(), version: 1 }))
-    };
+    pub static ref DEFAULT_TEXT_STYLE: SharedStyle = SharedStyle::new(TextStyle::default());
 }
 
 pub enum Style {
-    Shared(Arc<Mutex<SharedStyle>>), // todo: should be a struct with a changed flag
+    Shared(SharedStyle), // todo: should be a struct with a changed flag
     Unique(TextStyle<'static, ColorBrush>),
 }
 impl Default for Style {
@@ -59,43 +57,43 @@ impl Default for Style {
     }
 }
 impl Style {
-    pub fn with_text_style<F, R>(&self, f: F) -> R
+    pub fn with_text_style<F, R>(&mut self, f: F) -> R
     where
-        F: FnOnce(&TextStyle<'static, ColorBrush>) -> R,
+        F: FnOnce(&mut TextStyle<'static, ColorBrush>) -> R,
     {
         match self {
-            Style::Shared(arc_mutex) => {
-                let guard = arc_mutex.lock().unwrap();
-                f(&guard.style)
-            },
+            Style::Shared(shared) => {
+                let mut guard = shared.0.lock().unwrap(); // Unwrap on poison
+                guard.version += 1; // Increment version
+                f(&mut guard.style)
+            }
             Style::Unique(style) => f(style),
         }
     }
 }
 
-pub struct SharedStyle {
+pub struct SharedStyle(Arc<Mutex<InnerStyle>>);
+struct InnerStyle {
     style: TextStyle<'static, ColorBrush>,
     version: u32,
 }
 impl SharedStyle {
     pub fn new(style: TextStyle<'static, ColorBrush>) -> Self {
-        Self {
+        Self(Arc::new(Mutex::new(InnerStyle {
             style,
             version: 0,
-        }
+        })))
     }
-}
-impl Deref for SharedStyle {
-    type Target = TextStyle<'static, ColorBrush>;
-    fn deref(&self) -> &Self::Target {
-        &self.style
-    }
-}
 
-impl DerefMut for SharedStyle {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        self.version += 1;
-        &mut self.style
+    pub fn mutate<R>(&self, f: impl FnOnce(&mut TextStyle<'static, ColorBrush>) -> R) -> R {
+        let mut inner = self.0.lock().unwrap();
+        inner.version += 1;
+        f(&mut inner.style)
+    }
+}
+impl Clone for SharedStyle {
+    fn clone(&self) -> Self {
+        SharedStyle(self.0.clone())
     }
 }
 
@@ -147,10 +145,10 @@ impl<T: AsRef<str>> TextBox<T> {
     pub fn refresh_layout(&mut self) {
         let shared_style_changed = match &self.style {
             Style::Unique(_) => false,
-            Style::Shared(mutex) => {
-                let guard = mutex.lock().unwrap();
-                let changed = guard.version != self.shared_style_version;
-                self.shared_style_version = guard.version;
+            Style::Shared(shared) => {
+                let inner = shared.0.lock().unwrap();
+                let changed = inner.version != self.shared_style_version;
+                self.shared_style_version = inner.version;
                 changed
             },
         };
@@ -383,7 +381,7 @@ impl<T: AsRef<str>> TextBox<T> {
         self.selection.focused
     }
 
-    pub fn set_shared_style(&mut self, style: &Arc<Mutex<SharedStyle>>) {
+    pub fn set_shared_style(&mut self, style: &SharedStyle) {
         self.style = Style::Shared(style.clone());
     }
 
