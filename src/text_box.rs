@@ -1,12 +1,19 @@
-use std::{cell::RefCell, sync::{Arc, Mutex}, time::Instant};
+use std::{
+    cell::RefCell,
+    sync::{Arc, Mutex},
+    time::Instant,
+};
 
 use parley::{Affinity, Alignment, AlignmentOptions, Selection, TextStyle};
-use winit::{event::{Modifiers, WindowEvent}, keyboard::{Key, NamedKey}, platform::modifier_supplement::KeyEventExtModifierSupplement};
+use winit::{
+    event::{Modifiers, WindowEvent},
+    keyboard::{Key, NamedKey},
+    platform::modifier_supplement::KeyEventExtModifierSupplement,
+};
 
 use crate::*;
 
 const X_TOLERANCE: f64 = 7.0;
-
 
 struct TextContext {
     layout_cx: LayoutContext<ColorBrush>,
@@ -34,7 +41,7 @@ pub struct TextBox<T: AsRef<str>> {
     text: T,
     style: Style,
     shared_style_version: u32,
-    pub selectable: bool, 
+    pub selectable: bool,
     pub(crate) layout: Layout<ColorBrush>,
     needs_relayout: bool,
     left: f64,
@@ -80,13 +87,13 @@ struct InnerStyle {
 }
 impl SharedStyle {
     pub fn new(style: TextStyle<'static, ColorBrush>) -> Self {
-        Self(Arc::new(Mutex::new(InnerStyle {
-            style,
-            version: 0,
-        })))
+        Self(Arc::new(Mutex::new(InnerStyle { style, version: 0 })))
     }
 
-    pub fn with_borrow_mut<R>(&self, f: impl FnOnce(&mut TextStyle<'static, ColorBrush>) -> R) -> R {
+    pub fn with_borrow_mut<R>(
+        &self,
+        f: impl FnOnce(&mut TextStyle<'static, ColorBrush>) -> R,
+    ) -> R {
         let mut inner = self.0.lock().unwrap();
         inner.version += 1;
         f(&mut inner.style)
@@ -152,13 +159,16 @@ impl<T: AsRef<str>> TextBox<T> {
                 let changed = inner.version != self.shared_style_version;
                 self.shared_style_version = inner.version;
                 changed
-            },
+            }
         };
 
         if self.needs_relayout || shared_style_changed {
             with_text_cx(|text_cx| {
                 self.style.with_text_style(|style| {
-                    let mut builder = text_cx.layout_cx.tree_builder(&mut text_cx.font_cx, 1.0, style);
+                    let mut builder =
+                        text_cx
+                            .layout_cx
+                            .tree_builder(&mut text_cx.font_cx, 1.0, style);
 
                     builder.push_text(&self.text.as_ref());
 
@@ -170,7 +180,7 @@ impl<T: AsRef<str>> TextBox<T> {
                         Alignment::Start,
                         AlignmentOptions::default(),
                     );
-                    
+
                     self.layout = layout;
                     self.needs_relayout = false;
                 });
@@ -179,76 +189,53 @@ impl<T: AsRef<str>> TextBox<T> {
     }
 
     pub fn handle_event(&mut self, event: &winit::event::WindowEvent, modifiers: &Modifiers) {
-        if ! self.selectable {
+        if !self.selectable {
             self.selection.focused = false;
             return;
         }
-        if ! self.selection.focused {
-            return;
-        }
 
-        // todo: do we really need relayout for all events?
-        self.refresh_layout();
-        
         match event {
             WindowEvent::MouseInput { state, button, .. } => {
-                let shift = modifiers.state().shift_key();
-                if *button == winit::event::MouseButton::Left {
+                if state.is_pressed() {
+                    if *button == winit::event::MouseButton::Left {
+                        let offset = (
+                            self.selection.cursor_pos.0 as f64 - self.left,
+                            self.selection.cursor_pos.1 as f64 - self.top,
+                        );
 
-                    // todo: separate this hitbox stuff so most of the code can be on SelectionState?
-                    let cursor_pos = (self.selection.cursor_pos.0 as f64 - self.left, self.selection.cursor_pos.1 as f64 - self.top);
-                    
-                    if state.is_pressed() {
-
-                        // todo: deduplicate
-                        if cursor_pos.0 > - X_TOLERANCE
-                            && cursor_pos.0 < self.layout.max_content_width() as f64 + X_TOLERANCE
-                            && cursor_pos.1 > 0.0
-                            && cursor_pos.1 < self.layout.height() as f64 {
-                                // todo do an !if
-                        } else {
-                            self.selection.set_selection(self.selection.selection.collapse());
+                        if !self.layout.hit(offset) {
                             self.selection.focused = false;
-                        }
-
-                    } else {
-                        self.selection.pointer_down = false;
-                    }
-
-                    let cursor_pos = (cursor_pos.0 as f32, cursor_pos.1 as f32);
-
-                    if self.selection.pointer_down {
-                        let now = Instant::now();
-                        if let Some(last) = self.selection.last_click_time.take() {
-                            if now.duration_since(last).as_secs_f64() < 0.25 {
-                                self.selection.click_count = (self.selection.click_count + 1) % 4;
-                            } else {
-                                self.selection.click_count = 1;
-                            }
-                        } else {
-                            self.selection.click_count = 1;
-                        }
-                        self.selection.last_click_time = Some(now);
-                        let click_count = self.selection.click_count;
-                        match click_count {
-                            2 => self.selection.select_word_at_point(&self.layout, cursor_pos.0, cursor_pos.1),
-                            3 => self.selection.select_line_at_point(&self.layout, cursor_pos.0, cursor_pos.1),
-                            _ => if shift {
-                                self.selection.extend_selection_with_anchor(&self.layout, cursor_pos.0, cursor_pos.1)
-                            } else {
-                                self.selection.move_to_point(&self.layout, cursor_pos.0, cursor_pos.1)
-                            }
+                            self.selection.set_selection(self.selection.selection.collapse());
                         }
                     }
+                } else {
+                    self.selection.pointer_down = false;
                 }
-                
             }
+            _ => {}
+        }
+
+        if !self.selection.focused {
+            return;
+        }
+        
+        // todo: do we really need relayout for all events?
+        self.refresh_layout();
+
+        self.selection.handle_event(
+            event,
+            modifiers,
+            &self.layout,
+            self.left as f32,
+            self.top as f32,
+        );
+
+        match event {
             WindowEvent::KeyboardInput { event, .. } => {
                 if !event.state.is_pressed() {
-                    return;
+                    ;
                 }
                 #[allow(unused)]
-
                 let mods_state = modifiers.state();
                 let shift = mods_state.shift_key();
                 let action_mod = if cfg!(target_os = "macos") {
@@ -264,14 +251,21 @@ impl<T: AsRef<str>> TextBox<T> {
                             use clipboard_rs::{Clipboard, ClipboardContext};
                             match c.as_str() {
                                 "c" if !shift => {
-                                    if let Some(text) = self.text.as_ref().get(self.selection.selection.text_range())
+                                    if let Some(text) = self
+                                        .text
+                                        .as_ref()
+                                        .get(self.selection.selection.text_range())
                                     {
                                         let cb = ClipboardContext::new().unwrap();
                                         cb.set_text(text.to_owned()).ok();
                                     }
                                 }
                                 "a" => {
-                                    self.selection.selection = Selection::from_byte_index(&self.layout, 0_usize, Affinity::default())
+                                    self.selection.selection = Selection::from_byte_index(
+                                        &self.layout,
+                                        0_usize,
+                                        Affinity::default(),
+                                    )
                                     .move_lines(&self.layout, isize::MAX, true);
                                 }
                                 _ => (),
@@ -280,82 +274,27 @@ impl<T: AsRef<str>> TextBox<T> {
                         _ => (),
                     };
                 }
-
-                match &event.logical_key {
-                    Key::Named(NamedKey::ArrowLeft) => {
-                        if action_mod {
-                            if shift {
-                                self.selection.select_word_left(&self.layout);
-                            }
-                        } else if shift {
-                            self.selection.select_left(&self.layout);
-                        }
-                    }
-                    Key::Named(NamedKey::ArrowRight) => {
-                        if action_mod {
-                            if shift {
-                                self.selection.select_word_right(&self.layout);
-                            }
-                        } else if shift {
-                            self.selection.select_right(&self.layout);
-                        }
-                    }
-                    Key::Named(NamedKey::ArrowUp) => {
-                        if shift {
-                            self.selection.select_up(&self.layout);
-                        }
-                    }
-                    Key::Named(NamedKey::ArrowDown) => {
-                        if shift {
-                            self.selection.select_down(&self.layout);
-                        }
-                    }
-                    Key::Named(NamedKey::Home) => {
-                        if action_mod {
-                            if shift {
-                                self.selection.select_to_text_start(&self.layout);
-                            }
-                        } else if shift {
-                            self.selection.select_to_line_start(&self.layout);
-                        }
-                    }
-                    Key::Named(NamedKey::End) => {
-                        if action_mod {
-                            if shift {
-                                self.selection.select_to_text_end(&self.layout);
-                            }
-                        } else if shift {
-                            self.selection.select_to_line_end(&self.layout);
-                        }
-                    }
-                    _ => (),
-                }
             }
             _ => {}
         }
     }
 
     pub fn try_grab_focus(&mut self, event: &WindowEvent, _modifiers: &Modifiers) -> bool {
-        if ! self.selectable {
+        if !self.selectable {
             self.selection.focused = false;
             return false;
         }
-        
-        self.refresh_layout();       
+
+        self.refresh_layout();
         match event {
-            WindowEvent::MouseInput { state, .. } => {
-                if state.is_pressed() {
-                    let cursor_pos = (
+            WindowEvent::MouseInput { state, button, .. } => {
+                if *button == winit::event::MouseButton::Left && state.is_pressed() {
+                    let offset = (
                         self.selection.cursor_pos.0 as f64 - self.left,
                         self.selection.cursor_pos.1 as f64 - self.top,
                     );
 
-                    // todo: deduplicate
-                    if cursor_pos.0 > -X_TOLERANCE
-                        && cursor_pos.0 < self.layout.max_content_width() as f64 + X_TOLERANCE
-                        && cursor_pos.1 > 0.0
-                        && cursor_pos.1 < self.layout.height() as f64
-                    {
+                    if self.layout.hit(offset) {
                         self.selection.pointer_down = true;
                         self.selection.focused = true;
                         return true;
@@ -364,14 +303,22 @@ impl<T: AsRef<str>> TextBox<T> {
             }
             WindowEvent::CursorMoved { position, .. } => {
                 let prev_pos = self.selection.cursor_pos;
-                
+
                 let cursor_pos = (position.x as f32, position.y as f32);
                 self.selection.cursor_pos = cursor_pos;
-                
+
                 // macOS seems to generate a spurious move after selecting word?
                 if self.selection.pointer_down && prev_pos != self.selection.cursor_pos {
-                    let cursor_pos = (cursor_pos.0 - self.left as f32, cursor_pos.1 - self.top as f32);                    
-                    self.selection.extend_selection_to_point(&self.layout, cursor_pos.0, cursor_pos.1, true);
+                    let cursor_pos = (
+                        cursor_pos.0 - self.left as f32,
+                        cursor_pos.1 - self.top as f32,
+                    );
+                    self.selection.extend_selection_to_point(
+                        &self.layout,
+                        cursor_pos.0,
+                        cursor_pos.1,
+                        true,
+                    );
                 }
             }
             _ => {}
@@ -390,10 +337,139 @@ impl<T: AsRef<str>> TextBox<T> {
     pub fn set_unique_style(&mut self, style: TextStyle<'static, ColorBrush>) {
         self.style = Style::Unique(style);
     }
-}   
-    
-impl SelectionState {
+}
 
+trait Ext1 {
+    fn hit(&self, cursor_pos: (f64, f64)) -> bool;
+}
+impl Ext1 for Layout<ColorBrush> {
+    fn hit(&self, top_left_corner: (f64, f64)) -> bool {
+        let hit = top_left_corner.0 > -X_TOLERANCE
+            && top_left_corner.0 < self.max_content_width() as f64 + X_TOLERANCE
+            && top_left_corner.1 > 0.0
+            && top_left_corner.1 < self.height() as f64;
+
+        return hit;
+    }
+}
+
+impl SelectionState {
+    pub fn handle_event(
+        &mut self,
+        event: &winit::event::WindowEvent,
+        modifiers: &Modifiers,
+        layout: &Layout<ColorBrush>,
+        left: f32,
+        top: f32,
+    ) {
+        match event {
+            WindowEvent::MouseInput { state, button, .. } => {
+                let shift = modifiers.state().shift_key();
+                if *button == winit::event::MouseButton::Left {
+                    self.pointer_down = state.is_pressed();
+
+                    let cursor_pos = (
+                        self.cursor_pos.0 as f32 - left,
+                        self.cursor_pos.1 as f32 - top,
+                    );
+
+                    if self.pointer_down {
+                        let now = Instant::now();
+                        if let Some(last) = self.last_click_time.take() {
+                            if now.duration_since(last).as_secs_f64() < 0.25 {
+                                self.click_count = (self.click_count + 1) % 4;
+                            } else {
+                                self.click_count = 1;
+                            }
+                        } else {
+                            self.click_count = 1;
+                        }
+                        self.last_click_time = Some(now);
+                        let click_count = self.click_count;
+                        match click_count {
+                            2 => self.select_word_at_point(layout, cursor_pos.0, cursor_pos.1),
+                            3 => self.select_line_at_point(layout, cursor_pos.0, cursor_pos.1),
+                            _ => {
+                                if shift {
+                                    self.extend_selection_with_anchor(
+                                        layout,
+                                        cursor_pos.0,
+                                        cursor_pos.1,
+                                    )
+                                } else {
+                                    self.move_to_point(layout, cursor_pos.0, cursor_pos.1)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            WindowEvent::KeyboardInput { event, .. } => {
+                if !event.state.is_pressed() {
+                    return;
+                }
+                #[allow(unused)]
+                let mods_state = modifiers.state();
+                let shift = mods_state.shift_key();
+                let action_mod = if cfg!(target_os = "macos") {
+                    mods_state.super_key()
+                } else {
+                    mods_state.control_key()
+                };
+
+                match &event.logical_key {
+                    Key::Named(NamedKey::ArrowLeft) => {
+                        if action_mod {
+                            if shift {
+                                self.select_word_left(layout);
+                            }
+                        } else if shift {
+                            self.select_left(layout);
+                        }
+                    }
+                    Key::Named(NamedKey::ArrowRight) => {
+                        if action_mod {
+                            if shift {
+                                self.select_word_right(layout);
+                            }
+                        } else if shift {
+                            self.select_right(layout);
+                        }
+                    }
+                    Key::Named(NamedKey::ArrowUp) => {
+                        if shift {
+                            self.select_up(layout);
+                        }
+                    }
+                    Key::Named(NamedKey::ArrowDown) => {
+                        if shift {
+                            self.select_down(layout);
+                        }
+                    }
+                    Key::Named(NamedKey::Home) => {
+                        if action_mod {
+                            if shift {
+                                self.select_to_text_start(layout);
+                            }
+                        } else if shift {
+                            self.select_to_line_start(layout);
+                        }
+                    }
+                    Key::Named(NamedKey::End) => {
+                        if action_mod {
+                            if shift {
+                                self.select_to_text_end(layout);
+                            }
+                        } else if shift {
+                            self.select_to_line_end(layout);
+                        }
+                    }
+                    _ => (),
+                }
+            }
+            _ => {}
+        }
+    }
 
     /// Move the cursor to the cluster boundary nearest this point in the layout.
     pub fn move_to_point(&mut self, layout: &Layout<ColorBrush>, x: f32, y: f32) {
@@ -411,16 +487,23 @@ impl SelectionState {
     }
 
     /// Move the selection focus point to the cluster boundary closest to point.
-    pub fn extend_selection_to_point(&mut self, layout: &Layout<ColorBrush>, x: f32, y: f32, keep_granularity: bool) {
+    pub fn extend_selection_to_point(
+        &mut self,
+        layout: &Layout<ColorBrush>,
+        x: f32,
+        y: f32,
+        keep_granularity: bool,
+    ) {
         // FIXME: This is usually the wrong way to handle selection extension for mouse moves, but not a regression.
         self.set_selection(
-            self.selection.extend_to_point(layout, x, y, keep_granularity),
+            self.selection
+                .extend_to_point(layout, x, y, keep_granularity),
         );
     }
 
     /// Extend the selection starting from the previous anchor, moving the selection focus point to the cluster boundary closest to point.
-    /// 
-    /// Used for shift-click behavior. 
+    ///
+    /// Used for shift-click behavior.
     pub fn extend_selection_with_anchor(&mut self, layout: &Layout<ColorBrush>, x: f32, y: f32) {
         if let Some(prev_selection) = self.prev_anchor {
             self.set_selection_with_old_anchor(prev_selection);
@@ -428,11 +511,8 @@ impl SelectionState {
             self.prev_anchor = Some(self.selection);
         }
         // FIXME: This is usually the wrong way to handle selection extension for mouse moves, but not a regression.
-        self.set_selection_with_old_anchor(
-            self.selection.extend_to_point(layout, x, y, false),
-        );
+        self.set_selection_with_old_anchor(self.selection.extend_to_point(layout, x, y, false));
     }
-
 
     /// Update the selection, and nudge the `Generation` if something other than `h_pos` changed.
     fn set_selection(&mut self, new_sel: Selection) {
@@ -449,28 +529,19 @@ impl SelectionState {
         self.selection = new_sel;
     }
 
-
     /// Move the selection focus point to the start of the buffer.
     pub fn select_to_text_start(&mut self, layout: &Layout<ColorBrush>) {
-        self.selection = self.selection.move_lines(
-            layout,
-            isize::MIN,
-            true,
-        );
+        self.selection = self.selection.move_lines(layout, isize::MIN, true);
     }
 
     /// Move the selection focus point to the start of the physical line.
     pub fn select_to_line_start(&mut self, layout: &Layout<ColorBrush>) {
-        self.selection =self.selection.line_start(layout, true);
+        self.selection = self.selection.line_start(layout, true);
     }
 
     /// Move the selection focus point to the end of the buffer.
     pub fn select_to_text_end(&mut self, layout: &Layout<ColorBrush>) {
-        self.selection = self.selection.move_lines(
-            layout,
-            isize::MAX,
-            true,
-        );
+        self.selection = self.selection.move_lines(layout, isize::MAX, true);
     }
 
     /// Move the selection focus point to the end of the physical line.
@@ -516,7 +587,7 @@ impl<T: AsRef<str>> TextBox<T> {
     pub fn text_mut(&mut self) -> &mut T {
         &mut self.text
     }
-    
+
     pub fn selection(&self) -> &Selection {
         &self.selection.selection
     }
