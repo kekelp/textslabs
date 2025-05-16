@@ -21,7 +21,6 @@ struct State {
 
     text_renderer: TextRenderer,
     text_boxes: Vec<TextBox<String>>,
-    current_text: usize,
 }
 
 impl State {
@@ -36,40 +35,33 @@ impl State {
         let surface = instance
             .create_surface(window.clone())
             .expect("Create surface");
-        let swapchain_format = TextureFormat::Bgra8Unorm;
-        let surface_config = SurfaceConfiguration {
-            usage: TextureUsages::RENDER_ATTACHMENT,
-            format: swapchain_format,
-            width: physical_size.width,
-            height: physical_size.height,
-            present_mode: PresentMode::Fifo,
-            alpha_mode: CompositeAlphaMode::Opaque,
-            view_formats: vec![],
-            desired_maximum_frame_latency: 2,
-        };
+        let surface_config = surface.get_default_config(&adapter, physical_size.width, physical_size.height).unwrap();
         surface.configure(&device, &surface_config);
 
         let big_text: Arc<Mutex<TextStyle<'_, ColorBrush>>> = Arc::new(Mutex::new(TextStyle {
-            font_size: 32.0,
+            font_size: 64.0,
             ..Default::default()
         }));
 
         let mut text_boxes = vec![
             TextBox::new("Text box".to_string(), (10.0, 10.0), 0.0),
-            TextBox::new("Saddy (rare) "   .to_string(), (100.0, 200.0), 0.0),
-            TextBox::new("Saddy (rare) "   .to_string(), (20.0, 20.0), 0.0),
+            TextBox::new("Saddy (rare) " .to_string(), (100.0, 200.0), 0.0),
+            TextBox::new("Saddy (rare) " .to_string(), (20.0, 20.0), 0.0),
             TextBox::new("Amogus"  .to_string(), (10.0, 110.0), 0.0),
         ];
 
         text_boxes[1].set_shared_style(&big_text);
         text_boxes[2].set_shared_style(&big_text);
+        text_boxes[3].set_unique_style(TextStyle {
+            font_size: 24.0,
+            ..Default::default()
+        });
 
-        big_text.lock().unwrap().font_size = 64.0;
+        big_text.lock().unwrap().font_size = 32.0;
 
-        let text_renderer_params = TextRendererParams {
-            atlas_page_size: AtlasPageSize::Flat(300), // tiny page to test out multi-page stuff
-        };
-        let text_renderer = TextRenderer::new_with_params(&device, &queue, text_renderer_params);
+        text_boxes[3].selectable = false;
+
+        let text_renderer = TextRenderer::new(&device, &queue);
 
         Self {
             device,
@@ -79,7 +71,6 @@ impl State {
             window,
             text_renderer,
             text_boxes,
-            current_text: 0,
             modifiers: Modifiers::default(),
         }
     }
@@ -103,21 +94,6 @@ impl State {
             WindowEvent::ModifiersChanged(mods) => {
                 self.modifiers = mods;
             },
-            WindowEvent::KeyboardInput { event, .. } => {
-                if let winit::keyboard::Key::Named(winit::keyboard::NamedKey::ArrowLeft) = event.logical_key {
-                    if event.state.is_pressed() && !event.repeat {
-                        let len = self.text_boxes.len();
-                        self.current_text = (self.current_text + len - 1) % len;
-                        self.window.request_redraw();
-                    }
-                }
-                if let winit::keyboard::Key::Named(winit::keyboard::NamedKey::ArrowRight) = event.logical_key {
-                    if event.state.is_pressed() && ! event.repeat {
-                        self.current_text = (self.current_text + 1) % self.text_boxes.len();
-                        self.window.request_redraw();
-                    }
-                }
-            }
             WindowEvent::Resized(size) => {
                 self.surface_config.width = size.width;
                 self.surface_config.height = size.height;

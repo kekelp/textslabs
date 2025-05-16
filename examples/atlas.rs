@@ -36,17 +36,7 @@ impl State {
         let surface = instance
             .create_surface(window.clone())
             .expect("Create surface");
-        let swapchain_format = TextureFormat::Bgra8Unorm;
-        let surface_config = SurfaceConfiguration {
-            usage: TextureUsages::RENDER_ATTACHMENT,
-            format: swapchain_format,
-            width: physical_size.width,
-            height: physical_size.height,
-            present_mode: PresentMode::Fifo,
-            alpha_mode: CompositeAlphaMode::Opaque,
-            view_formats: vec![],
-            desired_maximum_frame_latency: 2,
-        };
+        let surface_config = surface.get_default_config(&adapter, physical_size.width, physical_size.height).unwrap();
         surface.configure(&device, &surface_config);
 
         let layout = vec![

@@ -33,7 +33,7 @@ fn with_text_cx<R>(f: impl FnOnce(&mut TextContext) -> R) -> R {
 pub struct TextBox<T: AsRef<str>> {
     text: T,
     style: Style,
-    // has to be pub(crate) because of partial borrows. Terrible!
+    pub selectable: bool, 
     pub(crate) layout: Layout<ColorBrush>,
     needs_relayout: bool,
     left: f64,
@@ -101,6 +101,7 @@ impl<T: AsRef<str>> TextBox<T> {
         Self {
             text,
             layout: Layout::new(),
+            selectable: true,
             needs_relayout: true,
             left: pos.0,
             top: pos.1,
@@ -140,6 +141,10 @@ impl<T: AsRef<str>> TextBox<T> {
     }
 
     pub fn handle_event(&mut self, event: &winit::event::WindowEvent, modifiers: &Modifiers) {
+        if ! self.selectable {
+            self.selection.focused = false;
+            return;
+        }
         if ! self.selection.focused {
             return;
         }
@@ -293,6 +298,11 @@ impl<T: AsRef<str>> TextBox<T> {
     }
 
     pub fn try_grab_focus(&mut self, event: &WindowEvent, _modifiers: &Modifiers) -> bool {
+        if ! self.selectable {
+            self.selection.focused = false;
+            return false;
+        }
+        
         self.refresh_layout();       
         match event {
             WindowEvent::MouseInput { state, .. } => {
