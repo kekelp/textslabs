@@ -15,7 +15,7 @@ use crate::*;
 
 const X_TOLERANCE: f64 = 7.0;
 
-struct TextContext {
+pub(crate) struct TextContext {
     layout_cx: LayoutContext<ColorBrush>,
     font_cx: FontContext,
 }
@@ -32,8 +32,8 @@ thread_local! {
     static TEXT_CX: RefCell<TextContext> = RefCell::new(TextContext::new());
 }
 
-fn with_text_cx<R>(f: impl FnOnce(&mut TextContext) -> R) -> R {
-    let res = TEXT_CX.with_borrow_mut(|text_cx| f(text_cx));
+pub(crate) fn with_text_cx<R>(f: impl FnOnce(&mut LayoutContext<ColorBrush>, &mut FontContext) -> R) -> R {
+    let res = TEXT_CX.with_borrow_mut(|text_cx| f(&mut text_cx.layout_cx, &mut text_cx.font_cx));
     res
 }
 
@@ -157,11 +157,10 @@ impl<T: AsRef<str>> TextBox<T> {
             } else { false };
 
             if self.needs_relayout || shared_style_changed {
-                with_text_cx(|text_cx| {
+                with_text_cx(|layout_cx, font_cx| {
                     let mut builder =
-                        text_cx
-                            .layout_cx
-                            .tree_builder(&mut text_cx.font_cx, 1.0, style);
+                        layout_cx
+                            .tree_builder(font_cx, 1.0, style);
 
                     builder.push_text(&self.text.as_ref());
 

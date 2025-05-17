@@ -7,6 +7,9 @@ pub use text_renderer::*;
 mod text_box;
 pub use text_box::*;
 
+mod text_edit;
+pub use text_edit::*;
+
 use bytemuck::{Pod, Zeroable};
 use etagere::euclid::{Size2D, UnknownUnit};
 use etagere::{size2, Allocation, BucketedAtlasAllocator};
