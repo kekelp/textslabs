@@ -1,6 +1,6 @@
 use std::{
     cell::RefCell,
-    sync::{Arc, Mutex},
+    sync::{Arc, RwLock},
     time::Instant,
 };
 
@@ -56,7 +56,7 @@ lazy_static::lazy_static! {
 }
 
 pub enum Style {
-    Shared(SharedStyle), // todo: should be a struct with a changed flag
+    Shared(SharedStyle),
     Unique(TextStyle<'static, ColorBrush>),
 }
 impl Default for Style {
@@ -67,34 +67,33 @@ impl Default for Style {
 impl Style {
     pub fn with_text_style<F, R>(&mut self, f: F) -> R
     where
-        F: FnOnce(&mut TextStyle<'static, ColorBrush>) -> R,
+        F: FnOnce(&TextStyle<'static, ColorBrush>, Option<u32>) -> R,
     {
         match self {
             Style::Shared(shared) => {
-                let mut guard = shared.0.lock().unwrap(); // Unwrap on poison
-                guard.version += 1; // Increment version
-                f(&mut guard.style)
+                let inner = shared.0.read().unwrap();
+                f(&inner.style, Some(inner.version))
             }
-            Style::Unique(style) => f(style),
+            Style::Unique(style) => f(style, None),
         }
     }
 }
 
-pub struct SharedStyle(Arc<Mutex<InnerStyle>>);
+pub struct SharedStyle(Arc<RwLock<InnerStyle>>);
 struct InnerStyle {
     style: TextStyle<'static, ColorBrush>,
     version: u32,
 }
 impl SharedStyle {
     pub fn new(style: TextStyle<'static, ColorBrush>) -> Self {
-        Self(Arc::new(Mutex::new(InnerStyle { style, version: 0 })))
+        Self(Arc::new(RwLock::new(InnerStyle { style, version: 0 })))
     }
 
     pub fn with_borrow_mut<R>(
         &self,
         f: impl FnOnce(&mut TextStyle<'static, ColorBrush>) -> R,
     ) -> R {
-        let mut inner = self.0.lock().unwrap();
+        let mut inner = self.0.write().unwrap();
         inner.version += 1;
         f(&mut inner.style)
     }
@@ -152,19 +151,13 @@ impl<T: AsRef<str>> TextBox<T> {
     }
 
     pub fn refresh_layout(&mut self) {
-        let shared_style_changed = match &self.style {
-            Style::Unique(_) => false,
-            Style::Shared(shared) => {
-                let inner = shared.0.lock().unwrap();
-                let changed = inner.version != self.shared_style_version;
-                self.shared_style_version = inner.version;
-                changed
-            }
-        };
+        self.style.with_text_style(|style, version| {
+            let shared_style_changed = if let Some(version) = version {
+                self.shared_style_version == version
+            } else { false };
 
-        if self.needs_relayout || shared_style_changed {
-            with_text_cx(|text_cx| {
-                self.style.with_text_style(|style| {
+            if self.needs_relayout || shared_style_changed {
+                with_text_cx(|text_cx| {
                     let mut builder =
                         text_cx
                             .layout_cx
@@ -184,8 +177,8 @@ impl<T: AsRef<str>> TextBox<T> {
                     self.layout = layout;
                     self.needs_relayout = false;
                 });
-            });
-        }
+            }
+        });
     }
 
     pub fn handle_event(&mut self, event: &winit::event::WindowEvent, modifiers: &Modifiers) {
@@ -193,6 +186,8 @@ impl<T: AsRef<str>> TextBox<T> {
             self.selection.focused = false;
             return;
         }
+
+        self.refresh_layout();
 
         match event {
             WindowEvent::MouseInput { state, button, .. } => {
@@ -203,9 +198,10 @@ impl<T: AsRef<str>> TextBox<T> {
                             self.selection.cursor_pos.1 as f64 - self.top,
                         );
 
-                        if !self.layout.hit(offset) {
+                        if !self.layout.hit_bounding_box(offset) {
                             self.selection.focused = false;
-                            self.selection.set_selection(self.selection.selection.collapse());
+                            self.selection
+                                .set_selection(self.selection.selection.collapse());
                         }
                     }
                 } else {
@@ -218,9 +214,6 @@ impl<T: AsRef<str>> TextBox<T> {
         if !self.selection.focused {
             return;
         }
-        
-        // todo: do we really need relayout for all events?
-        self.refresh_layout();
 
         self.selection.handle_event(
             event,
@@ -232,9 +225,7 @@ impl<T: AsRef<str>> TextBox<T> {
 
         match event {
             WindowEvent::KeyboardInput { event, .. } => {
-                if !event.state.is_pressed() {
-                    ;
-                }
+                if !event.state.is_pressed() {}
                 #[allow(unused)]
                 let mods_state = modifiers.state();
                 let shift = mods_state.shift_key();
@@ -294,7 +285,7 @@ impl<T: AsRef<str>> TextBox<T> {
                         self.selection.cursor_pos.1 as f64 - self.top,
                     );
 
-                    if self.layout.hit(offset) {
+                    if self.layout.hit_bounding_box(offset) {
                         self.selection.pointer_down = true;
                         self.selection.focused = true;
                         return true;
@@ -332,18 +323,20 @@ impl<T: AsRef<str>> TextBox<T> {
 
     pub fn set_shared_style(&mut self, style: &SharedStyle) {
         self.style = Style::Shared(style.clone());
+        self.needs_relayout = true;
     }
 
     pub fn set_unique_style(&mut self, style: TextStyle<'static, ColorBrush>) {
         self.style = Style::Unique(style);
+        self.needs_relayout = true;
     }
 }
 
 trait Ext1 {
-    fn hit(&self, cursor_pos: (f64, f64)) -> bool;
+    fn hit_bounding_box(&self, cursor_pos: (f64, f64)) -> bool;
 }
 impl Ext1 for Layout<ColorBrush> {
-    fn hit(&self, top_left_corner: (f64, f64)) -> bool {
+    fn hit_bounding_box(&self, top_left_corner: (f64, f64)) -> bool {
         let hit = top_left_corner.0 > -X_TOLERANCE
             && top_left_corner.0 < self.max_content_width() as f64 + X_TOLERANCE
             && top_left_corner.1 > 0.0
