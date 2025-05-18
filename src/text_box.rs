@@ -1,7 +1,5 @@
 use std::{
-    cell::RefCell,
-    sync::{Arc, RwLock},
-    time::Instant,
+    cell::RefCell, ops::Range, sync::{Arc, RwLock}, time::{Duration, Instant}
 };
 
 use parley::{Affinity, Alignment, AlignmentOptions, Selection, TextStyle};
@@ -38,19 +36,26 @@ pub(crate) fn with_text_cx<R>(f: impl FnOnce(&mut LayoutContext<ColorBrush>, &mu
 }
 
 pub struct TextBox<T: AsRef<str>> {
-    text: T,
-    style: Style,
-    shared_style_version: u32,
+    pub(crate) text: T,
+    pub(crate) style: Style,
+    pub(crate) shared_style_version: u32,
     pub selectable: bool,
     pub(crate) layout: Layout<ColorBrush>,
-    needs_relayout: bool,
-    left: f64,
-    top: f64,
-    max_advance: f32,
+    pub(crate) needs_relayout: bool,
+    pub(crate) left: f64,
+    pub(crate) top: f64,
+    pub(crate) max_advance: f32,
     pub depth: f32,
-    selection: SelectionState,
+    pub(crate) selection: SelectionState,
 
-    
+    pub(crate) compose: Option<Range<usize>>,
+    pub(crate) show_cursor: bool,
+    pub(crate) cursor_visible: bool,
+    pub(crate) width: Option<f32>,
+    pub(crate) alignment: Alignment,
+    pub(crate) start_time: Option<Instant>,
+    pub(crate) blink_period: Duration,
+    pub(crate) modifiers: Modifiers,
 }
 
 lazy_static::lazy_static! {
@@ -147,6 +152,14 @@ impl<T: AsRef<str>> TextBox<T> {
             depth,
             selection: SelectionState::new(),
             style: Style::default(),
+            compose: Default::default(),
+            show_cursor: Default::default(),
+            cursor_visible: Default::default(),
+            width: Default::default(),
+            alignment: Default::default(),
+            start_time: Default::default(),
+            blink_period: Default::default(),
+            modifiers: Default::default(),
         }
     }
 
@@ -578,7 +591,7 @@ impl SelectionState {
 }
 
 impl<T: AsRef<str>> TextBox<T> {
-    pub fn text(&self) -> &T {
+    pub fn text_real(&self) -> &T {
         &self.text
     }
     pub fn text_mut(&mut self) -> &mut T {
