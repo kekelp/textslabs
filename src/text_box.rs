@@ -49,6 +49,8 @@ pub struct TextBox<T: AsRef<str>> {
     max_advance: f32,
     pub depth: f32,
     selection: SelectionState,
+
+    
 }
 
 lazy_static::lazy_static! {
@@ -79,6 +81,9 @@ impl Style {
     }
 }
 
+// todo: this probably won't be needed actually
+// when using it in a declarative library, after you change a style, you just redeclare everything and pass the new style to everyone that needs it
+// (and they need to detect changes)
 pub struct SharedStyle(Arc<RwLock<InnerStyle>>);
 struct InnerStyle {
     style: TextStyle<'static, ColorBrush>,
