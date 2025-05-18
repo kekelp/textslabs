@@ -56,6 +56,7 @@ pub struct TextBox<T: AsRef<str>> {
     pub(crate) start_time: Option<Instant>,
     pub(crate) blink_period: Duration,
     pub(crate) modifiers: Modifiers,
+    pub(crate) scale: f32,
 }
 
 lazy_static::lazy_static! {
@@ -115,14 +116,13 @@ impl Clone for SharedStyle {
 }
 
 pub struct SelectionState {
-    selection: Selection,
-    prev_anchor: Option<Selection>,
-
-    pointer_down: bool,
-    focused: bool,
-    last_click_time: Option<Instant>,
-    click_count: u32,
-    cursor_pos: (f32, f32),
+    pub(crate) selection: Selection,
+    pub(crate) prev_anchor: Option<Selection>,
+    pub(crate) pointer_down: bool,
+    pub(crate) focused: bool,
+    pub(crate) last_click_time: Option<Instant>,
+    pub(crate) click_count: u32,
+    pub(crate) cursor_pos: (f32, f32),
 }
 impl SelectionState {
     pub fn new() -> Self {
@@ -160,6 +160,7 @@ impl<T: AsRef<str>> TextBox<T> {
             start_time: Default::default(),
             blink_period: Default::default(),
             modifiers: Default::default(),
+            scale: Default::default(),
         }
     }
 
