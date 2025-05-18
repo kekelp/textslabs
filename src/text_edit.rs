@@ -88,237 +88,236 @@ impl TextBox<String> {
     }
 
     pub fn handle_event_edit(&mut self, event: WindowEvent) {
-        with_text_cx(|mut layout_cx, mut font_cx| {
+        self.refresh_layout();
 
-            match event {
-                WindowEvent::Resized(size) => {
-                    self
-                        .set_width(Some(size.width as f32 - 2_f32 * INSET));
+        match event {
+            WindowEvent::Resized(size) => {
+                self
+                    .set_width(Some(size.width as f32 - 2_f32 * INSET));
+            }
+            WindowEvent::ModifiersChanged(modifiers) => {
+                self.modifiers = modifiers;
+            }
+            WindowEvent::KeyboardInput { event, .. } if !self.is_composing() => {
+                if !event.state.is_pressed() {
+                    return;
                 }
-                WindowEvent::ModifiersChanged(modifiers) => {
-                    self.modifiers = modifiers;
-                }
-                WindowEvent::KeyboardInput { event, .. } if !self.is_composing() => {
-                    if !event.state.is_pressed() {
-                        return;
-                    }
-                    self.cursor_reset();
-                    #[allow(unused)]
+                self.cursor_reset();
+                #[allow(unused)]
 
-                    let mods_state = self.modifiers.state();
-                    let shift = mods_state.shift_key();
-                    let action_mod = if cfg!(target_os = "macos") {
-                        mods_state.super_key()
-                    } else {
-                        mods_state.control_key()
-                    };
+                let mods_state = self.modifiers.state();
+                let shift = mods_state.shift_key();
+                let action_mod = if cfg!(target_os = "macos") {
+                    mods_state.super_key()
+                } else {
+                    mods_state.control_key()
+                };
 
-                    match event.logical_key {
-                        #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
-                        Key::Character(c) if action_mod && matches!(c.as_str(), "c" | "x" | "v") => {
-                            use clipboard_rs::{Clipboard, ClipboardContext};
-                            match c.to_lowercase().as_str() {
-                                "c" => {
-                                    if let Some(text) = self.selected_text() {
-                                        let cb = ClipboardContext::new().unwrap();
-                                        cb.set_text(text.to_owned()).ok();
-                                    }
-                                }
-                                "x" => {
-                                    if let Some(text) = self.selected_text() {
-                                        let cb = ClipboardContext::new().unwrap();
-                                        cb.set_text(text.to_owned()).ok();
-                                        self.delete_selection();
-                                    }
-                                }
-                                "v" => {
+                match event.logical_key {
+                    #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+                    Key::Character(c) if action_mod && matches!(c.as_str(), "c" | "x" | "v") => {
+                        use clipboard_rs::{Clipboard, ClipboardContext};
+                        match c.to_lowercase().as_str() {
+                            "c" => {
+                                if let Some(text) = self.selected_text() {
                                     let cb = ClipboardContext::new().unwrap();
-                                    let text = cb.get_text().unwrap_or_default();
-                                    self.insert_or_replace_selection(&text);
+                                    cb.set_text(text.to_owned()).ok();
                                 }
-                                _ => (),
                             }
-                        }
-                        Key::Character(c) if action_mod && matches!(c.to_lowercase().as_str(), "a") => {
-                            if shift {
-                                self.collapse_selection();
-                            } else {
-                                self.select_all();
-                            }
-                        }
-                        Key::Named(NamedKey::ArrowLeft) => {
-                            if action_mod {
-                                if shift {
-                                    self.select_word_left();
-                                } else {
-                                    self.move_word_left();
+                            "x" => {
+                                if let Some(text) = self.selected_text() {
+                                    let cb = ClipboardContext::new().unwrap();
+                                    cb.set_text(text.to_owned()).ok();
+                                    self.delete_selection();
                                 }
-                            } else if shift {
-                                self.select_left();
-                            } else {
-                                self.move_left();
                             }
-                        }
-                        Key::Named(NamedKey::ArrowRight) => {
-                            if action_mod {
-                                if shift {
-                                    self.select_word_right();
-                                } else {
-                                    self.move_word_right();
-                                }
-                            } else if shift {
-                                self.select_right();
-                            } else {
-                                self.move_right();
+                            "v" => {
+                                let cb = ClipboardContext::new().unwrap();
+                                let text = cb.get_text().unwrap_or_default();
+                                self.insert_or_replace_selection(&text);
                             }
+                            _ => (),
                         }
-                        Key::Named(NamedKey::ArrowUp) => {
-                            if shift {
-                                self.select_up();
-                            } else {
-                                self.move_up();
-                            }
-                        }
-                        Key::Named(NamedKey::ArrowDown) => {
-                            if shift {
-                                self.select_down();
-                            } else {
-                                self.move_down();
-                            }
-                        }
-                        Key::Named(NamedKey::Home) => {
-                            if action_mod {
-                                if shift {
-                                    self.select_to_text_start();
-                                } else {
-                                    self.move_to_text_start();
-                                }
-                            } else if shift {
-                                self.select_to_line_start();
-                            } else {
-                                self.move_to_line_start();
-                            }
-                        }
-                        Key::Named(NamedKey::End) => {
-                            if action_mod {
-                                if shift {
-                                    self.select_to_text_end();
-                                } else {
-                                    self.move_to_text_end();
-                                }
-                            } else if shift {
-                                self.select_to_line_end();
-                            } else {
-                                self.move_to_line_end();
-                            }
-                        }
-                        Key::Named(NamedKey::Delete) => {
-                            if action_mod {
-                                self.delete_word();
-                            } else {
-                                self.delete();
-                            }
-                        }
-                        Key::Named(NamedKey::Backspace) => {
-                            if action_mod {
-                                self.backdelete_word();
-                            } else {
-                                self.backdelete();
-                            }
-                        }
-                        Key::Named(NamedKey::Enter) => {
-                            self.insert_or_replace_selection("\n");
-                        }
-                        Key::Named(NamedKey::Space) => {
-                            self.insert_or_replace_selection(" ");
-                        }
-                        Key::Character(s) => {
-                            self.insert_or_replace_selection(&s);
-                        }
-                        _ => (),
                     }
-                }
-                WindowEvent::Touch(Touch {
-                    phase, location, ..
-                }) if !self.is_composing() => {
-                    use winit::event::TouchPhase::*;
-                    match phase {
-                        Started => {
-                            // TODO: start a timer to convert to a SelectWordAtPoint
-                            self.move_to_point(location.x as f32 - INSET, location.y as f32 - INSET);
-                        }
-                        Cancelled => {
+                    Key::Character(c) if action_mod && matches!(c.to_lowercase().as_str(), "a") => {
+                        if shift {
                             self.collapse_selection();
+                        } else {
+                            self.select_all();
                         }
-                        Moved => {
-                            // TODO: cancel SelectWordAtPoint timer
-                            self.extend_selection_to_point(
-                                location.x as f32 - INSET,
-                                location.y as f32 - INSET,
-                                true,
-                            );
-                        }
-                        Ended => (),
                     }
+                    Key::Named(NamedKey::ArrowLeft) => {
+                        if action_mod {
+                            if shift {
+                                self.select_word_left();
+                            } else {
+                                self.move_word_left();
+                            }
+                        } else if shift {
+                            self.select_left();
+                        } else {
+                            self.move_left();
+                        }
+                    }
+                    Key::Named(NamedKey::ArrowRight) => {
+                        if action_mod {
+                            if shift {
+                                self.select_word_right();
+                            } else {
+                                self.move_word_right();
+                            }
+                        } else if shift {
+                            self.select_right();
+                        } else {
+                            self.move_right();
+                        }
+                    }
+                    Key::Named(NamedKey::ArrowUp) => {
+                        if shift {
+                            self.select_up();
+                        } else {
+                            self.move_up();
+                        }
+                    }
+                    Key::Named(NamedKey::ArrowDown) => {
+                        if shift {
+                            self.select_down();
+                        } else {
+                            self.move_down();
+                        }
+                    }
+                    Key::Named(NamedKey::Home) => {
+                        if action_mod {
+                            if shift {
+                                self.select_to_text_start();
+                            } else {
+                                self.move_to_text_start();
+                            }
+                        } else if shift {
+                            self.select_to_line_start();
+                        } else {
+                            self.move_to_line_start();
+                        }
+                    }
+                    Key::Named(NamedKey::End) => {
+                        if action_mod {
+                            if shift {
+                                self.select_to_text_end();
+                            } else {
+                                self.move_to_text_end();
+                            }
+                        } else if shift {
+                            self.select_to_line_end();
+                        } else {
+                            self.move_to_line_end();
+                        }
+                    }
+                    Key::Named(NamedKey::Delete) => {
+                        if action_mod {
+                            self.delete_word();
+                        } else {
+                            self.delete();
+                        }
+                    }
+                    Key::Named(NamedKey::Backspace) => {
+                        if action_mod {
+                            self.backdelete_word();
+                        } else {
+                            self.backdelete();
+                        }
+                    }
+                    Key::Named(NamedKey::Enter) => {
+                        self.insert_or_replace_selection("\n");
+                    }
+                    Key::Named(NamedKey::Space) => {
+                        self.insert_or_replace_selection(" ");
+                    }
+                    Key::Character(s) => {
+                        self.insert_or_replace_selection(&s);
+                    }
+                    _ => (),
                 }
-                WindowEvent::MouseInput { state, button, .. } => {
-                    let shift = self.modifiers.state().shift_key();
+            }
+            WindowEvent::Touch(Touch {
+                phase, location, ..
+            }) if !self.is_composing() => {
+                use winit::event::TouchPhase::*;
+                match phase {
+                    Started => {
+                        // TODO: start a timer to convert to a SelectWordAtPoint
+                        self.move_to_point(location.x as f32 - INSET, location.y as f32 - INSET);
+                    }
+                    Cancelled => {
+                        self.collapse_selection();
+                    }
+                    Moved => {
+                        // TODO: cancel SelectWordAtPoint timer
+                        self.extend_selection_to_point(
+                            location.x as f32 - INSET,
+                            location.y as f32 - INSET,
+                            true,
+                        );
+                    }
+                    Ended => (),
+                }
+            }
+            WindowEvent::MouseInput { state, button, .. } => {
+                let shift = self.modifiers.state().shift_key();
 
-                    if button == winit::event::MouseButton::Left {
-                        self.selection.pointer_down = state.is_pressed();
-                        self.cursor_reset();
-                        if self.selection.pointer_down && !self.is_composing() {
-                            let now = Instant::now();
-                            if let Some(last) = self.selection.last_click_time.take() {
-                                if now.duration_since(last).as_secs_f64() < 0.25 {
-                                    self.selection.click_count = (self.selection.click_count + 1) % 4;
-                                } else {
-                                    self.selection.click_count = 1;
-                                }
+                if button == winit::event::MouseButton::Left {
+                    self.selection.pointer_down = state.is_pressed();
+                    self.cursor_reset();
+                    if self.selection.pointer_down && !self.is_composing() {
+                        let now = Instant::now();
+                        if let Some(last) = self.selection.last_click_time.take() {
+                            if now.duration_since(last).as_secs_f64() < 0.25 {
+                                self.selection.click_count = (self.selection.click_count + 1) % 4;
                             } else {
                                 self.selection.click_count = 1;
                             }
-                            self.selection.last_click_time = Some(now);
-                            let click_count = self.selection.click_count;
-                            let cursor_pos = self.selection.cursor_pos;
-                            match click_count {
-                                2 => self.select_word_at_point(cursor_pos.0, cursor_pos.1),
-                                3 => self.select_line_at_point(cursor_pos.0, cursor_pos.1),
-                                _ => if shift {
-                                    self.extend_selection_with_anchor(cursor_pos.0, cursor_pos.1)
-                                } else {
-                                    self.move_to_point(cursor_pos.0, cursor_pos.1)
-                                }
+                        } else {
+                            self.selection.click_count = 1;
+                        }
+                        self.selection.last_click_time = Some(now);
+                        let click_count = self.selection.click_count;
+                        let cursor_pos = self.selection.cursor_pos;
+                        match click_count {
+                            2 => self.select_word_at_point(cursor_pos.0, cursor_pos.1),
+                            3 => self.select_line_at_point(cursor_pos.0, cursor_pos.1),
+                            _ => if shift {
+                                self.extend_selection_with_anchor(cursor_pos.0, cursor_pos.1)
+                            } else {
+                                self.move_to_point(cursor_pos.0, cursor_pos.1)
                             }
                         }
                     }
                 }
-                WindowEvent::CursorMoved { position, .. } => {
-                    let prev_pos = self.selection.cursor_pos;
-                    self.selection.cursor_pos = (position.x as f32 - INSET, position.y as f32 - INSET);
-                    // macOS seems to generate a spurious move after selecting word?
-                    if self.selection.pointer_down && prev_pos != self.selection.cursor_pos && !self.is_composing() {
-                        self.cursor_reset();
-                        let cursor_pos = self.selection.cursor_pos;
-                        self.extend_selection_to_point(cursor_pos.0, cursor_pos.1, true);
-                    }
-                }
-                WindowEvent::Ime(Ime::Disabled) => {
-                    self.clear_compose();
-                }
-                WindowEvent::Ime(Ime::Commit(text)) => {
-                    self.insert_or_replace_selection(&text);
-                }
-                WindowEvent::Ime(Ime::Preedit(text, cursor)) => {
-                    if text.is_empty() {
-                        self.clear_compose();
-                    } else {
-                        self.set_compose(&text, cursor);
-                    }
-                }
-                _ => {}
             }
-        });
+            WindowEvent::CursorMoved { position, .. } => {
+                let prev_pos = self.selection.cursor_pos;
+                self.selection.cursor_pos = (position.x as f32 - INSET, position.y as f32 - INSET);
+                // macOS seems to generate a spurious move after selecting word?
+                if self.selection.pointer_down && prev_pos != self.selection.cursor_pos && !self.is_composing() {
+                    self.cursor_reset();
+                    let cursor_pos = self.selection.cursor_pos;
+                    self.extend_selection_to_point(cursor_pos.0, cursor_pos.1, true);
+                }
+            }
+            WindowEvent::Ime(Ime::Disabled) => {
+                self.clear_compose();
+            }
+            WindowEvent::Ime(Ime::Commit(text)) => {
+                self.insert_or_replace_selection(&text);
+            }
+            WindowEvent::Ime(Ime::Preedit(text, cursor)) => {
+                if text.is_empty() {
+                    self.clear_compose();
+                } else {
+                    self.set_compose(&text, cursor);
+                }
+            }
+            _ => {}
+        }
     }
 
     #[cfg(feature = "accesskit")]
