@@ -1,7 +1,14 @@
-use std::{fmt::Display, time::{Duration, Instant}};
+use std::{
+    fmt::Display,
+    time::{Duration, Instant},
+};
 
 use parley::*;
-use winit::{event::{Ime, Touch, WindowEvent}, keyboard::{Key, NamedKey}, platform::modifier_supplement::KeyEventExtModifierSupplement};
+use winit::{
+    event::{Ime, Touch, WindowEvent},
+    keyboard::{Key, NamedKey},
+    platform::modifier_supplement::KeyEventExtModifierSupplement,
+};
 
 const INSET: f32 = 2.0;
 
@@ -92,7 +99,7 @@ impl TextBox<String> {
             self.selection.focused = false;
             return;
         }
-        if ! self.focused() {
+        if !self.focused() {
             return;
         }
 
@@ -119,9 +126,8 @@ impl TextBox<String> {
                             use clipboard_rs::{Clipboard, ClipboardContext};
                             match c.as_str() {
                                 "c" if !shift => {
-                                    if let Some(text) = self
-                                        .text
-                                        .get(self.selection.selection.text_range())
+                                    if let Some(text) =
+                                        self.text.get(self.selection.selection.text_range())
                                     {
                                         let cb = ClipboardContext::new().unwrap();
                                         cb.set_text(text.to_owned()).ok();
@@ -158,7 +164,6 @@ impl TextBox<String> {
                 }
                 self.cursor_reset();
                 #[allow(unused)]
-
                 let mods_state = self.modifiers.state();
                 let shift = mods_state.shift_key();
                 let action_mod = if cfg!(target_os = "macos") {
@@ -194,53 +199,54 @@ impl TextBox<String> {
                         }
                     }
                     Key::Character(c) if action_mod && matches!(c.to_lowercase().as_str(), "a") => {
-                        if ! shift { // todo: one single if shift
+                        if !shift {
+                            // todo: one single if shift
                             self.select_all();
                         }
                     }
                     Key::Named(NamedKey::ArrowLeft) => {
                         if action_mod {
-                            if ! shift {
+                            if !shift {
                                 self.move_word_left();
                             }
-                        } else if ! shift {
+                        } else if !shift {
                             self.move_left();
                         }
                     }
                     Key::Named(NamedKey::ArrowRight) => {
                         if action_mod {
-                            if ! shift {
+                            if !shift {
                                 self.move_word_right();
                             }
-                        } else if ! shift {
+                        } else if !shift {
                             self.move_right();
                         }
                     }
                     Key::Named(NamedKey::ArrowUp) => {
-                        if ! shift {
+                        if !shift {
                             self.move_up();
                         }
                     }
                     Key::Named(NamedKey::ArrowDown) => {
-                        if ! shift {
+                        if !shift {
                             self.move_down();
                         }
                     }
                     Key::Named(NamedKey::Home) => {
                         if action_mod {
-                            if ! shift {
+                            if !shift {
                                 self.move_to_text_start();
                             }
-                        } else if ! shift {
+                        } else if !shift {
                             self.move_to_line_start();
                         }
                     }
                     Key::Named(NamedKey::End) => {
                         if action_mod {
-                            if ! shift {
+                            if !shift {
                                 self.move_to_text_end();
                             }
-                        } else if ! shift {
+                        } else if !shift {
                             self.move_to_line_end();
                         }
                     }
@@ -319,10 +325,7 @@ impl TextBox<String> {
             }
         }
     }
-
 }
-
-
 
 impl TextBox<String> {
     // --- MARK: Forced relayout ---
@@ -377,8 +380,7 @@ impl TextBox<String> {
                 // seems ok to not do the relayout immediately
                 self.needs_relayout = true;
                 self.set_selection(
-                    Cursor::from_byte_index(&self.layout, start, Affinity::Downstream)
-                        .into(),
+                    Cursor::from_byte_index(&self.layout, start, Affinity::Downstream).into(),
                 );
             }
         } else {
@@ -419,8 +421,7 @@ impl TextBox<String> {
                 // seems ok to not do the relayout immediately
                 self.needs_relayout = true;
                 self.set_selection(
-                    Cursor::from_byte_index(&self.layout, start, Affinity::Downstream)
-                        .into(),
+                    Cursor::from_byte_index(&self.layout, start, Affinity::Downstream).into(),
                 );
             }
         } else {
@@ -441,8 +442,7 @@ impl TextBox<String> {
                 // seems ok to not do the relayout immediately
                 self.needs_relayout = true;
                 self.set_selection(
-                    Cursor::from_byte_index(&self.layout, start, Affinity::Downstream)
-                        .into(),
+                    Cursor::from_byte_index(&self.layout, start, Affinity::Downstream).into(),
                 );
             }
         } else {
@@ -466,18 +466,14 @@ impl TextBox<String> {
         debug_assert!(cursor.map(|cursor| cursor.1 <= text.len()).unwrap_or(true));
 
         let start = if let Some(preedit_range) = &self.compose {
-            self
-                .text
-                .replace_range(preedit_range.clone(), text);
+            self.text.replace_range(preedit_range.clone(), text);
             preedit_range.start
         } else {
             if self.selection.selection.is_collapsed() {
-                self
-                    .text
+                self.text
                     .insert_str(self.selection.selection.text_range().start, text);
             } else {
-                self
-                    .text
+                self.text
                     .replace_range(self.selection.selection.text_range(), text);
             }
             self.selection.selection.text_range().start
@@ -505,8 +501,7 @@ impl TextBox<String> {
             self.show_cursor = true;
             self.update_layout();
 
-            self
-                .set_selection(self.cursor_at(preedit_range.start).into());
+            self.set_selection(self.cursor_at(preedit_range.start).into());
         }
     }
 
@@ -516,8 +511,7 @@ impl TextBox<String> {
         assert!(!self.is_composing());
 
         self.refresh_layout();
-        self
-            .set_selection(Selection::from_point(&self.layout, x, y));
+        self.set_selection(Selection::from_point(&self.layout, x, y));
     }
 
     /// Move the cursor to a byte index.
@@ -528,8 +522,7 @@ impl TextBox<String> {
 
         if self.text.is_char_boundary(index) {
             self.refresh_layout();
-            self
-                .set_selection(self.cursor_at(index).into());
+            self.set_selection(self.cursor_at(index).into());
         }
     }
 
@@ -538,11 +531,11 @@ impl TextBox<String> {
         assert!(!self.is_composing());
 
         self.refresh_layout();
-        self.set_selection(self.selection.selection.move_lines(
-            &self.layout,
-            isize::MIN,
-            false,
-        ));
+        self.set_selection(
+            self.selection
+                .selection
+                .move_lines(&self.layout, isize::MIN, false),
+        );
     }
 
     /// Move the cursor to the start of the physical line.
@@ -550,8 +543,7 @@ impl TextBox<String> {
         assert!(!self.is_composing());
 
         self.refresh_layout();
-        self
-            .set_selection(self.selection.selection.line_start(&self.layout, false));
+        self.set_selection(self.selection.selection.line_start(&self.layout, false));
     }
 
     /// Move the cursor to the end of the text.
@@ -559,11 +551,11 @@ impl TextBox<String> {
         assert!(!self.is_composing());
 
         self.refresh_layout();
-        self.set_selection(self.selection.selection.move_lines(
-            &self.layout,
-            isize::MAX,
-            false,
-        ));
+        self.set_selection(
+            self.selection
+                .selection
+                .move_lines(&self.layout, isize::MAX, false),
+        );
     }
 
     /// Move the cursor to the end of the physical line.
@@ -579,12 +571,7 @@ impl TextBox<String> {
         assert!(!self.is_composing());
 
         self.refresh_layout();
-        self.set_selection(
-            self
-                .selection
-                .selection
-                .previous_line(&self.layout, false),
-        );
+        self.set_selection(self.selection.selection.previous_line(&self.layout, false));
     }
 
     /// Move down to the closest physical cluster boundary on the next line, preserving the horizontal position for repeated movements.
@@ -592,8 +579,7 @@ impl TextBox<String> {
         assert!(!self.is_composing());
 
         self.refresh_layout();
-        self
-            .set_selection(self.selection.selection.next_line(&self.layout, false));
+        self.set_selection(self.selection.selection.next_line(&self.layout, false));
     }
 
     /// Move to the next cluster left in visual order.
@@ -602,8 +588,7 @@ impl TextBox<String> {
 
         self.refresh_layout();
         self.set_selection(
-            self
-                .selection
+            self.selection
                 .selection
                 .previous_visual(&self.layout, false),
         );
@@ -614,12 +599,7 @@ impl TextBox<String> {
         assert!(!self.is_composing());
 
         self.refresh_layout();
-        self.set_selection(
-            self
-                .selection
-                .selection
-                .next_visual(&self.layout, false),
-        );
+        self.set_selection(self.selection.selection.next_visual(&self.layout, false));
     }
 
     /// Move to the next word boundary left.
@@ -628,8 +608,7 @@ impl TextBox<String> {
 
         self.refresh_layout();
         self.set_selection(
-            self
-                .selection
+            self.selection
                 .selection
                 .previous_visual_word(&self.layout, false),
         );
@@ -641,8 +620,7 @@ impl TextBox<String> {
 
         self.refresh_layout();
         self.set_selection(
-            self
-                .selection
+            self.selection
                 .selection
                 .next_visual_word(&self.layout, false),
         );
@@ -654,8 +632,11 @@ impl TextBox<String> {
 
         self.refresh_layout();
         self.set_selection(
-            Selection::from_byte_index(&self.layout, 0_usize, Affinity::default())
-                .move_lines(&self.layout, isize::MAX, true),
+            Selection::from_byte_index(&self.layout, 0_usize, Affinity::default()).move_lines(
+                &self.layout,
+                isize::MAX,
+                true,
+            ),
         );
     }
 
@@ -672,7 +653,8 @@ impl TextBox<String> {
 
         self.refresh_layout();
 
-        self.selection.extend_selection_to_point(&self.layout, x, y, keep_granularity);
+        self.selection
+            .extend_selection_to_point(&self.layout, x, y, keep_granularity);
     }
 
     #[cfg(feature = "accesskit")]
@@ -681,11 +663,9 @@ impl TextBox<String> {
         assert!(!self.is_composing());
 
         self.refresh_layout();
-        if let Some(selection) = Selection::from_access_selection(
-            selection,
-            &self.layout,
-            &self.layout_access,
-        ) {
+        if let Some(selection) =
+            Selection::from_access_selection(selection, &self.layout, &self.layout_access)
+        {
             self.set_selection(selection);
         }
     }
@@ -702,8 +682,7 @@ impl TextBox<String> {
         y_offset: f64,
     ) -> Option<()> {
         self.refresh_layout();
-        self
-            .accessibility_unchecked(update, node, next_node_id, x_offset, y_offset);
+        self.accessibility_unchecked(update, node, next_node_id, x_offset, y_offset);
         Some(())
     }
 }
@@ -751,8 +730,12 @@ impl TextBox<String> {
     /// There is not always a caret. For example, the IME may have indicated the caret should be
     /// hidden.
     pub fn cursor_geometry(&self, size: f32) -> Option<Rect> {
-        self.show_cursor
-            .then(|| self.selection.selection.focus().geometry(&self.layout, size))
+        self.show_cursor.then(|| {
+            self.selection
+                .selection
+                .focus()
+                .geometry(&self.layout, size)
+        })
     }
 
     /// Get a rectangle bounding the text the user is currently editing.
@@ -782,11 +765,13 @@ impl TextBox<String> {
             // Bound the selected parts of the focused line only.
             let focus = self.selection.selection.focus().geometry(&self.layout, 0.);
             let mut area = focus;
-            self.selection.selection.geometry_with(&self.layout, |rect, _| {
-                if rect.y0 == focus.y0 {
-                    area = area.union(rect);
-                }
-            });
+            self.selection
+                .selection
+                .geometry_with(&self.layout, |rect, _| {
+                    if rect.y0 == focus.y0 {
+                        area = area.union(rect);
+                    }
+                });
 
             (area, self.selection.selection.focus())
         };
@@ -1032,6 +1017,3 @@ impl TextBox<String> {
         node.add_action(accesskit::Action::SetTextSelection);
     }
 }
-
-
-
