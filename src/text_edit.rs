@@ -96,10 +96,9 @@ impl TextBox<String> {
             return;
         }
 
-        self.handle_event(event, &self.modifiers.clone());
-
-        self.needs_relayout = true;
         self.refresh_layout();
+
+        self.handle_event(event, &self.modifiers.clone());
 
         match event {
             WindowEvent::KeyboardInput { event, .. } => {
@@ -572,8 +571,7 @@ impl TextBox<String> {
         assert!(!self.is_composing());
 
         self.refresh_layout();
-        self
-            .set_selection(self.selection.selection.line_end(&self.layout, false));
+        self.set_selection(self.selection.selection.line_end(&self.layout, false));
     }
 
     /// Move up to the closest physical cluster boundary on the previous line, preserving the horizontal position for repeated movements.
@@ -668,192 +666,13 @@ impl TextBox<String> {
         self.set_selection(self.selection.selection.collapse());
     }
 
-    /// Move the selection focus point to the start of the text.
-    pub fn select_to_text_start(&mut self) {
-        assert!(!self.is_composing());
-        self.refresh_layout();
-        self.selection.select_to_text_start(&self.layout);
-    }
-
-    /// Move the selection focus point to the start of the physical line.
-    pub fn select_to_line_start(&mut self) {
-        assert!(!self.is_composing());
-
-        self.refresh_layout();
-        self
-            .set_selection(self.selection.selection.line_start(&self.layout, true));
-    }
-
-    /// Move the selection focus point to the end of the text.
-    pub fn select_to_text_end(&mut self) {
-        assert!(!self.is_composing());
-
-        self.refresh_layout();
-        self.set_selection(self.selection.selection.move_lines(
-            &self.layout,
-            isize::MAX,
-            true,
-        ));
-    }
-
-    /// Move the selection focus point to the end of the physical line.
-    pub fn select_to_line_end(&mut self) {
-        assert!(!self.is_composing());
-
-        self.refresh_layout();
-        self
-            .set_selection(self.selection.selection.line_end(&self.layout, true));
-    }
-
-    /// Move the selection focus point up to the nearest cluster boundary on the previous line, preserving the horizontal position for repeated movements.
-    pub fn select_up(&mut self) {
-        assert!(!self.is_composing());
-
-        self.refresh_layout();
-        self.set_selection(
-            self
-                .selection
-                .selection
-                .previous_line(&self.layout, true),
-        );
-    }
-
-    /// Move the selection focus point down to the nearest cluster boundary on the next line, preserving the horizontal position for repeated movements.
-    pub fn select_down(&mut self) {
-        assert!(!self.is_composing());
-
-        self.refresh_layout();
-        self
-            .set_selection(self.selection.selection.next_line(&self.layout, true));
-    }
-
-    /// Move the selection focus point to the next cluster left in visual order.
-    pub fn select_left(&mut self) {
-        assert!(!self.is_composing());
-
-        self.refresh_layout();
-        self.set_selection(
-            self
-                .selection
-                .selection
-                .previous_visual(&self.layout, true),
-        );
-    }
-
-    /// Move the selection focus point to the next cluster right in visual order.
-    pub fn select_right(&mut self) {
-        assert!(!self.is_composing());
-
-        self.refresh_layout();
-        self
-            .set_selection(self.selection.selection.next_visual(&self.layout, true));
-    }
-
-    /// Move the selection focus point to the next word boundary left.
-    pub fn select_word_left(&mut self) {
-        assert!(!self.is_composing());
-
-        self.refresh_layout();
-        self.set_selection(
-            self
-                .selection
-                .selection
-                .previous_visual_word(&self.layout, true),
-        );
-    }
-
-    /// Move the selection focus point to the next word boundary right.
-    pub fn select_word_right(&mut self) {
-        assert!(!self.is_composing());
-
-        self.refresh_layout();
-        self.set_selection(
-            self
-                .selection
-                .selection
-                .next_visual_word(&self.layout, true),
-        );
-    }
-
-    /// Select the word at the point.
-    pub fn select_word_at_point(&mut self, x: f32, y: f32) {
-        assert!(!self.is_composing());
-
-        self.refresh_layout();
-        self
-            .set_selection(Selection::word_from_point(&self.layout, x, y));
-    }
-
-    /// Select the physical line at the point.
-    pub fn select_line_at_point(&mut self, x: f32, y: f32) {
-        assert!(!self.is_composing());
-
-        self.refresh_layout();
-        let line = Selection::line_from_point(&self.layout, x, y);
-        self.set_selection(line);
-    }
-
     /// Move the selection focus point to the cluster boundary closest to point.
     pub fn extend_selection_to_point(&mut self, x: f32, y: f32, keep_granularity: bool) {
         assert!(!self.is_composing());
 
         self.refresh_layout();
-        // FIXME: This is usually the wrong way to handle selection extension for mouse moves, but not a regression.
-        self.set_selection(
-            self
-                .selection
-                .selection
-                .extend_to_point(&self.layout, x, y, keep_granularity),
-        );
-    }
 
-    /// Extend the selection starting from the previous anchor, moving the selection focus point to the cluster boundary closest to point.
-    /// 
-    /// Used for shift-click behavior. 
-    pub fn extend_selection_with_anchor(&mut self, x: f32, y: f32) {
-        assert!(!self.is_composing());
-
-        if let Some(prev_selection) = self.selection.prev_anchor {
-            self.set_selection_with_old_anchor(prev_selection);
-        } else {
-            self.selection.prev_anchor = Some(self.selection.selection);
-        }
-        self.refresh_layout();
-        // FIXME: This is usually the wrong way to handle selection extension for mouse moves, but not a regression.
-        self.set_selection_with_old_anchor(
-            self
-                .selection
-                .selection
-                .extend_to_point(&self.layout, x, y, false),
-        );
-    }
-
-    /// Move the selection focus point to a byte index.
-    ///
-    /// No-op if index is not a char boundary.
-    pub fn extend_selection_to_byte(&mut self, index: usize) {
-        assert!(!self.is_composing());
-
-        if self.text.is_char_boundary(index) {
-            self.refresh_layout();
-            self
-                .set_selection(self.selection.selection.extend(self.cursor_at(index)));
-        }
-    }
-
-    /// Select a range of byte indices.
-    ///
-    /// No-op if either index is not a char boundary.
-    pub fn select_byte_range(&mut self, start: usize, end: usize) {
-        assert!(!self.is_composing());
-
-        if self.text.is_char_boundary(start) && self.text.is_char_boundary(end) {
-            self.refresh_layout();
-            self.set_selection(Selection::new(
-                self.cursor_at(start),
-                self.cursor_at(end),
-            ));
-        }
+        self.selection.extend_selection_to_point(&self.layout, x, y, keep_granularity);
     }
 
     #[cfg(feature = "accesskit")]
