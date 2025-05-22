@@ -107,6 +107,7 @@ impl TextBox<String> {
 
         self.handle_event(event, &self.modifiers.clone());
 
+        // todo: move this somewhere else
         match event {
             WindowEvent::KeyboardInput { event, .. } => {
                 if !event.state.is_pressed() {}
@@ -126,9 +127,7 @@ impl TextBox<String> {
                             use clipboard_rs::{Clipboard, ClipboardContext};
                             match c.as_str() {
                                 "c" if !shift => {
-                                    if let Some(text) =
-                                        self.text.get(self.selection.selection.text_range())
-                                    {
+                                    if let Some(text) = self.selected_text() {
                                         let cb = ClipboardContext::new().unwrap();
                                         cb.set_text(text.to_owned()).ok();
                                     }
@@ -172,54 +171,53 @@ impl TextBox<String> {
                     mods_state.control_key()
                 };
 
-                match &event.logical_key {
-                    #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
-                    Key::Character(c) if action_mod && matches!(c.as_str(), "c" | "x" | "v") => {
+                // edit action mods
+                match event.key_without_modifiers() {
+                    Key::Character(c) => {
                         use clipboard_rs::{Clipboard, ClipboardContext};
-                        match c.to_lowercase().as_str() {
-                            "c" => {
-                                if let Some(text) = self.selected_text() {
-                                    let cb = ClipboardContext::new().unwrap();
-                                    cb.set_text(text.to_owned()).ok();
-                                }
-                            }
-                            "x" => {
+                        match c.as_str() {
+                            "x" if !shift => {
                                 if let Some(text) = self.selected_text() {
                                     let cb = ClipboardContext::new().unwrap();
                                     cb.set_text(text.to_owned()).ok();
                                     self.delete_selection();
                                 }
                             }
-                            "v" => {
+                            "v" if !shift => {
                                 let cb = ClipboardContext::new().unwrap();
                                 let text = cb.get_text().unwrap_or_default();
                                 self.insert_or_replace_selection(&text);
                             }
+                            // "z" => {
+                            //     if shift {
+                            //         self.redo();
+                            //     } else {
+                            //         self.undo();
+                            //     }
+                            // }
                             _ => (),
                         }
                     }
-                    Key::Character(c) if action_mod && matches!(c.to_lowercase().as_str(), "a") => {
-                        if !shift {
-                            // todo: one single if shift
-                            self.select_all();
-                        }
-                    }
+                    _ => (),
+                };
+
+                match &event.logical_key {
                     Key::Named(NamedKey::ArrowLeft) => {
-                        if action_mod {
-                            if !shift {
+                        if !shift {
+                            if action_mod {
                                 self.move_word_left();
+                            } else {
+                                self.move_left();
                             }
-                        } else if !shift {
-                            self.move_left();
                         }
                     }
                     Key::Named(NamedKey::ArrowRight) => {
-                        if action_mod {
-                            if !shift {
+                        if !shift {                            
+                            if action_mod {
                                 self.move_word_right();
+                            } else {
+                                self.move_right();
                             }
-                        } else if !shift {
-                            self.move_right();
                         }
                     }
                     Key::Named(NamedKey::ArrowUp) => {
@@ -233,21 +231,21 @@ impl TextBox<String> {
                         }
                     }
                     Key::Named(NamedKey::Home) => {
-                        if action_mod {
-                            if !shift {
+                        if !shift {
+                            if action_mod {
                                 self.move_to_text_start();
+                            } else {
+                                self.move_to_line_start();
                             }
-                        } else if !shift {
-                            self.move_to_line_start();
                         }
                     }
                     Key::Named(NamedKey::End) => {
-                        if action_mod {
-                            if !shift {
+                        if !shift {
+                            if action_mod {
                                 self.move_to_text_end();
+                            } else {
+                                self.move_to_line_end();
                             }
-                        } else if !shift {
-                            self.move_to_line_end();
                         }
                     }
                     Key::Named(NamedKey::Delete) => {
@@ -265,13 +263,20 @@ impl TextBox<String> {
                         }
                     }
                     Key::Named(NamedKey::Enter) => {
-                        self.insert_or_replace_selection("\n");
+                        // todo: make shift-enter, ctrl-enter configurable
+                        if ! action_mod {
+                            self.insert_or_replace_selection("\n");
+                        }
                     }
                     Key::Named(NamedKey::Space) => {
-                        self.insert_or_replace_selection(" ");
+                        if ! action_mod {
+                            self.insert_or_replace_selection(" ");
+                        }
                     }
                     Key::Character(s) => {
-                        self.insert_or_replace_selection(&s);
+                        if ! action_mod {
+                            self.insert_or_replace_selection(&s);
+                        }
                     }
                     _ => (),
                 }
