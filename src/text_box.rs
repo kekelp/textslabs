@@ -153,7 +153,7 @@ impl<T: AsRef<str>> TextBox<T> {
             selection: SelectionState::new(),
             style: Style::default(),
             compose: Default::default(),
-            show_cursor: Default::default(),
+            show_cursor: true,
             cursor_visible: Default::default(),
             width: Default::default(),
             alignment: Default::default(),
@@ -176,26 +176,54 @@ impl<T: AsRef<str>> TextBox<T> {
             } else { false };
 
             if self.needs_relayout || shared_style_changed {
+                // todo: deduplicate
                 with_text_cx(|layout_cx, font_cx| {
                     let mut builder =
                         layout_cx
                             .tree_builder(font_cx, 1.0, style);
-
+        
                     builder.push_text(&self.text.as_ref());
-
+        
                     let (mut layout, _) = builder.build();
-
+        
                     layout.break_all_lines(Some(self.max_advance));
                     layout.align(
                         Some(self.max_advance),
                         Alignment::Start,
                         AlignmentOptions::default(),
                     );
-
+        
                     self.layout = layout;
                     self.needs_relayout = false;
                 });
             }
+        });
+    }
+
+    pub fn update_layout(&mut self) {
+        self.style.with_text_style(|style, _version| {
+
+            // todo: deduplicate
+            with_text_cx(|layout_cx, font_cx| {
+                let mut builder =
+                    layout_cx
+                        .tree_builder(font_cx, 1.0, style);
+    
+                builder.push_text(&self.text.as_ref());
+    
+                let (mut layout, _) = builder.build();
+    
+                layout.break_all_lines(Some(self.max_advance));
+                layout.align(
+                    Some(self.max_advance),
+                    Alignment::Start,
+                    AlignmentOptions::default(),
+                );
+    
+                self.layout = layout;
+                self.needs_relayout = false;
+            });
+            
         });
     }
 
@@ -350,7 +378,7 @@ impl<T: AsRef<str>> TextBox<T> {
     }
 }
 
-trait Ext1 {
+pub(crate) trait Ext1 {
     fn hit_bounding_box(&self, cursor_pos: (f64, f64)) -> bool;
 }
 impl Ext1 for Layout<ColorBrush> {
@@ -526,7 +554,7 @@ impl SelectionState {
     }
 
     /// Update the selection, and nudge the `Generation` if something other than `h_pos` changed.
-    fn set_selection(&mut self, new_sel: Selection) {
+    pub(crate) fn set_selection(&mut self, new_sel: Selection) {
         self.set_selection_inner(new_sel);
         self.prev_anchor = None;
     }

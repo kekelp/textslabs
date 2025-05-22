@@ -1,7 +1,7 @@
 use std::{fmt::Display, time::{Duration, Instant}};
 
 use parley::*;
-use winit::{event::{Ime, Touch, WindowEvent}, keyboard::{Key, NamedKey}};
+use winit::{event::{Ime, Touch, WindowEvent}, keyboard::{Key, NamedKey}, platform::modifier_supplement::KeyEventExtModifierSupplement};
 
 const INSET: f32 = 2.0;
 
@@ -87,16 +87,71 @@ impl TextBox<String> {
         });
     }
 
-    pub fn handle_event_edit(&mut self, event: WindowEvent) {
+    pub fn handle_event_edit(&mut self, event: &WindowEvent) {
+        if !self.selectable {
+            self.selection.focused = false;
+            return;
+        }
+        if ! self.focused() {
+            return;
+        }
+
+        self.handle_event(event, &self.modifiers.clone());
+
+        self.needs_relayout = true;
         self.refresh_layout();
 
         match event {
+            WindowEvent::KeyboardInput { event, .. } => {
+                if !event.state.is_pressed() {}
+                #[allow(unused)]
+                let mods_state = self.modifiers.state();
+                let shift = mods_state.shift_key();
+                let action_mod = if cfg!(target_os = "macos") {
+                    mods_state.super_key()
+                } else {
+                    mods_state.control_key()
+                };
+
+                #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+                if action_mod {
+                    match event.key_without_modifiers() {
+                        Key::Character(c) => {
+                            use clipboard_rs::{Clipboard, ClipboardContext};
+                            match c.as_str() {
+                                "c" if !shift => {
+                                    if let Some(text) = self
+                                        .text
+                                        .get(self.selection.selection.text_range())
+                                    {
+                                        let cb = ClipboardContext::new().unwrap();
+                                        cb.set_text(text.to_owned()).ok();
+                                    }
+                                }
+                                "a" => {
+                                    self.selection.selection = Selection::from_byte_index(
+                                        &self.layout,
+                                        0_usize,
+                                        Affinity::default(),
+                                    )
+                                    .move_lines(&self.layout, isize::MAX, true);
+                                }
+                                _ => (),
+                            }
+                        }
+                        _ => (),
+                    };
+                }
+            }
+            _ => {}
+        }
+
+        match event {
             WindowEvent::Resized(size) => {
-                self
-                    .set_width(Some(size.width as f32 - 2_f32 * INSET));
+                self.set_width(Some(size.width as f32 - 2_f32 * INSET));
             }
             WindowEvent::ModifiersChanged(modifiers) => {
-                self.modifiers = modifiers;
+                self.modifiers = *modifiers;
             }
             WindowEvent::KeyboardInput { event, .. } if !self.is_composing() => {
                 if !event.state.is_pressed() {
@@ -113,7 +168,7 @@ impl TextBox<String> {
                     mods_state.control_key()
                 };
 
-                match event.logical_key {
+                match &event.logical_key {
                     #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
                     Key::Character(c) if action_mod && matches!(c.as_str(), "c" | "x" | "v") => {
                         use clipboard_rs::{Clipboard, ClipboardContext};
@@ -140,75 +195,53 @@ impl TextBox<String> {
                         }
                     }
                     Key::Character(c) if action_mod && matches!(c.to_lowercase().as_str(), "a") => {
-                        if shift {
-                            self.collapse_selection();
-                        } else {
+                        if ! shift { // todo: one single if shift
                             self.select_all();
                         }
                     }
                     Key::Named(NamedKey::ArrowLeft) => {
                         if action_mod {
-                            if shift {
-                                self.select_word_left();
-                            } else {
+                            if ! shift {
                                 self.move_word_left();
                             }
-                        } else if shift {
-                            self.select_left();
-                        } else {
+                        } else if ! shift {
                             self.move_left();
                         }
                     }
                     Key::Named(NamedKey::ArrowRight) => {
                         if action_mod {
-                            if shift {
-                                self.select_word_right();
-                            } else {
+                            if ! shift {
                                 self.move_word_right();
                             }
-                        } else if shift {
-                            self.select_right();
-                        } else {
+                        } else if ! shift {
                             self.move_right();
                         }
                     }
                     Key::Named(NamedKey::ArrowUp) => {
-                        if shift {
-                            self.select_up();
-                        } else {
+                        if ! shift {
                             self.move_up();
                         }
                     }
                     Key::Named(NamedKey::ArrowDown) => {
-                        if shift {
-                            self.select_down();
-                        } else {
+                        if ! shift {
                             self.move_down();
                         }
                     }
                     Key::Named(NamedKey::Home) => {
                         if action_mod {
-                            if shift {
-                                self.select_to_text_start();
-                            } else {
+                            if ! shift {
                                 self.move_to_text_start();
                             }
-                        } else if shift {
-                            self.select_to_line_start();
-                        } else {
+                        } else if ! shift {
                             self.move_to_line_start();
                         }
                     }
                     Key::Named(NamedKey::End) => {
                         if action_mod {
-                            if shift {
-                                self.select_to_text_end();
-                            } else {
+                            if ! shift {
                                 self.move_to_text_end();
                             }
-                        } else if shift {
-                            self.select_to_line_end();
-                        } else {
+                        } else if ! shift {
                             self.move_to_line_end();
                         }
                     }
@@ -261,48 +294,6 @@ impl TextBox<String> {
                     Ended => (),
                 }
             }
-            WindowEvent::MouseInput { state, button, .. } => {
-                let shift = self.modifiers.state().shift_key();
-
-                if button == winit::event::MouseButton::Left {
-                    self.selection.pointer_down = state.is_pressed();
-                    self.cursor_reset();
-                    if self.selection.pointer_down && !self.is_composing() {
-                        let now = Instant::now();
-                        if let Some(last) = self.selection.last_click_time.take() {
-                            if now.duration_since(last).as_secs_f64() < 0.25 {
-                                self.selection.click_count = (self.selection.click_count + 1) % 4;
-                            } else {
-                                self.selection.click_count = 1;
-                            }
-                        } else {
-                            self.selection.click_count = 1;
-                        }
-                        self.selection.last_click_time = Some(now);
-                        let click_count = self.selection.click_count;
-                        let cursor_pos = self.selection.cursor_pos;
-                        match click_count {
-                            2 => self.select_word_at_point(cursor_pos.0, cursor_pos.1),
-                            3 => self.select_line_at_point(cursor_pos.0, cursor_pos.1),
-                            _ => if shift {
-                                self.extend_selection_with_anchor(cursor_pos.0, cursor_pos.1)
-                            } else {
-                                self.move_to_point(cursor_pos.0, cursor_pos.1)
-                            }
-                        }
-                    }
-                }
-            }
-            WindowEvent::CursorMoved { position, .. } => {
-                let prev_pos = self.selection.cursor_pos;
-                self.selection.cursor_pos = (position.x as f32 - INSET, position.y as f32 - INSET);
-                // macOS seems to generate a spurious move after selecting word?
-                if self.selection.pointer_down && prev_pos != self.selection.cursor_pos && !self.is_composing() {
-                    self.cursor_reset();
-                    let cursor_pos = self.selection.cursor_pos;
-                    self.extend_selection_to_point(cursor_pos.0, cursor_pos.1, true);
-                }
-            }
             WindowEvent::Ime(Ime::Disabled) => {
                 self.clear_compose();
             }
@@ -310,10 +301,11 @@ impl TextBox<String> {
                 self.insert_or_replace_selection(&text);
             }
             WindowEvent::Ime(Ime::Preedit(text, cursor)) => {
+                dbg!(text, cursor);
                 if text.is_empty() {
                     self.clear_compose();
                 } else {
-                    self.set_compose(&text, cursor);
+                    self.set_compose(&text, *cursor);
                 }
             }
             _ => {}
@@ -365,6 +357,7 @@ impl TextBox<String> {
                 .and_then(|range| (!range.is_empty()).then_some(range))
             {
                 self.text.replace_range(range, "");
+                // seems ok to not do the relayout immediately
                 self.needs_relayout = true;
             }
         } else {
@@ -382,6 +375,7 @@ impl TextBox<String> {
             let end = focus.next_logical_word(&self.layout).index();
             if self.text.get(start..end).is_some() {
                 self.text.replace_range(start..end, "");
+                // seems ok to not do the relayout immediately
                 self.needs_relayout = true;
                 self.set_selection(
                     Cursor::from_byte_index(&self.layout, start, Affinity::Downstream)
@@ -423,6 +417,7 @@ impl TextBox<String> {
                     start
                 };
                 self.text.replace_range(start..end, "");
+                // seems ok to not do the relayout immediately
                 self.needs_relayout = true;
                 self.set_selection(
                     Cursor::from_byte_index(&self.layout, start, Affinity::Downstream)
@@ -444,6 +439,7 @@ impl TextBox<String> {
             let start = focus.previous_logical_word(&self.layout).index();
             if self.text.get(start..end).is_some() {
                 self.text.replace_range(start..end, "");
+                // seems ok to not do the relayout immediately
                 self.needs_relayout = true;
                 self.set_selection(
                     Cursor::from_byte_index(&self.layout, start, Affinity::Downstream)
@@ -489,7 +485,7 @@ impl TextBox<String> {
         };
         self.compose = Some(start..start + text.len());
         self.show_cursor = cursor.is_some();
-        self.needs_relayout = true;
+        self.update_layout();
 
         // Select the location indicated by the IME. If `cursor` is none, collapse the selection to
         // a caret at the start of the preedit text. As `self.show_cursor` is `false`, it
@@ -508,7 +504,7 @@ impl TextBox<String> {
         if let Some(preedit_range) = self.compose.take() {
             self.text.replace_range(preedit_range.clone(), "");
             self.show_cursor = true;
-            self.needs_relayout = true;
+            self.update_layout();
 
             self
                 .set_selection(self.cursor_at(preedit_range.start).into());
@@ -1125,7 +1121,7 @@ impl TextBox<String> {
             self.text.replace_range(range, s);
         }
 
-        self.needs_relayout = true;
+        self.update_layout();
         let new_index = start.saturating_add(s.len());
         let affinity = if s.ends_with("\n") {
             Affinity::Downstream
@@ -1153,7 +1149,6 @@ impl TextBox<String> {
         // }
 
         // This debug code is quite useful when diagnosing selection problems.
-        #[cfg(feature = "std")]
         #[allow(clippy::print_stderr)] // reason = "unreachable debug code"
         if false {
             let focus = new_sel.focus();
