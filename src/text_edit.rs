@@ -673,6 +673,8 @@ impl TextBox<String> {
         assert!(!self.is_composing());
 
         self.refresh_layout();
+
+        
         self.set_selection(self.selection.selection.move_lines(
             &self.layout,
             isize::MIN,

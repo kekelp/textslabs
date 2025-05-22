@@ -456,54 +456,44 @@ impl SelectionState {
                     mods_state.control_key()
                 };
 
-                match &event.logical_key {
-                    Key::Named(NamedKey::ArrowLeft) => {
-                        if action_mod {
-                            if shift {
+                if shift {
+                    match &event.logical_key {
+                        Key::Named(NamedKey::ArrowLeft) => {
+                            if action_mod {
                                 self.select_word_left(layout);
+                            } else {
+                                self.select_left(layout);
                             }
-                        } else if shift {
-                            self.select_left(layout);
                         }
-                    }
-                    Key::Named(NamedKey::ArrowRight) => {
-                        if action_mod {
-                            if shift {
+                        Key::Named(NamedKey::ArrowRight) => {
+                            if action_mod {
                                 self.select_word_right(layout);
+                            } else {
+                                self.select_right(layout);
                             }
-                        } else if shift {
-                            self.select_right(layout);
                         }
-                    }
-                    Key::Named(NamedKey::ArrowUp) => {
-                        if shift {
+                        Key::Named(NamedKey::ArrowUp) => {
                             self.select_up(layout);
                         }
-                    }
-                    Key::Named(NamedKey::ArrowDown) => {
-                        if shift {
+                        Key::Named(NamedKey::ArrowDown) => {
                             self.select_down(layout);
                         }
-                    }
-                    Key::Named(NamedKey::Home) => {
-                        if action_mod {
-                            if shift {
+                        Key::Named(NamedKey::Home) => {
+                            if action_mod {
                                 self.select_to_text_start(layout);
+                            } else {
+                                self.select_to_line_start(layout);
                             }
-                        } else if shift {
-                            self.select_to_line_start(layout);
                         }
-                    }
-                    Key::Named(NamedKey::End) => {
-                        if action_mod {
-                            if shift {
+                        Key::Named(NamedKey::End) => {
+                            if action_mod {
                                 self.select_to_text_end(layout);
+                            } else {
+                                self.select_to_line_end(layout);
                             }
-                        } else if shift {
-                            self.select_to_line_end(layout);
                         }
+                        _ => (),
                     }
-                    _ => (),
                 }
             }
             _ => {}
