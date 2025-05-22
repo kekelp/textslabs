@@ -57,6 +57,7 @@ pub struct TextBox<T: AsRef<str>> {
     pub(crate) blink_period: Duration,
     pub(crate) modifiers: Modifiers,
     pub(crate) scale: f32,
+    pub(crate) history: TextEditHistory,
 }
 
 lazy_static::lazy_static! {
@@ -161,6 +162,7 @@ impl<T: AsRef<str>> TextBox<T> {
             blink_period: Default::default(),
             modifiers: Default::default(),
             scale: Default::default(),
+            history: TextEditHistory::default(),
         }
     }
 

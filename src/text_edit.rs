@@ -1,6 +1,5 @@
 use std::{
-    fmt::Display,
-    time::{Duration, Instant},
+    fmt::Display, ops::Range, time::{Duration, Instant}
 };
 
 use parley::*;
@@ -188,13 +187,13 @@ impl TextBox<String> {
                                 let text = cb.get_text().unwrap_or_default();
                                 self.insert_or_replace_selection(&text);
                             }
-                            // "z" => {
-                            //     if shift {
-                            //         self.redo();
-                            //     } else {
-                            //         self.undo();
-                            //     }
-                            // }
+                            "z" => {
+                                if shift {
+                                    self.redo();
+                                } else {
+                                    self.undo();
+                                }
+                            }
                             _ => (),
                         }
                     }
@@ -335,10 +334,38 @@ impl TextBox<String> {
 impl TextBox<String> {
     // --- MARK: Forced relayout ---
     /// Insert at cursor, or replace selection.
+    fn replace_range_and_record(&mut self, range: Range<usize>, old_selection: Selection, s: &str) {
+        let old_text = &self.text[range.clone()];
+
+        let new_range_start = range.start;
+        let new_range_end = range.start + s.len();
+
+        self.history
+            .record(&old_text, s, old_selection, new_range_start..new_range_end);
+
+        self.text.replace_range(range, s);
+    }
+
+    fn replace_selection_and_record(&mut self, s: &str) {
+        let old_selection = self.selection.selection;
+
+        let range = self.selection.selection.text_range();
+        let old_text = &self.text[range.clone()];
+
+        let new_range_start = range.start;
+        let new_range_end = range.start + s.len();
+
+        self.history.record(&old_text, s, old_selection, new_range_start..new_range_end);
+
+        self.replace_selection(s);
+    }
+
+    // --- MARK: Forced relayout ---
+    /// Insert at cursor, or replace selection.
     pub fn insert_or_replace_selection(&mut self, s: &str) {
         assert!(!self.is_composing());
 
-        self.replace_selection(s);
+        self.replace_selection_and_record(s);
     }
 
     /// Delete the selection.
@@ -363,7 +390,7 @@ impl TextBox<String> {
                 .map(|cluster| cluster.text_range())
                 .and_then(|range| (!range.is_empty()).then_some(range))
             {
-                self.text.replace_range(range, "");
+                self.replace_range_and_record(range, self.selection.selection, "");
                 // seems ok to not do the relayout immediately
                 self.needs_relayout = true;
             }
@@ -381,7 +408,7 @@ impl TextBox<String> {
             let start = focus.index();
             let end = focus.next_logical_word(&self.layout).index();
             if self.text.get(start..end).is_some() {
-                self.text.replace_range(start..end, "");
+                self.replace_range_and_record(start..end, self.selection.selection, "");
                 // seems ok to not do the relayout immediately
                 self.needs_relayout = true;
                 self.set_selection(
@@ -422,7 +449,7 @@ impl TextBox<String> {
                     };
                     start
                 };
-                self.text.replace_range(start..end, "");
+                self.replace_range_and_record(start..end, self.selection.selection, "");
                 // seems ok to not do the relayout immediately
                 self.needs_relayout = true;
                 self.set_selection(
@@ -443,7 +470,7 @@ impl TextBox<String> {
             let end = focus.index();
             let start = focus.previous_logical_word(&self.layout).index();
             if self.text.get(start..end).is_some() {
-                self.text.replace_range(start..end, "");
+                self.replace_range_and_record(start..end, self.selection.selection, "");
                 // seems ok to not do the relayout immediately
                 self.needs_relayout = true;
                 self.set_selection(
@@ -922,7 +949,7 @@ impl TextBox<String> {
         if self.selection.selection.is_collapsed() {
             self.text.insert_str(start, s);
         } else {
-            self.text.replace_range(range, s);
+            self.replace_range_and_record(range, self.selection.selection, s);
         }
 
         self.update_layout();
@@ -939,11 +966,6 @@ impl TextBox<String> {
     fn set_selection(&mut self, new_sel: Selection) {
         self.set_selection_inner(new_sel);
         self.selection.prev_anchor = None;
-    }
-
-    /// Update the selection without resetting the previous anchor.
-    fn set_selection_with_old_anchor(&mut self, new_sel: Selection) {
-        self.set_selection_inner(new_sel);
     }
 
     fn set_selection_inner(&mut self, new_sel: Selection) {
@@ -1020,5 +1042,275 @@ impl TextBox<String> {
             node.clear_text_selection();
         }
         node.add_action(accesskit::Action::SetTextSelection);
+    }
+
+    pub fn undo(&mut self) {
+        if ! self.is_composing() {
+            if let Some(op) = self.history.undo(&self.text) {
+                self
+                    .text
+                    .replace_range(op.range_to_clear.clone(), "");
+                self
+                    .text
+                    .insert_str(op.range_to_clear.start, op.text_to_restore);
+
+                let prev_selection = op.prev_selection;
+                self.set_selection(prev_selection);
+                self.update_layout();
+            }
+        }
+    }
+
+    pub fn redo(&mut self) {
+        if let Some(op) = self.history.redo() {
+            self
+                .text
+                .replace_range(op.range_to_clear.clone(), "");
+            self
+                .text
+                .insert_str(op.range_to_clear.start, op.text_to_restore);
+
+            let end = op.range_to_clear.start + op.text_to_restore.len();
+
+            self.update_layout();
+
+            let new_selection =
+                Selection::from_byte_index(&self.layout, end, Affinity::Upstream);
+            self.set_selection(new_selection);
+        }
+    }
+}
+
+
+#[derive(Clone, Debug)]
+pub struct TextEditHistory {
+    undo_text: String,
+    redo_text: String,
+    history: Vec<RecordedOp>,
+    current_position: usize,
+    can_grow: GrowHint,
+}
+
+#[derive(Clone, Copy, Debug)]
+enum GrowHint {
+    CannotGrow,
+    GrowableInsert(usize),
+    GrowableInsertWhitespace(usize),
+    GrowableDelete(usize),
+    GrowableDeleteWhitespace(usize),
+}
+
+#[derive(Debug, Clone)]
+struct RecordedOp {
+    /// Data needed to undo this history element.
+    undo: Ranges,
+    /// Data needed to redo this history element.
+    /// To save memory, the redo data only gets populated when the element is undone.
+    redo: Option<Ranges>,
+    /// State of the selection right before this operation.
+    prev_selection: Selection,
+}
+
+/// Internal Data for an undo or redo operation.
+#[derive(Debug, Clone)]
+struct Ranges {
+    /// A range into the editor's main buffer for text that was inserted as part of a replace.
+    inserted_range: Range<usize>,
+    /// A range into the `TextEditHistory`'s internal buffer for text was deleted as part of a replace and stored.
+    deleted_range: Range<usize>,
+}
+
+impl Ranges {
+    fn is_delete_only(&self) -> bool {
+        return self.inserted_range.is_empty();
+    }
+    fn is_insert_only(&self) -> bool {
+        return self.deleted_range.is_empty();
+    }
+}
+
+/// The result of undoing of redoing a text replace operation.
+#[derive(Debug, Clone)]
+pub struct TextRestore<'a> {
+    /// A range into the original buffer that should be cleared.
+    range_to_clear: Range<usize>,
+    /// Text that should be inserted in the place of the cleared range.
+    text_to_restore: &'a str,
+    /// The state of selection right before the operation was made.
+    /// Typically, undo operations restore the selection to this stored value,
+    /// while redo operations ignore it and place a collapsed selection at the end of the newly restored text.
+    prev_selection: Selection,
+}
+
+impl Default for TextEditHistory {
+    fn default() -> Self {
+        Self {
+            undo_text: String::with_capacity(64),
+            redo_text: String::with_capacity(64),
+            history: Vec::with_capacity(64),
+            current_position: 0,
+            can_grow: GrowHint::CannotGrow,
+        }
+    }
+}
+
+trait StringBuffer {
+    fn store_str(&mut self, text: &str) -> Range<usize>;
+}
+impl StringBuffer for String {
+    fn store_str(&mut self, text: &str) -> Range<usize> {
+        let start = self.len();
+        self.push_str(text);
+        start..self.len()
+    }
+}
+trait WhitespaceStr {
+    fn is_whitespace(&self) -> bool;
+}
+impl WhitespaceStr for &str {
+    fn is_whitespace(&self) -> bool {
+        self.chars().all(|c| c.is_whitespace() || c.is_ascii_punctuation())
+    }
+}
+
+impl TextEditHistory {
+    const MAX_GROWABLE_SIZE: usize = 20;
+
+    #[rustfmt::skip]
+    pub fn record(
+        &mut self,
+        old_str: &str,
+        new_str: &str,
+        selection: Selection,
+        inserted_range: Range<usize>,
+    ) {
+        if self.current_position < self.history.len() {
+            let undo_trunc = self.history[self.current_position].undo.deleted_range.start;
+            self.undo_text.truncate(undo_trunc);
+            self.redo_text.clear();
+            self.history.truncate(self.current_position);
+        }
+
+        if let Some(last) = self.history.last_mut() {
+            match self.can_grow {
+                GrowHint::GrowableInsert(size) 
+                    if old_str.is_empty() && size < Self::MAX_GROWABLE_SIZE =>
+                        last.undo.inserted_range.end = inserted_range.end,
+
+                GrowHint::GrowableInsertWhitespace(size) 
+                    if old_str.is_empty() && new_str.is_whitespace() && size < Self::MAX_GROWABLE_SIZE =>
+                        last.undo.inserted_range.end = inserted_range.end,
+
+                GrowHint::GrowableDelete(size)
+                    if inserted_range.is_empty() && size < Self::MAX_GROWABLE_SIZE =>
+                        self.merge_delete(old_str, inserted_range),
+
+                GrowHint::GrowableDeleteWhitespace(size)
+                    if inserted_range.is_empty() && old_str.is_whitespace() && size < Self::MAX_GROWABLE_SIZE =>
+                        self.merge_delete(old_str, inserted_range),
+
+                _ => {
+                    self.push_new(old_str, selection, inserted_range);
+                },
+            };
+        } else {
+            self.push_new(old_str, selection, inserted_range);
+        }
+
+        self.set_grow_hint(new_str, old_str);
+    }
+
+    pub fn push_new(&mut self, old_str: &str, selection: Selection, inserted_range: Range<usize>) {
+        let undo_range = self.undo_text.store_str(old_str);
+
+        self.history.push(RecordedOp {
+            prev_selection: selection,
+            undo: Ranges {
+                inserted_range,
+                deleted_range: undo_range,
+            },
+            redo: None,
+        });
+
+        self.current_position += 1;
+    }
+
+    fn merge_delete(&mut self, old_str: &str, inserted_range: Range<usize>) {
+        let last = self.history.last_mut().unwrap();
+        let start = last.undo.deleted_range.start;
+        // To keep the text stored in the proper order, the old text has to be shifted.
+        self.undo_text.insert_str(start, old_str);
+        let end = self.undo_text.len();
+        last.undo.deleted_range = start..end;
+        last.undo.inserted_range = inserted_range.clone();
+    }
+
+    fn set_grow_hint(&mut self, new_str: &str, old_str: &str) {
+        let last_op = &self.history.last().unwrap().undo;
+
+        self.can_grow = if last_op.is_insert_only() {
+            let len = new_str.len();
+            match new_str.chars().last() {
+                Some(c) if c.is_whitespace() => GrowHint::GrowableInsertWhitespace(len),
+                Some(_) => GrowHint::GrowableInsert(len),
+                None => GrowHint::CannotGrow,
+            }
+        } else if last_op.is_delete_only() {
+            let len = old_str.len();
+            match old_str.chars().last() {
+                Some(c) if c.is_whitespace() => GrowHint::GrowableDeleteWhitespace(len),
+                Some(_) => GrowHint::GrowableDelete(len),
+                None => GrowHint::CannotGrow,
+            }
+        } else {
+            GrowHint::CannotGrow
+        };
+    }
+
+    fn undo(&mut self, buffer: &String) -> Option<TextRestore<'_>> {
+        if self.current_position > 0 {
+            self.current_position -= 1;
+            let last = &mut self.history[self.current_position];
+
+            // Prepare the undo to return
+            let undo_text = last.undo.deleted_range.clone();
+            let undo = TextRestore {
+                prev_selection: last.prev_selection,
+                range_to_clear: last.undo.inserted_range.clone(),
+                text_to_restore: &self.undo_text[undo_text.clone()],
+            };
+
+            // Fill the last element with the data that will be needed for the redo
+            if last.redo.is_none() {
+                let redo_text = &buffer[undo.range_to_clear.clone()];
+                let a = undo.range_to_clear.start;
+                let redo_range = self.redo_text.store_str(redo_text);
+
+                last.redo = Some(Ranges {
+                    inserted_range: a..(a + undo_text.len()),
+                    deleted_range: redo_range,
+                });
+            }
+            // todo: if possible, put a nice prev_selection here so the caller doesn't have to think about it
+
+            Some(undo)
+        } else {
+            None
+        }
+    }
+
+    fn redo(&mut self) -> Option<TextRestore<'_>> {
+        let last = self.history.get_mut(self.current_position)?;
+
+        self.current_position += 1;
+
+        let redo = last.redo.as_ref().unwrap().clone();
+        let old_text = redo.deleted_range;
+
+        Some(TextRestore {
+            prev_selection: last.prev_selection,
+            range_to_clear: redo.inserted_range,
+            text_to_restore: &self.redo_text[old_text],
+        })
     }
 }
