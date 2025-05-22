@@ -671,15 +671,8 @@ impl TextBox<String> {
     /// Move the selection focus point to the start of the text.
     pub fn select_to_text_start(&mut self) {
         assert!(!self.is_composing());
-
         self.refresh_layout();
-
-        
-        self.set_selection(self.selection.selection.move_lines(
-            &self.layout,
-            isize::MIN,
-            true,
-        ));
+        self.selection.select_to_text_start(&self.layout);
     }
 
     /// Move the selection focus point to the start of the physical line.
