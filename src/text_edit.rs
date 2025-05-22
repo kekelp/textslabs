@@ -310,7 +310,6 @@ impl TextBox<String> {
                 self.insert_or_replace_selection(&text);
             }
             WindowEvent::Ime(Ime::Preedit(text, cursor)) => {
-                dbg!(text, cursor);
                 if text.is_empty() {
                     self.clear_compose();
                 } else {
@@ -949,7 +948,7 @@ impl TextBox<String> {
         if self.selection.selection.is_collapsed() {
             self.text.insert_str(start, s);
         } else {
-            self.replace_range_and_record(range, self.selection.selection, s);
+            self.text.replace_range(range, s);
         }
 
         self.update_layout();

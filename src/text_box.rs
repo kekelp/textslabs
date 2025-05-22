@@ -11,7 +11,7 @@ use winit::{
 
 use crate::*;
 
-const X_TOLERANCE: f64 = 7.0;
+const X_TOLERANCE: f64 = 35.0;
 
 pub(crate) struct TextContext {
     layout_cx: LayoutContext<ColorBrush>,
