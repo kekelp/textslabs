@@ -4,9 +4,7 @@ use std::{
 
 use parley::*;
 use winit::{
-    event::{Ime, Touch, WindowEvent},
-    keyboard::{Key, NamedKey},
-    platform::modifier_supplement::KeyEventExtModifierSupplement,
+    dpi::{PhysicalPosition, PhysicalSize}, event::{Ime, Touch, WindowEvent}, keyboard::{Key, NamedKey}, platform::modifier_supplement::KeyEventExtModifierSupplement, window::Window
 };
 
 const INSET: f32 = 2.0;
@@ -93,7 +91,7 @@ impl TextBox<String> {
         });
     }
 
-    pub fn handle_event_edit(&mut self, event: &WindowEvent) {
+    pub fn handle_event_edit(&mut self, event: &WindowEvent, window: &Window) {
         if !self.selectable {
             self.selection.focused = false;
             return;
@@ -314,6 +312,8 @@ impl TextBox<String> {
                     self.clear_compose();
                 } else {
                     self.set_compose(&text, *cursor);
+                    // todo: no idea if it's correct to call this here.
+                    self.set_ime_cursor_area(window);
                 }
             }
             _ => {}
@@ -825,6 +825,20 @@ impl TextBox<String> {
             y0: area.y0,
             y1: area.y1,
         }
+    }
+
+    pub fn set_ime_cursor_area(&self, window: &Window) {
+        let area = self.ime_cursor_area();
+        // Note: on X11 `set_ime_cursor_area` may cause the exclusion area to be obscured
+        // until https://github.com/rust-windowing/winit/pull/3966 is in the Winit release
+        // used by this example.
+        window.set_ime_cursor_area(
+            PhysicalPosition::new(
+                area.x0 + self.left as f64,
+                area.y0 + self.top as f64,
+            ),
+            PhysicalSize::new(area.width(), area.height()),
+        );
     }
 
     /// Borrow the text content of the text.

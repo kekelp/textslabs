@@ -98,7 +98,7 @@ impl State {
             }
         }
         for text_box in &mut self.text_boxes {
-            text_box.handle_event_edit(&event);
+            text_box.handle_event_edit(&event, &self.window);
         }
 
         match event {

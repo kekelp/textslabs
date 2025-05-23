@@ -394,6 +394,8 @@ impl Ext1 for Layout<ColorBrush> {
     }
 }
 
+const MULTICLICK_DELAY: f64 = 0.4;
+
 impl SelectionState {
     pub fn handle_event(
         &mut self,
@@ -417,7 +419,7 @@ impl SelectionState {
                     if self.pointer_down {
                         let now = Instant::now();
                         if let Some(last) = self.last_click_time.take() {
-                            if now.duration_since(last).as_secs_f64() < 0.25 {
+                            if now.duration_since(last).as_secs_f64() < MULTICLICK_DELAY {
                                 self.click_count = (self.click_count + 1) % 4;
                             } else {
                                 self.click_count = 1;
