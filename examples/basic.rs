@@ -71,7 +71,7 @@ impl State {
 
         big_text_style.with_borrow_mut(|style| style.font_size = 32.0);
 
-        text_boxes[3].selectable = false;
+        text_boxes[3].set_selectable(false);
 
         let text_renderer = TextRenderer::new(&device, &queue, surface_config.format);
 

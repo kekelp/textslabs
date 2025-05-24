@@ -16,7 +16,7 @@ use crate::*;
 /// This is returned by [`PlainEditor::text`], as the IME preedit
 /// area needs to be efficiently excluded from its return value.
 #[derive(Debug, Clone, Copy)]
-pub struct SplitString<'source>([&'source str; 2]);
+pub struct SplitString<'source>(pub(crate) [&'source str; 2]);
 
 impl<'source> SplitString<'source> {
     /// Get the characters of this string.
@@ -103,49 +103,6 @@ impl TextBox<String> {
         self.refresh_layout();
 
         self.handle_event(event, &self.modifiers.clone());
-
-        // todo: move this somewhere else
-        match event {
-            WindowEvent::KeyboardInput { event, .. } => {
-                if !event.state.is_pressed() {}
-                #[allow(unused)]
-                let mods_state = self.modifiers.state();
-                let shift = mods_state.shift_key();
-                let action_mod = if cfg!(target_os = "macos") {
-                    mods_state.super_key()
-                } else {
-                    mods_state.control_key()
-                };
-
-                #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
-                if action_mod {
-                    match event.key_without_modifiers() {
-                        Key::Character(c) => {
-                            use clipboard_rs::{Clipboard, ClipboardContext};
-                            match c.as_str() {
-                                "c" if !shift => {
-                                    if let Some(text) = self.selected_text() {
-                                        let cb = ClipboardContext::new().unwrap();
-                                        cb.set_text(text.to_owned()).ok();
-                                    }
-                                }
-                                "a" => {
-                                    self.selection.selection = Selection::from_byte_index(
-                                        &self.layout,
-                                        0_usize,
-                                        Affinity::default(),
-                                    )
-                                    .move_lines(&self.layout, isize::MAX, true);
-                                }
-                                _ => (),
-                            }
-                        }
-                        _ => (),
-                    };
-                }
-            }
-            _ => {}
-        }
 
         match event {
             WindowEvent::Resized(size) => {
@@ -719,343 +676,6 @@ impl TextBox<String> {
 }
 
 impl TextBox<String> {
-    /// Borrow the current selection. The indices returned by functions
-    /// such as [`Selection::text_range`] refer to the raw text text,
-    /// including the IME preedit region, which can be accessed via
-    /// [`PlainEditor::raw_text`].
-    pub fn raw_selection(&self) -> &Selection {
-        &self.selection.selection
-    }
-
-    /// If the current selection is not collapsed, returns the text content of
-    /// that selection.
-    pub fn selected_text(&self) -> Option<&str> {
-        if self.is_composing() {
-            return None;
-        }
-        if !self.selection.selection.is_collapsed() {
-            self.text.get(self.selection.selection.text_range())
-        } else {
-            None
-        }
-    }
-
-    /// Get rectangles, and their corresponding line indices, representing the selected portions of
-    /// text.
-    pub fn selection_geometry(&self) -> Vec<(Rect, usize)> {
-        // We do not check `self.show_cursor` here, as the IME handling code collapses the
-        // selection to a caret in that case.
-        self.selection.selection.geometry(&self.layout)
-    }
-
-    /// Invoke a callback with each rectangle representing the selected portions of text, and the
-    /// indices of the lines to which they belong.
-    pub fn selection_geometry_with(&self, f: impl FnMut(Rect, usize)) {
-        // We do not check `self.show_cursor` here, as the IME handling code collapses the
-        // selection to a caret in that case.
-        self.selection.selection.geometry_with(&self.layout, f);
-    }
-
-    /// Get a rectangle representing the current caret cursor position.
-    ///
-    /// There is not always a caret. For example, the IME may have indicated the caret should be
-    /// hidden.
-    pub fn cursor_geometry(&self, size: f32) -> Option<Rect> {
-        self.show_cursor.then(|| {
-            self.selection
-                .selection
-                .focus()
-                .geometry(&self.layout, size)
-        })
-    }
-
-    /// Get a rectangle bounding the text the user is currently editing.
-    ///
-    /// This is useful for suggesting an exclusion area to the platform for, e.g., IME candidate
-    /// box placement. This bounds the area of the preedit text if present, otherwise it bounds the
-    /// selection on the focused line.
-    pub fn ime_cursor_area(&self) -> Rect {
-        let (area, focus) = if let Some(preedit_range) = &self.compose {
-            let selection = Selection::new(
-                self.cursor_at(preedit_range.start),
-                self.cursor_at(preedit_range.end),
-            );
-
-            // Bound the entire preedit text.
-            let mut area = None;
-            selection.geometry_with(&self.layout, |rect, _| {
-                let area = area.get_or_insert(rect);
-                *area = area.union(rect);
-            });
-
-            (
-                area.unwrap_or_else(|| selection.focus().geometry(&self.layout, 0.)),
-                selection.focus(),
-            )
-        } else {
-            // Bound the selected parts of the focused line only.
-            let focus = self.selection.selection.focus().geometry(&self.layout, 0.);
-            let mut area = focus;
-            self.selection
-                .selection
-                .geometry_with(&self.layout, |rect, _| {
-                    if rect.y0 == focus.y0 {
-                        area = area.union(rect);
-                    }
-                });
-
-            (area, self.selection.selection.focus())
-        };
-
-        // Ensure some context is captured even for tiny or collapsed selections by including a
-        // region surrounding the selection. Doing this unconditionally, the IME candidate box
-        // usually does not need to jump around when composing starts or the preedit is added to.
-        let [upstream, downstream] = focus.logical_clusters(&self.layout);
-        let font_size = downstream
-            .or(upstream)
-            .map(|cluster| cluster.run().font_size())
-            // .unwrap_or(ResolvedStyle::<ColorBrush>::default().font_size);
-            .unwrap_or(16.0);
-        // Using 0.6 as an estimate of the average advance
-        let inflate = 3. * 0.6 * font_size as f64;
-        let editor_width = self.width.map(f64::from).unwrap_or(f64::INFINITY);
-        Rect {
-            x0: (area.x0 - inflate).max(0.),
-            x1: (area.x1 + inflate).min(editor_width),
-            y0: area.y0,
-            y1: area.y1,
-        }
-    }
-
-    pub fn set_ime_cursor_area(&self, window: &Window) {
-        let area = self.ime_cursor_area();
-        // Note: on X11 `set_ime_cursor_area` may cause the exclusion area to be obscured
-        // until https://github.com/rust-windowing/winit/pull/3966 is in the Winit release
-        // used by this example.
-        window.set_ime_cursor_area(
-            PhysicalPosition::new(
-                area.x0 + self.left as f64,
-                area.y0 + self.top as f64,
-            ),
-            PhysicalSize::new(area.width(), area.height()),
-        );
-    }
-
-    /// Borrow the text content of the text.
-    ///
-    /// The return value is a `SplitString` because it
-    /// excludes the IME preedit region.
-    pub fn text(&self) -> SplitString<'_> {
-        if let Some(preedit_range) = &self.compose {
-            SplitString([
-                &self.text[..preedit_range.start],
-                &self.text[preedit_range.end..],
-            ])
-        } else {
-            SplitString([&self.text, ""])
-        }
-    }
-
-    /// Borrow the text content of the text, including the IME preedit
-    /// region if any.
-    ///
-    /// Application authors should generally prefer [`text`](Self::text). That method excludes the
-    /// IME preedit contents, which are not meaningful for applications to access; the
-    /// in-progress IME content is not itself what the user intends to write.
-    pub fn raw_text(&self) -> &str {
-        &self.text
-    }
-
-    /// Replace the whole text text.
-    pub fn set_text(&mut self, is: &str) {
-        assert!(!self.is_composing());
-
-        self.text.clear();
-        self.text.push_str(is);
-        self.needs_relayout = true;
-    }
-
-    /// Set the width of the layout.
-    pub fn set_width(&mut self, width: Option<f32>) {
-        self.width = width;
-        self.needs_relayout = true;
-    }
-
-    /// Set the alignment of the layout.
-    pub fn set_alignment(&mut self, alignment: Alignment) {
-        self.alignment = alignment;
-        self.needs_relayout = true;
-    }
-
-    /// Set the scale for the layout.
-    pub fn set_scale(&mut self, scale: f32) {
-        self.scale = scale;
-        self.needs_relayout = true;
-    }
-
-    // /// Modify the styles provided for this editor.
-    // pub fn edit_styles(&mut self) -> &mut StyleSet<ColorBrush> {
-    //     self.needs_relayout = true;
-    //     &mut self.default_style
-    // }
-
-    /// Whether the editor is currently in IME composing mode.
-    pub fn is_composing(&self) -> bool {
-        self.compose.is_some()
-    }
-
-    // --- MARK: Raw APIs ---
-    /// Get the full read-only details from the layout, if valid.
-    ///
-    /// Returns `None` if the layout is not up-to-date.
-    /// You can call [`refresh_layout`](Self::refresh_layout) before using this method,
-    /// to ensure that the layout is up-to-date.
-    ///
-    /// The [`layout`](Self::layout) method should generally be preferred.
-    pub fn try_layout(&self) -> Option<&Layout<ColorBrush>> {
-        if self.needs_relayout {
-            None
-        } else {
-            Some(&self.layout)
-        }
-    }
-
-    #[cfg(feature = "accesskit")]
-    #[inline]
-    /// Perform an accessibility update if the layout is valid.
-    ///
-    /// Returns `None` if the layout is not up-to-date.
-    /// You can call [`refresh_layout`](Self::refresh_layout) before using this method,
-    /// to ensure that the layout is up-to-date.
-    /// The [`accessibility`](PlainEditorDriver::accessibility) method on the driver type
-    /// should be preferred if the contexts are available, which will do this automatically.
-    pub fn try_accessibility(
-        &mut self,
-        update: &mut TreeUpdate,
-        node: &mut Node,
-        next_node_id: impl FnMut() -> NodeId,
-        x_offset: f64,
-        y_offset: f64,
-    ) -> Option<()> {
-        if self.needs_relayout {
-            return None;
-        }
-        self.accessibility_unchecked(update, node, next_node_id, x_offset, y_offset);
-        Some(())
-    }
-
-    // --- MARK: Internal Helpers ---
-    /// Make a cursor at a given byte index.
-    fn cursor_at(&self, index: usize) -> Cursor {
-        // TODO: Do we need to be non-dirty?
-        // FIXME: `Selection` should make this easier
-        if index >= self.text.len() {
-            Cursor::from_byte_index(&self.layout, self.text.len(), Affinity::Upstream)
-        } else {
-            Cursor::from_byte_index(&self.layout, index, Affinity::Downstream)
-        }
-    }
-
-    fn replace_selection(&mut self, s: &str) {
-        let range = self.selection.selection.text_range();
-        let start = range.start;
-        if self.selection.selection.is_collapsed() {
-            self.text.insert_str(start, s);
-        } else {
-            self.text.replace_range(range, s);
-        }
-
-        self.update_layout();
-        let new_index = start.saturating_add(s.len());
-        let affinity = if s.ends_with("\n") {
-            Affinity::Downstream
-        } else {
-            Affinity::Upstream
-        };
-        self.set_selection(Cursor::from_byte_index(&self.layout, new_index, affinity).into());
-    }
-
-    /// Update the selection, and nudge the `Generation` if something other than `h_pos` changed.
-    fn set_selection(&mut self, new_sel: Selection) {
-        self.set_selection_inner(new_sel);
-        self.selection.prev_anchor = None;
-    }
-
-    fn set_selection_inner(&mut self, new_sel: Selection) {
-        // if new_sel.focus() != self.selection.selection.focus() || new_sel.anchor() != self.selection.selection.anchor()
-        // {
-        //     self.generation.nudge();
-        // }
-
-        // This debug code is quite useful when diagnosing selection problems.
-        #[allow(clippy::print_stderr)] // reason = "unreachable debug code"
-        if false {
-            let focus = new_sel.focus();
-            let cluster = focus.logical_clusters(&self.layout);
-            let dbg = (
-                cluster[0].as_ref().map(|c| &self.text[c.text_range()]),
-                focus.index(),
-                focus.affinity(),
-                cluster[1].as_ref().map(|c| &self.text[c.text_range()]),
-            );
-            eprint!("{dbg:?}");
-            let cluster = focus.visual_clusters(&self.layout);
-            let dbg = (
-                cluster[0].as_ref().map(|c| &self.text[c.text_range()]),
-                cluster[0]
-                    .as_ref()
-                    .map(|c| if c.is_word_boundary() { " W" } else { "" })
-                    .unwrap_or_default(),
-                focus.index(),
-                focus.affinity(),
-                cluster[1].as_ref().map(|c| &self.text[c.text_range()]),
-                cluster[1]
-                    .as_ref()
-                    .map(|c| if c.is_word_boundary() { " W" } else { "" })
-                    .unwrap_or_default(),
-            );
-            eprintln!(" | visual: {dbg:?}");
-        }
-        self.selection.selection = new_sel;
-    }
-
-    #[cfg(feature = "accesskit")]
-    /// Perform an accessibility update, assuming that the layout is valid.
-    ///
-    /// The wrapper [`accessibility`](PlainEditorDriver::accessibility) on the driver type should
-    /// be preferred.
-    ///
-    /// You should always call [`refresh_layout`](Self::refresh_layout) before using this method,
-    /// with no other modifying method calls in between.
-    fn accessibility_unchecked(
-        &mut self,
-        update: &mut TreeUpdate,
-        node: &mut Node,
-        next_node_id: impl FnMut() -> NodeId,
-        x_offset: f64,
-        y_offset: f64,
-    ) {
-        self.layout_access.build_nodes(
-            &self.text,
-            &self.layout,
-            update,
-            node,
-            next_node_id,
-            x_offset,
-            y_offset,
-        );
-        if self.show_cursor {
-            if let Some(selection) = self
-                .selection
-                .to_access_selection(&self.layout, &self.layout_access)
-            {
-                node.set_text_selection(selection);
-            }
-        } else {
-            node.clear_text_selection();
-        }
-        node.add_action(accesskit::Action::SetTextSelection);
-    }
 
     pub fn undo(&mut self) {
         if ! self.is_composing() {
@@ -1091,6 +711,34 @@ impl TextBox<String> {
                 Selection::from_byte_index(&self.layout, end, Affinity::Upstream);
             self.set_selection(new_selection);
         }
+    }
+
+    /// Replace the whole text text.
+    pub fn set_text(&mut self, is: &str) {
+        assert!(!self.is_composing());
+
+        self.text.clear();
+        self.text.push_str(is);
+        self.needs_relayout = true;
+    }
+
+    fn replace_selection(&mut self, s: &str) {
+        let range = self.selection.selection.text_range();
+        let start = range.start;
+        if self.selection.selection.is_collapsed() {
+            self.text.insert_str(start, s);
+        } else {
+            self.text.replace_range(range, s);
+        }
+
+        self.update_layout();
+        let new_index = start.saturating_add(s.len());
+        let affinity = if s.ends_with("\n") {
+            Affinity::Downstream
+        } else {
+            Affinity::Upstream
+        };
+        self.set_selection(Cursor::from_byte_index(&self.layout, new_index, affinity).into());
     }
 }
 
