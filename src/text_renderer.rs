@@ -166,7 +166,7 @@ fn make_quad(glyph: &GlyphWithContext, stored_glyph: &StoredGlyph) -> Quad {
     let y = glyph.quantized_pos_y - stored_glyph.placement_top as i32;
     let x = glyph.quantized_pos_x + stored_glyph.placement_left as i32;
 
-    let (dim_x, dim_y) = (stored_glyph.alloc.rectangle.min.x, stored_glyph.alloc.rectangle.min.y);
+    let (uv_x, uv_y) = (stored_glyph.alloc.rectangle.min.x, stored_glyph.alloc.rectangle.min.y);
     let (size_x, size_y) = (stored_glyph.size.width, stored_glyph.size.height);
     // let (size_x, size_y) = (stored_glyph.alloc.rectangle.width(), stored_glyph.alloc.rectangle.height());
 
@@ -179,7 +179,7 @@ fn make_quad(glyph: &GlyphWithContext, stored_glyph: &StoredGlyph) -> Quad {
     return Quad {
         pos: [x, y],
         dim: [size_x as u16, size_y as u16],
-        uv_origin: [dim_x as u16, dim_y as u16],
+        uv_origin: [uv_x as u16, uv_y as u16],
         color,
         flags,
         depth: 0.0,
