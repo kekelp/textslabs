@@ -49,10 +49,10 @@ pub struct TextBox<T: AsRef<str>> {
     pub(crate) depth: f32,
     pub(crate) selection: SelectionState,
     pub(crate) width: Option<f32>,
+    pub(crate) alignment: Alignment,
 
     pub(crate) compose: Option<Range<usize>>,
     pub(crate) show_cursor: bool,
-    pub(crate) alignment: Alignment,
     pub(crate) start_time: Option<Instant>,
     pub(crate) blink_period: Duration,
     pub(crate) modifiers: Modifiers,
@@ -190,7 +190,7 @@ impl<T: AsRef<str>> TextBox<T> {
                     layout.break_all_lines(Some(self.max_advance));
                     layout.align(
                         Some(self.max_advance),
-                        Alignment::Start,
+                        self.alignment,
                         AlignmentOptions::default(),
                     );
         
@@ -217,7 +217,7 @@ impl<T: AsRef<str>> TextBox<T> {
                 layout.break_all_lines(Some(self.max_advance));
                 layout.align(
                     Some(self.max_advance),
-                    Alignment::Start,
+                    self.alignment,
                     AlignmentOptions::default(),
                 );
     
@@ -231,7 +231,6 @@ impl<T: AsRef<str>> TextBox<T> {
     pub fn handle_event_no_edit(&mut self, event: &winit::event::WindowEvent, modifiers: &Modifiers) {
         if !self.selectable {
             self.selection.focused = false;
-            self.show_cursor = false;
             return;
         }
 
@@ -672,19 +671,6 @@ impl<T: AsRef<str>> TextBox<T> {
         // We do not check `self.show_cursor` here, as the IME handling code collapses the
         // selection to a caret in that case.
         self.selection.selection.geometry_with(&self.layout, f);
-    }
-
-    /// Get a rectangle representing the current caret cursor position.
-    ///
-    /// There is not always a caret. For example, the IME may have indicated the caret should be
-    /// hidden.
-    pub fn cursor_geometry(&self, size: f32) -> Option<Rect> {
-        self.show_cursor.then(|| {
-            self.selection
-                .selection
-                .focus()
-                .geometry(&self.layout, size)
-        })
     }
 
     /// Borrow the text content of the text, including the IME preedit

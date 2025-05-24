@@ -285,9 +285,7 @@ impl TextBox<String> {
             }
         }
     }
-}
 
-impl TextBox<String> {
     // --- MARK: Forced relayout ---
     /// Insert at cursor, or replace selection.
     fn replace_range_and_record(&mut self, range: Range<usize>, old_selection: Selection, s: &str) {
@@ -677,6 +675,19 @@ impl TextBox<String> {
     /// Whether the editor is currently in IME composing mode.
     pub fn is_composing(&self) -> bool {
         self.compose.is_some()
+    }
+
+    /// Get a rectangle representing the current caret cursor position.
+    ///
+    /// There is not always a caret. For example, the IME may have indicated the caret should be
+    /// hidden.
+    pub fn cursor_geometry(&self, size: f32) -> Option<Rect> {
+        self.show_cursor.then(|| {
+            self.selection
+                .selection
+                .focus()
+                .geometry(&self.layout, size)
+        })
     }
 }
 
