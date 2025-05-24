@@ -53,7 +53,10 @@ impl AtlasPageSize {
 }
 
 impl ContextlessTextRenderer {
-    pub fn new_with_params(device: &Device, _queue: &Queue, params: TextRendererParams) -> Self {
+    pub fn new_with_params(device: &Device, _queue: &Queue, format: TextureFormat, params: TextRendererParams) -> Self {
+        let srgb = format.is_srgb();
+        // todo put this in the uniform and use it
+        
         let atlas_size = params.atlas_page_size.size(device);
 
         let mask_texture = device.create_texture(&TextureDescriptor {

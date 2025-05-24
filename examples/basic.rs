@@ -73,7 +73,7 @@ impl State {
 
         text_boxes[3].selectable = false;
 
-        let text_renderer = TextRenderer::new(&device, &queue);
+        let text_renderer = TextRenderer::new(&device, &queue, surface_config.format);
 
         Self {
             device,

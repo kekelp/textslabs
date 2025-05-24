@@ -84,10 +84,23 @@ fn vs_main(input: VertexInput) -> VertexOutput {
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     if input.flags == 1 {
         var color = textureSampleLevel(mask_atlas_texture, atlas_sampler, input.uv, 0.0);
+        color = vec4<f32>(
+            srgb_to_linear(color.r),
+            srgb_to_linear(color.g),
+            srgb_to_linear(color.b),
+            color.a,
+        );
         return vec4<f32>(input.color * color);
+    
     } else if input.flags == 0 {
         var glyph_alpha = textureSampleLevel(mask_atlas_texture, atlas_sampler, input.uv, 0.0).r;
-        return vec4<f32>(input.color.rgb, input.color.a * glyph_alpha);
+            var color = vec3f(
+            srgb_to_linear(input.color.rgb.r),
+            srgb_to_linear(input.color.rgb.g),
+            srgb_to_linear(input.color.rgb.b),
+        );
+        return vec4<f32>(color, input.color.a * glyph_alpha);
+    
     } else {
         return vec4f(input.color);
     }

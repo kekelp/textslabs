@@ -168,6 +168,8 @@ fn make_quad(glyph: &GlyphWithContext, stored_glyph: &StoredGlyph) -> Quad {
 
     let (dim_x, dim_y) = (stored_glyph.alloc.rectangle.min.x, stored_glyph.alloc.rectangle.min.y);
     let (size_x, size_y) = (stored_glyph.size.width, stored_glyph.size.height);
+    // let (size_x, size_y) = (stored_glyph.alloc.rectangle.width(), stored_glyph.alloc.rectangle.height());
+
 
     let (color, flags) = match stored_glyph.content_type {
         Content::Mask => (glyph.color, 0),
@@ -228,15 +230,15 @@ pub struct Params {
 }
 
 impl TextRenderer {
-    pub fn new_with_params(device: &Device, _queue: &Queue, params: TextRendererParams) -> Self {
+    pub fn new_with_params(device: &Device, _queue: &Queue, format: TextureFormat, params: TextRendererParams) -> Self {
         Self {
             scale_cx: ScaleContext::new(),
-            text_renderer: ContextlessTextRenderer::new_with_params(device, _queue, params),
+            text_renderer: ContextlessTextRenderer::new_with_params(device, _queue, format, params),
         }
     }
 
-    pub fn new(device: &Device, queue: &Queue) -> Self {
-        Self::new_with_params(device, queue, TextRendererParams::default())
+    pub fn new(device: &Device, queue: &Queue, format: TextureFormat) -> Self {
+        Self::new_with_params(device, queue, format, TextRendererParams::default())
     }
 
     pub fn update_resolution(&mut self, width: f32, height: f32) {
