@@ -4,7 +4,7 @@ use std::{
 
 use parley::*;
 use winit::{
-    dpi::{PhysicalPosition, PhysicalSize}, event::WindowEvent, keyboard::{Key, NamedKey}, platform::modifier_supplement::KeyEventExtModifierSupplement, window::Window
+    event::WindowEvent, keyboard::{Key, NamedKey}, platform::modifier_supplement::KeyEventExtModifierSupplement
 };
 
 use parley::{Affinity, Alignment, AlignmentOptions, Selection, TextStyle};
@@ -48,10 +48,10 @@ pub struct TextBox<T: AsRef<str>> {
     pub(crate) max_advance: f32,
     pub(crate) depth: f32,
     pub(crate) selection: SelectionState,
+    pub(crate) width: Option<f32>,
 
     pub(crate) compose: Option<Range<usize>>,
     pub(crate) show_cursor: bool,
-    pub(crate) width: Option<f32>,
     pub(crate) alignment: Alignment,
     pub(crate) start_time: Option<Instant>,
     pub(crate) blink_period: Duration,
@@ -651,9 +651,6 @@ impl<T: AsRef<str>> TextBox<T> {
     /// If the current selection is not collapsed, returns the text content of
     /// that selection.
     pub fn selected_text(&self) -> Option<&str> {
-        if self.is_composing() {
-            return None;
-        }
         if !self.selection.selection.is_collapsed() {
             self.text.as_ref().get(self.selection.selection.text_range())
         } else {
@@ -690,93 +687,6 @@ impl<T: AsRef<str>> TextBox<T> {
         })
     }
 
-    /// Get a rectangle bounding the text the user is currently editing.
-    ///
-    /// This is useful for suggesting an exclusion area to the platform for, e.g., IME candidate
-    /// box placement. This bounds the area of the preedit text if present, otherwise it bounds the
-    /// selection on the focused line.
-    pub fn ime_cursor_area(&self) -> Rect {
-        let (area, focus) = if let Some(preedit_range) = &self.compose {
-            let selection = Selection::new(
-                self.cursor_at(preedit_range.start),
-                self.cursor_at(preedit_range.end),
-            );
-
-            // Bound the entire preedit text.
-            let mut area = None;
-            selection.geometry_with(&self.layout, |rect, _| {
-                let area = area.get_or_insert(rect);
-                *area = area.union(rect);
-            });
-
-            (
-                area.unwrap_or_else(|| selection.focus().geometry(&self.layout, 0.)),
-                selection.focus(),
-            )
-        } else {
-            // Bound the selected parts of the focused line only.
-            let focus = self.selection.selection.focus().geometry(&self.layout, 0.);
-            let mut area = focus;
-            self.selection
-                .selection
-                .geometry_with(&self.layout, |rect, _| {
-                    if rect.y0 == focus.y0 {
-                        area = area.union(rect);
-                    }
-                });
-
-            (area, self.selection.selection.focus())
-        };
-
-        // Ensure some context is captured even for tiny or collapsed selections by including a
-        // region surrounding the selection. Doing this unconditionally, the IME candidate box
-        // usually does not need to jump around when composing starts or the preedit is added to.
-        let [upstream, downstream] = focus.logical_clusters(&self.layout);
-        let font_size = downstream
-            .or(upstream)
-            .map(|cluster| cluster.run().font_size())
-            // .unwrap_or(ResolvedStyle::<ColorBrush>::default().font_size);
-            .unwrap_or(16.0);
-        // Using 0.6 as an estimate of the average advance
-        let inflate = 3. * 0.6 * font_size as f64;
-        let editor_width = self.width.map(f64::from).unwrap_or(f64::INFINITY);
-        Rect {
-            x0: (area.x0 - inflate).max(0.),
-            x1: (area.x1 + inflate).min(editor_width),
-            y0: area.y0,
-            y1: area.y1,
-        }
-    }
-
-    pub fn set_ime_cursor_area(&self, window: &Window) {
-        let area = self.ime_cursor_area();
-        // Note: on X11 `set_ime_cursor_area` may cause the exclusion area to be obscured
-        // until https://github.com/rust-windowing/winit/pull/3966 is in the Winit release
-        // used by this example.
-        window.set_ime_cursor_area(
-            PhysicalPosition::new(
-                area.x0 + self.left as f64,
-                area.y0 + self.top as f64,
-            ),
-            PhysicalSize::new(area.width(), area.height()),
-        );
-    }
-
-    /// Borrow the text content of the text.
-    ///
-    /// The return value is a `SplitString` because it
-    /// excludes the IME preedit region.
-    pub fn text(&self) -> SplitString<'_> {
-        if let Some(preedit_range) = &self.compose {
-            SplitString([
-                &self.text.as_ref()[..preedit_range.start],
-                &self.text.as_ref()[preedit_range.end..],
-            ])
-        } else {
-            SplitString([&self.text.as_ref(), ""])
-        }
-    }
-
     /// Borrow the text content of the text, including the IME preedit
     /// region if any.
     ///
@@ -810,11 +720,6 @@ impl<T: AsRef<str>> TextBox<T> {
     //     self.needs_relayout = true;
     //     &mut self.default_style
     // }
-
-    /// Whether the editor is currently in IME composing mode.
-    pub fn is_composing(&self) -> bool {
-        self.compose.is_some()
-    }
 
     // --- MARK: Raw APIs ---
     /// Get the full read-only details from the layout, if valid.
@@ -954,8 +859,6 @@ impl<T: AsRef<str>> TextBox<T> {
     // --- MARK: Cursor Movement ---
     /// Move the cursor to the cluster boundary nearest this point in the layout.
     pub fn move_to_point(&mut self, x: f32, y: f32) {
-        assert!(!self.is_composing());
-
         self.refresh_layout();
         self.set_selection(Selection::from_point(&self.layout, x, y));
     }
@@ -964,8 +867,6 @@ impl<T: AsRef<str>> TextBox<T> {
     ///
     /// No-op if index is not a char boundary.
     pub fn move_to_byte(&mut self, index: usize) {
-        assert!(!self.is_composing());
-
         if self.text.as_ref().is_char_boundary(index) {
             self.refresh_layout();
             self.set_selection(self.cursor_at(index).into());
@@ -974,8 +875,6 @@ impl<T: AsRef<str>> TextBox<T> {
 
     /// Move the cursor to the start of the text.
     pub fn move_to_text_start(&mut self) {
-        assert!(!self.is_composing());
-
         self.refresh_layout();
         self.set_selection(
             self.selection
@@ -986,16 +885,12 @@ impl<T: AsRef<str>> TextBox<T> {
 
     /// Move the cursor to the start of the physical line.
     pub fn move_to_line_start(&mut self) {
-        assert!(!self.is_composing());
-
         self.refresh_layout();
         self.set_selection(self.selection.selection.line_start(&self.layout, false));
     }
 
     /// Move the cursor to the end of the text.
     pub fn move_to_text_end(&mut self) {
-        assert!(!self.is_composing());
-
         self.refresh_layout();
         self.set_selection(
             self.selection
@@ -1006,32 +901,24 @@ impl<T: AsRef<str>> TextBox<T> {
 
     /// Move the cursor to the end of the physical line.
     pub fn move_to_line_end(&mut self) {
-        assert!(!self.is_composing());
-
         self.refresh_layout();
         self.set_selection(self.selection.selection.line_end(&self.layout, false));
     }
 
     /// Move up to the closest physical cluster boundary on the previous line, preserving the horizontal position for repeated movements.
     pub fn move_up(&mut self) {
-        assert!(!self.is_composing());
-
         self.refresh_layout();
         self.set_selection(self.selection.selection.previous_line(&self.layout, false));
     }
 
     /// Move down to the closest physical cluster boundary on the next line, preserving the horizontal position for repeated movements.
     pub fn move_down(&mut self) {
-        assert!(!self.is_composing());
-
         self.refresh_layout();
         self.set_selection(self.selection.selection.next_line(&self.layout, false));
     }
 
     /// Move to the next cluster left in visual order.
     pub fn move_left(&mut self) {
-        assert!(!self.is_composing());
-
         self.refresh_layout();
         self.set_selection(
             self.selection
@@ -1042,16 +929,12 @@ impl<T: AsRef<str>> TextBox<T> {
 
     /// Move to the next cluster right in visual order.
     pub fn move_right(&mut self) {
-        assert!(!self.is_composing());
-
         self.refresh_layout();
         self.set_selection(self.selection.selection.next_visual(&self.layout, false));
     }
 
     /// Move to the next word boundary left.
     pub fn move_word_left(&mut self) {
-        assert!(!self.is_composing());
-
         self.refresh_layout();
         self.set_selection(
             self.selection
@@ -1062,8 +945,6 @@ impl<T: AsRef<str>> TextBox<T> {
 
     /// Move to the next word boundary right.
     pub fn move_word_right(&mut self) {
-        assert!(!self.is_composing());
-
         self.refresh_layout();
         self.set_selection(
             self.selection
@@ -1074,8 +955,6 @@ impl<T: AsRef<str>> TextBox<T> {
 
     /// Select the whole text.
     pub fn select_all(&mut self) {
-        assert!(!self.is_composing());
-
         self.refresh_layout();
         self.set_selection(
             Selection::from_byte_index(&self.layout, 0_usize, Affinity::default()).move_lines(
@@ -1088,15 +967,11 @@ impl<T: AsRef<str>> TextBox<T> {
 
     /// Collapse selection into caret.
     pub fn collapse_selection(&mut self) {
-        assert!(!self.is_composing());
-
         self.set_selection(self.selection.selection.collapse());
     }
 
     /// Move the selection focus point to the cluster boundary closest to point.
     pub fn extend_selection_to_point(&mut self, x: f32, y: f32, keep_granularity: bool) {
-        assert!(!self.is_composing());
-
         self.refresh_layout();
 
         self.selection

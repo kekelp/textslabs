@@ -4,7 +4,7 @@ use std::{
 
 use parley::*;
 use winit::{
-    event::{Ime, Touch, WindowEvent}, keyboard::{Key, NamedKey}, platform::modifier_supplement::KeyEventExtModifierSupplement, window::Window
+    dpi::{PhysicalPosition, PhysicalSize}, event::{Ime, Touch, WindowEvent}, keyboard::{Key, NamedKey}, platform::modifier_supplement::KeyEventExtModifierSupplement, window::Window
 };
 
 const INSET: f32 = 2.0;
@@ -521,9 +521,6 @@ impl TextBox<String> {
         self.accessibility_unchecked(update, node, next_node_id, x_offset, y_offset);
         Some(())
     }
-}
-
-impl TextBox<String> {
 
     pub fn undo(&mut self) {
         if ! self.is_composing() {
@@ -587,6 +584,99 @@ impl TextBox<String> {
             Affinity::Upstream
         };
         self.set_selection(Cursor::from_byte_index(&self.layout, new_index, affinity).into());
+    }
+
+    /// Borrow the text content of the text.
+    ///
+    /// The return value is a `SplitString` because it
+    /// excludes the IME preedit region.
+    pub fn text(&self) -> SplitString<'_> {
+        if let Some(preedit_range) = &self.compose {
+            SplitString([
+                &self.text[..preedit_range.start],
+                &self.text[preedit_range.end..],
+            ])
+        } else {
+            SplitString([&self.text, ""])
+        }
+    }
+
+
+    /// Get a rectangle bounding the text the user is currently editing.
+    ///
+    /// This is useful for suggesting an exclusion area to the platform for, e.g., IME candidate
+    /// box placement. This bounds the area of the preedit text if present, otherwise it bounds the
+    /// selection on the focused line.
+    pub fn ime_cursor_area(&self) -> Rect {
+        let (area, focus) = if let Some(preedit_range) = &self.compose {
+            let selection = Selection::new(
+                self.cursor_at(preedit_range.start),
+                self.cursor_at(preedit_range.end),
+            );
+
+            // Bound the entire preedit text.
+            let mut area = None;
+            selection.geometry_with(&self.layout, |rect, _| {
+                let area = area.get_or_insert(rect);
+                *area = area.union(rect);
+            });
+
+            (
+                area.unwrap_or_else(|| selection.focus().geometry(&self.layout, 0.)),
+                selection.focus(),
+            )
+        } else {
+            // Bound the selected parts of the focused line only.
+            let focus = self.selection.selection.focus().geometry(&self.layout, 0.);
+            let mut area = focus;
+            self.selection
+                .selection
+                .geometry_with(&self.layout, |rect, _| {
+                    if rect.y0 == focus.y0 {
+                        area = area.union(rect);
+                    }
+                });
+
+            (area, self.selection.selection.focus())
+        };
+
+        // Ensure some context is captured even for tiny or collapsed selections by including a
+        // region surrounding the selection. Doing this unconditionally, the IME candidate box
+        // usually does not need to jump around when composing starts or the preedit is added to.
+        let [upstream, downstream] = focus.logical_clusters(&self.layout);
+        let font_size = downstream
+            .or(upstream)
+            .map(|cluster| cluster.run().font_size())
+            // .unwrap_or(ResolvedStyle::<ColorBrush>::default().font_size);
+            .unwrap_or(16.0);
+        // Using 0.6 as an estimate of the average advance
+        let inflate = 3. * 0.6 * font_size as f64;
+        let editor_width = self.width.map(f64::from).unwrap_or(f64::INFINITY);
+        Rect {
+            x0: (area.x0 - inflate).max(0.),
+            x1: (area.x1 + inflate).min(editor_width),
+            y0: area.y0,
+            y1: area.y1,
+        }
+    }
+
+    pub fn set_ime_cursor_area(&self, window: &Window) {
+        let area = self.ime_cursor_area();
+        // Note: on X11 `set_ime_cursor_area` may cause the exclusion area to be obscured
+        // until https://github.com/rust-windowing/winit/pull/3966 is in the Winit release
+        // used by this example.
+        window.set_ime_cursor_area(
+            PhysicalPosition::new(
+                area.x0 + self.left as f64,
+                area.y0 + self.top as f64,
+            ),
+            PhysicalSize::new(area.width(), area.height()),
+        );
+    }
+
+    /// Whether the editor is currently in IME composing mode.
+    pub fn is_composing(&self) -> bool {
+        self.compose.is_some()
     }
 }
 
