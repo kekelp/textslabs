@@ -4,7 +4,7 @@ use std::{
 
 use parley::*;
 use winit::{
-    dpi::{PhysicalPosition, PhysicalSize}, event::{Ime, Touch, WindowEvent}, keyboard::{Key, NamedKey}, platform::modifier_supplement::KeyEventExtModifierSupplement, window::Window
+    dpi::{PhysicalPosition, PhysicalSize}, event::WindowEvent, keyboard::{Key, NamedKey}, platform::modifier_supplement::KeyEventExtModifierSupplement, window::Window
 };
 
 use parley::{Affinity, Alignment, AlignmentOptions, Selection, TextStyle};
@@ -228,7 +228,7 @@ impl<T: AsRef<str>> TextBox<T> {
         });
     }
 
-    pub fn handle_event(&mut self, event: &winit::event::WindowEvent, modifiers: &Modifiers) {
+    pub fn handle_event_no_edit(&mut self, event: &winit::event::WindowEvent, modifiers: &Modifiers) {
         if !self.selectable {
             self.selection.focused = false;
             self.show_cursor = false;
@@ -948,6 +948,159 @@ impl<T: AsRef<str>> TextBox<T> {
             node.clear_text_selection();
         }
         node.add_action(accesskit::Action::SetTextSelection);
+    }
+
+
+    // --- MARK: Cursor Movement ---
+    /// Move the cursor to the cluster boundary nearest this point in the layout.
+    pub fn move_to_point(&mut self, x: f32, y: f32) {
+        assert!(!self.is_composing());
+
+        self.refresh_layout();
+        self.set_selection(Selection::from_point(&self.layout, x, y));
+    }
+
+    /// Move the cursor to a byte index.
+    ///
+    /// No-op if index is not a char boundary.
+    pub fn move_to_byte(&mut self, index: usize) {
+        assert!(!self.is_composing());
+
+        if self.text.as_ref().is_char_boundary(index) {
+            self.refresh_layout();
+            self.set_selection(self.cursor_at(index).into());
+        }
+    }
+
+    /// Move the cursor to the start of the text.
+    pub fn move_to_text_start(&mut self) {
+        assert!(!self.is_composing());
+
+        self.refresh_layout();
+        self.set_selection(
+            self.selection
+                .selection
+                .move_lines(&self.layout, isize::MIN, false),
+        );
+    }
+
+    /// Move the cursor to the start of the physical line.
+    pub fn move_to_line_start(&mut self) {
+        assert!(!self.is_composing());
+
+        self.refresh_layout();
+        self.set_selection(self.selection.selection.line_start(&self.layout, false));
+    }
+
+    /// Move the cursor to the end of the text.
+    pub fn move_to_text_end(&mut self) {
+        assert!(!self.is_composing());
+
+        self.refresh_layout();
+        self.set_selection(
+            self.selection
+                .selection
+                .move_lines(&self.layout, isize::MAX, false),
+        );
+    }
+
+    /// Move the cursor to the end of the physical line.
+    pub fn move_to_line_end(&mut self) {
+        assert!(!self.is_composing());
+
+        self.refresh_layout();
+        self.set_selection(self.selection.selection.line_end(&self.layout, false));
+    }
+
+    /// Move up to the closest physical cluster boundary on the previous line, preserving the horizontal position for repeated movements.
+    pub fn move_up(&mut self) {
+        assert!(!self.is_composing());
+
+        self.refresh_layout();
+        self.set_selection(self.selection.selection.previous_line(&self.layout, false));
+    }
+
+    /// Move down to the closest physical cluster boundary on the next line, preserving the horizontal position for repeated movements.
+    pub fn move_down(&mut self) {
+        assert!(!self.is_composing());
+
+        self.refresh_layout();
+        self.set_selection(self.selection.selection.next_line(&self.layout, false));
+    }
+
+    /// Move to the next cluster left in visual order.
+    pub fn move_left(&mut self) {
+        assert!(!self.is_composing());
+
+        self.refresh_layout();
+        self.set_selection(
+            self.selection
+                .selection
+                .previous_visual(&self.layout, false),
+        );
+    }
+
+    /// Move to the next cluster right in visual order.
+    pub fn move_right(&mut self) {
+        assert!(!self.is_composing());
+
+        self.refresh_layout();
+        self.set_selection(self.selection.selection.next_visual(&self.layout, false));
+    }
+
+    /// Move to the next word boundary left.
+    pub fn move_word_left(&mut self) {
+        assert!(!self.is_composing());
+
+        self.refresh_layout();
+        self.set_selection(
+            self.selection
+                .selection
+                .previous_visual_word(&self.layout, false),
+        );
+    }
+
+    /// Move to the next word boundary right.
+    pub fn move_word_right(&mut self) {
+        assert!(!self.is_composing());
+
+        self.refresh_layout();
+        self.set_selection(
+            self.selection
+                .selection
+                .next_visual_word(&self.layout, false),
+        );
+    }
+
+    /// Select the whole text.
+    pub fn select_all(&mut self) {
+        assert!(!self.is_composing());
+
+        self.refresh_layout();
+        self.set_selection(
+            Selection::from_byte_index(&self.layout, 0_usize, Affinity::default()).move_lines(
+                &self.layout,
+                isize::MAX,
+                true,
+            ),
+        );
+    }
+
+    /// Collapse selection into caret.
+    pub fn collapse_selection(&mut self) {
+        assert!(!self.is_composing());
+
+        self.set_selection(self.selection.selection.collapse());
+    }
+
+    /// Move the selection focus point to the cluster boundary closest to point.
+    pub fn extend_selection_to_point(&mut self, x: f32, y: f32, keep_granularity: bool) {
+        assert!(!self.is_composing());
+
+        self.refresh_layout();
+
+        self.selection
+            .extend_selection_to_point(&self.layout, x, y, keep_granularity);
     }
 
 }
