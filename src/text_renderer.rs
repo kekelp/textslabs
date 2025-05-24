@@ -633,8 +633,8 @@ struct GlyphWithContext {
 
 impl GlyphWithContext {
     fn new(glyph: Glyph, run_x: f32, run_y: f32, font_key: u64, font_size: f32, color: ColorBrush) -> Self {
-        let glyph_x = run_x + glyph.x;
-        let glyph_y = run_y - glyph.y;
+        let glyph_x = (run_x).round() + glyph.x;
+        let glyph_y = (run_y).round() - glyph.y;
 
         let (quantized_pos_x, frac_pos_x, subpixel_bin_x) = quantize(glyph_x);
         let (quantized_pos_y, frac_pos_y, subpixel_bin_y) = quantize(glyph_y);
