@@ -95,7 +95,7 @@ impl State {
     ) {
         let mut focus_grabbed = false;
         for text_box in &mut self.text_boxes {
-            if text_box.try_grab_focus(&event, &self.modifiers, focus_grabbed) {
+            if text_box.update_focus(&event, &self.modifiers, focus_grabbed) {
                 focus_grabbed = true;
             }
         }
@@ -125,23 +125,18 @@ impl State {
                 }
                 self.text_renderer.gpu_load(&self.device, &self.queue);
 
-                let mut encoder = self
-                    .device
-                    .create_command_encoder(&CommandEncoderDescriptor { label: None });
+                let mut encoder = self.device.create_command_encoder(&CommandEncoderDescriptor { label: None });
                 {
                     let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
-                        label: None,
                         color_attachments: &[Some(RenderPassColorAttachment {
                             view: &view,
                             resolve_target: None,
                             ops: Operations {
-                                load: LoadOp::Clear(wgpu::Color::GREEN),
+                                load: LoadOp::Clear(wgpu::Color::WHITE),
                                 store: wgpu::StoreOp::Store,
                             },
                         })],
-                        depth_stencil_attachment: None,
-                        timestamp_writes: None,
-                        occlusion_query_set: None,
+                        ..Default::default()
                     });
 
                     self.text_renderer.render(&mut pass);

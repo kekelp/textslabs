@@ -266,11 +266,9 @@ impl<T: AsRef<str>> TextBox<T> {
                 }
             }
             WindowEvent::CursorMoved { position, .. } => {
-                let prev_pos = self.selection.cursor_pos;
                 let cursor_pos = (position.x as f32, position.y as f32);
-
                 // macOS seems to generate a spurious move after selecting word?
-                if self.selection.pointer_down && prev_pos != self.selection.cursor_pos {
+                if self.selection.pointer_down {
                     let cursor_pos = (
                         cursor_pos.0 - self.left as f32,
                         cursor_pos.1 - self.top as f32,
@@ -340,12 +338,32 @@ impl<T: AsRef<str>> TextBox<T> {
         }
     }
 
-    pub fn try_grab_focus(
+    pub fn update_focus(
         &mut self,
         event: &WindowEvent,
         _modifiers: &Modifiers,
         focus_already_grabbed: bool,
     ) -> bool {
+        // dumb bookkeeping
+        match event {
+            WindowEvent::MouseInput { state, button, .. } => {
+                if *button == winit::event::MouseButton::Left && state.is_pressed() {
+                    let offset = (
+                        self.selection.cursor_pos.0 as f64 - self.left,
+                        self.selection.cursor_pos.1 as f64 - self.top,
+                    );
+                    if self.layout.hit_bounding_box(offset) {
+                        self.selection.pointer_down = true;
+                    }
+                }
+            }
+            WindowEvent::CursorMoved { position, .. } => {
+                let cursor_pos = (position.x as f32, position.y as f32);
+                self.selection.cursor_pos = cursor_pos;
+            }
+            _ => {}
+        }
+
         if !self.selectable || focus_already_grabbed {
             self.set_selection(self.selection.selection.collapse());
             self.selection.focused = false;
@@ -354,6 +372,7 @@ impl<T: AsRef<str>> TextBox<T> {
 
         self.refresh_layout();
 
+        // real focus handling
         match event {
             WindowEvent::MouseInput { state, button, .. } => {
                 if *button == winit::event::MouseButton::Left && state.is_pressed() {
@@ -361,17 +380,11 @@ impl<T: AsRef<str>> TextBox<T> {
                         self.selection.cursor_pos.0 as f64 - self.left,
                         self.selection.cursor_pos.1 as f64 - self.top,
                     );
-
                     if self.layout.hit_bounding_box(offset) {
-                        self.selection.pointer_down = true;
                         self.selection.focused = true;
                         return true;
                     }
                 }
-            }
-            WindowEvent::CursorMoved { position, .. } => {
-                let cursor_pos = (position.x as f32, position.y as f32);
-                self.selection.cursor_pos = cursor_pos;
             }
             _ => {}
         }

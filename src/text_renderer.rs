@@ -72,7 +72,7 @@ impl ContextlessTextRenderer {
         self.last_frame_evicted != current_frame
     }
 
-    fn prepare_selection_rect(&mut self, rect: parley::Rect, left: f32, top: f32) {
+    fn add_selection_rect(&mut self, rect: parley::Rect, left: f32, top: f32, color: u32) {
         
         let left = left as i32;
         let top = top as i32;
@@ -87,7 +87,7 @@ impl ContextlessTextRenderer {
             pos: [x0, y0],
             dim: [(x1 - x0) as u16, (y1 - y0) as u16],
             // dim: [(rect.x1 - rect.x0) as u16, (rect.y1 - rect.y0) as u16],
-            color: 0x99_99_cc_cc,
+            color,
             uv_origin: [0, 0],
             depth: 0.0,
             flags: 2, // todo make names for these
@@ -168,8 +168,6 @@ fn make_quad(glyph: &GlyphWithContext, stored_glyph: &StoredGlyph) -> Quad {
 
     let (uv_x, uv_y) = (stored_glyph.alloc.rectangle.min.x, stored_glyph.alloc.rectangle.min.y);
     let (size_x, size_y) = (stored_glyph.size.width, stored_glyph.size.height);
-    // let (size_x, size_y) = (stored_glyph.alloc.rectangle.width(), stored_glyph.alloc.rectangle.height());
-
 
     let (color, flags) = match stored_glyph.content_type {
         Content::Mask => (glyph.color, 0),
@@ -259,14 +257,17 @@ impl TextRenderer {
         let (left, top) = text_box.pos();
         let (left, top) = (left as f32, top as f32);
 
+        let selection_color = 0x99_99_ff_cc;
+        let cursor_color = 0xff_ff_ff_ff;
+
         text_box.selection().geometry_with(&text_box.layout, |rect, _line_i| {
-            self.text_renderer.prepare_selection_rect(rect, left, top);
+            self.text_renderer.add_selection_rect(rect, left, top, selection_color);
         });
         
         if text_box.show_cursor {
             let size = 3.0;
             let cursor_rect = text_box.selection().focus().geometry(&text_box.layout, size);
-            self.text_renderer.prepare_selection_rect(cursor_rect, left, top);
+            self.text_renderer.add_selection_rect(cursor_rect, left, top, cursor_color);
         }
 
         self.text_renderer.prepare_layout(text_box.layout(), &mut self.scale_cx, left, top);
