@@ -9,6 +9,7 @@ use winit::{
 
 use parley::{Affinity, Alignment, AlignmentOptions, Selection, TextStyle};
 use winit::event::Modifiers;
+use clipboard_rs::{Clipboard, ClipboardContext};
 
 use crate::*;
 
@@ -40,7 +41,6 @@ pub struct TextBox<T: AsRef<str>> {
     pub(crate) text: T,
     pub(crate) style: Style,
     pub(crate) shared_style_version: u32,
-    pub(crate) selectable: bool,
     pub(crate) layout: Layout<ColorBrush>,
     pub(crate) needs_relayout: bool,
     pub(crate) left: f64,
@@ -50,13 +50,17 @@ pub struct TextBox<T: AsRef<str>> {
     pub(crate) selection: SelectionState,
     pub(crate) width: Option<f32>,
     pub(crate) alignment: Alignment,
+    pub(crate) modifiers: Modifiers,
+    pub(crate) scale: f32,
+    
+    pub(crate) selectable: bool,
+
+    pub(crate) editable: bool,
 
     pub(crate) compose: Option<Range<usize>>,
     pub(crate) show_cursor: bool,
     pub(crate) start_time: Option<Instant>,
     pub(crate) blink_period: Duration,
-    pub(crate) modifiers: Modifiers,
-    pub(crate) scale: f32,
     pub(crate) history: TextEditHistory,
 }
 
@@ -140,7 +144,12 @@ impl SelectionState {
 }
 
 impl<T: AsRef<str>> TextBox<T> {
-    pub fn new(text: T, pos: (f64, f64), max_advance: f32, depth: f32) -> Self {
+    pub fn new(text: T, pos: (f64, f64), max_advance: f32, depth: f32, editable: bool) -> Self {
+        let history = if editable {
+            TextEditHistory::new()
+        } else {
+            TextEditHistory::empty()
+        };
         Self {
             text,
             shared_style_version: 0,
@@ -161,7 +170,8 @@ impl<T: AsRef<str>> TextBox<T> {
             blink_period: Default::default(),
             modifiers: Default::default(),
             scale: Default::default(),
-            history: TextEditHistory::default(),
+            history,
+            editable,
         }
     }
 
@@ -228,7 +238,7 @@ impl<T: AsRef<str>> TextBox<T> {
         });
     }
 
-    pub fn handle_event_no_edit(&mut self, event: &winit::event::WindowEvent, modifiers: &Modifiers) {
+    pub fn handle_event_no_edit(&mut self, event: &winit::event::WindowEvent) {
         if !self.selectable {
             self.selection.focused = false;
             return;
@@ -255,6 +265,24 @@ impl<T: AsRef<str>> TextBox<T> {
                     self.selection.pointer_down = false;
                 }
             }
+            WindowEvent::CursorMoved { position, .. } => {
+                let prev_pos = self.selection.cursor_pos;
+                let cursor_pos = (position.x as f32, position.y as f32);
+
+                // macOS seems to generate a spurious move after selecting word?
+                if self.selection.pointer_down && prev_pos != self.selection.cursor_pos {
+                    let cursor_pos = (
+                        cursor_pos.0 - self.left as f32,
+                        cursor_pos.1 - self.top as f32,
+                    );
+                    self.selection.extend_selection_to_point(
+                        &self.layout,
+                        cursor_pos.0,
+                        cursor_pos.1,
+                        true,
+                    );
+                }
+            }
             _ => {}
         }
 
@@ -264,7 +292,7 @@ impl<T: AsRef<str>> TextBox<T> {
 
         self.selection.handle_event(
             event,
-            modifiers,
+            &self.modifiers,
             &self.layout,
             self.left as f32,
             self.top as f32,
@@ -274,7 +302,7 @@ impl<T: AsRef<str>> TextBox<T> {
             WindowEvent::KeyboardInput { event, .. } => {
                 if !event.state.is_pressed() {}
                 #[allow(unused)]
-                let mods_state = modifiers.state();
+                let mods_state = self.modifiers.state();
                 let shift = mods_state.shift_key();
                 let action_mod = if cfg!(target_os = "macos") {
                     mods_state.super_key()
@@ -286,7 +314,6 @@ impl<T: AsRef<str>> TextBox<T> {
                 if action_mod {
                     match event.key_without_modifiers() {
                         Key::Character(c) => {
-                            use clipboard_rs::{Clipboard, ClipboardContext};
                             match c.as_str() {
                                 "c" if !shift => {
                                     if let Some(text) = self.selected_text() {
@@ -313,13 +340,20 @@ impl<T: AsRef<str>> TextBox<T> {
         }
     }
 
-    pub fn try_grab_focus(&mut self, event: &WindowEvent, _modifiers: &Modifiers) -> bool {
-        if !self.selectable {
+    pub fn try_grab_focus(
+        &mut self,
+        event: &WindowEvent,
+        _modifiers: &Modifiers,
+        focus_already_grabbed: bool,
+    ) -> bool {
+        if !self.selectable || focus_already_grabbed {
+            self.set_selection(self.selection.selection.collapse());
             self.selection.focused = false;
             return false;
         }
 
         self.refresh_layout();
+
         match event {
             WindowEvent::MouseInput { state, button, .. } => {
                 if *button == winit::event::MouseButton::Left && state.is_pressed() {
@@ -336,24 +370,8 @@ impl<T: AsRef<str>> TextBox<T> {
                 }
             }
             WindowEvent::CursorMoved { position, .. } => {
-                let prev_pos = self.selection.cursor_pos;
-
                 let cursor_pos = (position.x as f32, position.y as f32);
                 self.selection.cursor_pos = cursor_pos;
-
-                // macOS seems to generate a spurious move after selecting word?
-                if self.selection.pointer_down && prev_pos != self.selection.cursor_pos {
-                    let cursor_pos = (
-                        cursor_pos.0 - self.left as f32,
-                        cursor_pos.1 - self.top as f32,
-                    );
-                    self.selection.extend_selection_to_point(
-                        &self.layout,
-                        cursor_pos.0,
-                        cursor_pos.1,
-                        true,
-                    );
-                }
             }
             _ => {}
         }

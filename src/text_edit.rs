@@ -91,7 +91,11 @@ impl TextBox<String> {
         });
     }
 
-    pub fn handle_event_edit(&mut self, event: &WindowEvent, window: &Window) {
+    pub fn handle_event(&mut self, event: &WindowEvent, window: &Window) {
+        if let WindowEvent::ModifiersChanged(modifiers) = event {
+            self.modifiers = *modifiers;
+        }
+        
         if !self.selectable {
             self.selection.focused = false;
             return;
@@ -102,15 +106,13 @@ impl TextBox<String> {
 
         self.refresh_layout();
 
-        self.handle_event_no_edit(event, &self.modifiers.clone());
+        self.handle_event_no_edit(event);
+
+        if ! self.editable {
+            return
+        }
 
         match event {
-            WindowEvent::Resized(size) => {
-                self.set_width(Some(size.width as f32 - 2_f32 * INSET));
-            }
-            WindowEvent::ModifiersChanged(modifiers) => {
-                self.modifiers = *modifiers;
-            }
             WindowEvent::KeyboardInput { event, .. } if !self.is_composing() => {
                 if !event.state.is_pressed() {
                     return;
@@ -241,6 +243,7 @@ impl TextBox<String> {
                 use winit::event::TouchPhase::*;
                 match phase {
                     Started => {
+                        // todo: use left and top. I can't test this though
                         // TODO: start a timer to convert to a SelectWordAtPoint
                         self.move_to_point(location.x as f32 - INSET, location.y as f32 - INSET);
                     }
@@ -752,8 +755,17 @@ pub struct TextRestore<'a> {
     prev_selection: Selection,
 }
 
-impl Default for TextEditHistory {
-    fn default() -> Self {
+impl TextEditHistory {
+    pub(crate) fn empty() -> TextEditHistory {
+        Self {
+            undo_text: String::new(),
+            redo_text: String::new(),
+            history: Vec::new(),
+            current_position: 0,
+            can_grow: GrowHint::CannotGrow,
+        }
+    }
+    pub(crate) fn new() -> TextEditHistory {
         Self {
             undo_text: String::with_capacity(64),
             redo_text: String::with_capacity(64),

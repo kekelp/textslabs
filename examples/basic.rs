@@ -51,16 +51,18 @@ impl State {
         });
 
         let mut text_boxes = vec![
-            TextBox::new("Text box".to_string(), (10.0, 10.0), 300.0, 0.0),
-            TextBox::new("Saddy (rare) ".to_string(), (100.0, 200.0), 300.0, 0.0),
-            TextBox::new("Words words words ".to_string(), (20.0, 20.0), 300.0, 0.0),
+            TextBox::new("Text box".to_string(), (10.0, 15.0), 300.0, 0.0, true),
+            TextBox::new("Saddy (rare) ".to_string(), (100.0, 200.0), 300.0, 0.0, true),
+            TextBox::new("Words words words ".to_string(), (20.0, 20.0), 300.0, 0.0, false),
             TextBox::new(
                 "Amogus (non selectable)".to_string(),
                 (10.0, 110.0),
                 300.0,
                 0.0,
+                false,
             ),
         ];
+        text_boxes[3].set_selectable(false);
 
         text_boxes[1].set_shared_style(&big_text_style);
         text_boxes[2].set_shared_style(&big_text_style);
@@ -71,7 +73,6 @@ impl State {
 
         big_text_style.with_borrow_mut(|style| style.font_size = 32.0);
 
-        text_boxes[3].set_selectable(false);
 
         let text_renderer = TextRenderer::new(&device, &queue, surface_config.format);
 
@@ -92,13 +93,14 @@ impl State {
         event_loop: &winit::event_loop::ActiveEventLoop,
         event: WindowEvent,
     ) {
+        let mut focus_grabbed = false;
         for text_box in &mut self.text_boxes {
-            if text_box.try_grab_focus(&event, &self.modifiers) {
-                break;
+            if text_box.try_grab_focus(&event, &self.modifiers, focus_grabbed) {
+                focus_grabbed = true;
             }
         }
         for text_box in &mut self.text_boxes {
-            text_box.handle_event_edit(&event, &self.window);
+            text_box.handle_event(&event, &self.window);
         }
 
         match event {
