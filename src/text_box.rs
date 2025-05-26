@@ -239,8 +239,13 @@ impl<T: AsRef<str>> TextBox<T> {
     }
 
     pub fn handle_event_no_edit(&mut self, event: &winit::event::WindowEvent) {
+        if !self.selection.focused {
+            self.show_cursor = false;
+            return;
+        }
         if !self.selectable {
             self.selection.focused = false;
+            self.show_cursor = false;
             return;
         }
 
@@ -284,9 +289,9 @@ impl<T: AsRef<str>> TextBox<T> {
             _ => {}
         }
 
-        if !self.selection.focused {
-            return;
-        }
+        // if !self.selection.focused {
+        //     return;
+        // }
 
         self.selection.handle_event(
             event,
@@ -295,7 +300,7 @@ impl<T: AsRef<str>> TextBox<T> {
             self.left as f32,
             self.top as f32,
         );
-
+        
         match event {
             WindowEvent::KeyboardInput { event, .. } => {
                 if !event.state.is_pressed() {}
@@ -341,11 +346,13 @@ impl<T: AsRef<str>> TextBox<T> {
     pub fn update_focus(
         &mut self,
         event: &WindowEvent,
-        _modifiers: &Modifiers,
         focus_already_grabbed: bool,
     ) -> bool {
         // dumb bookkeeping
         match event {
+            WindowEvent::ModifiersChanged(modifiers) => {
+                self.modifiers = *modifiers;
+            }
             WindowEvent::MouseInput { state, button, .. } => {
                 if *button == winit::event::MouseButton::Left && state.is_pressed() {
                     let offset = (
@@ -383,6 +390,8 @@ impl<T: AsRef<str>> TextBox<T> {
                     if self.layout.hit_bounding_box(offset) {
                         self.selection.focused = true;
                         return true;
+                    } else {
+                        return false;
                     }
                 }
             }

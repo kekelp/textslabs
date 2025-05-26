@@ -92,8 +92,8 @@ impl TextBox<String> {
     }
 
     pub fn handle_event(&mut self, event: &WindowEvent, window: &Window) {
-        if let WindowEvent::ModifiersChanged(modifiers) = event {
-            self.modifiers = *modifiers;
+        if !self.editable || !self.focused() {
+            self.show_cursor = false;
         }
         
         if !self.selectable {
@@ -128,34 +128,36 @@ impl TextBox<String> {
                 };
 
                 // edit action mods
-                match event.key_without_modifiers() {
-                    Key::Character(c) => {
-                        use clipboard_rs::{Clipboard, ClipboardContext};
-                        match c.as_str() {
-                            "x" if !shift => {
-                                if let Some(text) = self.selected_text() {
+                if action_mod {
+                    match event.key_without_modifiers() {
+                        Key::Character(c) => {
+                            use clipboard_rs::{Clipboard, ClipboardContext};
+                            match c.as_str() {
+                                "x" if !shift => {
+                                    if let Some(text) = self.selected_text() {
+                                        let cb = ClipboardContext::new().unwrap();
+                                        cb.set_text(text.to_owned()).ok();
+                                        self.delete_selection();
+                                    }
+                                }
+                                "v" if !shift => {
                                     let cb = ClipboardContext::new().unwrap();
-                                    cb.set_text(text.to_owned()).ok();
-                                    self.delete_selection();
+                                    let text = cb.get_text().unwrap_or_default();
+                                    self.insert_or_replace_selection(&text);
                                 }
-                            }
-                            "v" if !shift => {
-                                let cb = ClipboardContext::new().unwrap();
-                                let text = cb.get_text().unwrap_or_default();
-                                self.insert_or_replace_selection(&text);
-                            }
-                            "z" => {
-                                if shift {
-                                    self.redo();
-                                } else {
-                                    self.undo();
+                                "z" => {
+                                    if shift {
+                                        self.redo();
+                                    } else {
+                                        self.undo();
+                                    }
                                 }
+                                _ => (),
                             }
-                            _ => (),
                         }
-                    }
-                    _ => (),
-                };
+                        _ => (),
+                    };
+                }
 
                 match &event.logical_key {
                     Key::Named(NamedKey::ArrowLeft) => {

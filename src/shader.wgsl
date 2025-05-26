@@ -69,10 +69,10 @@ fn vs_main(input: VertexInput) -> VertexOutput {
     vert_output.position.y = -vert_output.position.y;
 
     vert_output.color = vec4<f32>(
+        f32((input.color & 0xff000000u) >> 24u) / 255.0,
         f32((input.color & 0x00ff0000u) >> 16u) / 255.0,
         f32((input.color & 0x0000ff00u) >> 8u ) / 255.0,
         f32((input.color & 0x000000ffu))        / 255.0,
-        f32((input.color & 0xff000000u) >> 24u) / 255.0,
     );
 
     vert_output.flags = input.flags;

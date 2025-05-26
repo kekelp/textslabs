@@ -22,10 +22,10 @@ struct State {
     surface: wgpu::Surface<'static>,
     surface_config: SurfaceConfiguration,
     window: Arc<Window>,
-    modifiers: Modifiers,
 
     text_renderer: TextRenderer,
     text_boxes: Vec<TextBox<String>>,
+    static_text_boxes: Vec<TextBox<&'static str>>,
 }
 
 impl State {
@@ -47,6 +47,7 @@ impl State {
 
         let big_text_style: SharedStyle = SharedStyle::new(TextStyle {
             font_size: 64.0,
+            brush: ColorBrush([0,0,0,255]),
             ..Default::default()
         });
 
@@ -73,6 +74,12 @@ impl State {
 
         big_text_style.with_borrow_mut(|style| style.font_size = 32.0);
 
+        let mut static_text_boxes = vec![
+            TextBox::new("&'static str", (400.0, 500.0), 300.0, 0.0, false),
+            TextBox::new("Static words ", (200.0, 400.0), 300.0, 0.0, false),
+        ];
+        static_text_boxes[1].set_shared_style(&big_text_style);
+
 
         let text_renderer = TextRenderer::new(&device, &queue, surface_config.format);
 
@@ -84,7 +91,7 @@ impl State {
             window,
             text_renderer,
             text_boxes,
-            modifiers: Modifiers::default(),
+            static_text_boxes,
         }
     }
 
@@ -93,20 +100,27 @@ impl State {
         event_loop: &winit::event_loop::ActiveEventLoop,
         event: WindowEvent,
     ) {
-        let mut focus_grabbed = false;
+        let mut already_grabbed = false;
         for text_box in &mut self.text_boxes {
-            if text_box.update_focus(&event, &self.modifiers, focus_grabbed) {
-                focus_grabbed = true;
+            if text_box.update_focus(&event, already_grabbed) {
+                already_grabbed = true;
             }
         }
+        for static_text_box in &mut self.static_text_boxes {
+            if static_text_box.update_focus(&event, already_grabbed) {
+                already_grabbed = true;
+            }
+        }
+        
         for text_box in &mut self.text_boxes {
             text_box.handle_event(&event, &self.window);
         }
+        for text_box in &mut self.static_text_boxes {
+            text_box.handle_event_no_edit(&event);
+        }
+
 
         match event {
-            WindowEvent::ModifiersChanged(mods) => {
-                self.modifiers = mods;
-            }
             WindowEvent::Resized(size) => {
                 self.surface_config.width = size.width;
                 self.surface_config.height = size.height;
@@ -121,6 +135,9 @@ impl State {
 
                 self.text_renderer.clear();
                 for text_box in &mut self.text_boxes {
+                    self.text_renderer.prepare_text_box(text_box);
+                }
+                for text_box in &mut self.static_text_boxes {
                     self.text_renderer.prepare_text_box(text_box);
                 }
                 self.text_renderer.gpu_load(&self.device, &self.queue);
