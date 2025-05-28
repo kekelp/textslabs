@@ -91,17 +91,23 @@ impl TextBox<String> {
         });
     }
 
-    pub fn handle_event(&mut self, event: &WindowEvent, window: &Window) {
+    pub fn handle_event(&mut self, event: &WindowEvent, window: &Window, focus_already_grabbed: bool) -> bool {
+        let focus_grabbed = self.update_focus(event, focus_already_grabbed);
+
+        if focus_already_grabbed {
+            return false;
+        }
+
         if !self.editable || !self.focused() {
             self.show_cursor = false;
         }
         
         if !self.selectable {
             self.selection.focused = false;
-            return;
+            return focus_grabbed;
         }
         if !self.focused() {
-            return;
+            return focus_grabbed;
         }
 
         self.refresh_layout();
@@ -109,13 +115,13 @@ impl TextBox<String> {
         self.handle_event_no_edit(event);
 
         if ! self.editable {
-            return
+            return focus_grabbed
         }
 
         match event {
             WindowEvent::KeyboardInput { event, .. } if !self.is_composing() => {
                 if !event.state.is_pressed() {
-                    return;
+                    return focus_grabbed;
                 }
                 self.cursor_reset();
                 #[allow(unused)]
@@ -280,6 +286,8 @@ impl TextBox<String> {
             }
             _ => {}
         }
+
+        return focus_grabbed;
     }
 
     #[cfg(feature = "accesskit")]

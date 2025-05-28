@@ -263,7 +263,7 @@ impl TextRenderer {
             self.text_renderer.add_selection_rect(rect, left, top, selection_color);
         });
         
-        let show_cursor = text_box.editable && text_box.focused(); 
+        let show_cursor = text_box.editable && text_box.focused() && text_box.selection.selection.is_collapsed(); 
         if show_cursor {
             let size = 3.0;
             let cursor_rect = text_box.selection().focus().geometry(&text_box.layout, size);

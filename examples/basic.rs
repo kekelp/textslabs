@@ -102,22 +102,22 @@ impl State {
     ) {
         let mut already_grabbed = false;
         for text_box in &mut self.text_boxes {
-            if text_box.update_focus(&event, already_grabbed) {
+            if text_box.handle_event(&event, &self.window, already_grabbed) {
                 already_grabbed = true;
             }
         }
-        for static_text_box in &mut self.static_text_boxes {
-            if static_text_box.update_focus(&event, already_grabbed) {
-                already_grabbed = true;
-            }
-        }
+        // for static_text_box in &mut self.static_text_boxes {
+        //     if static_text_box.handle_event_no_edit(&event, already_grabbed) {
+        //         already_grabbed = true;
+        //     }
+        // }
         
-        for text_box in &mut self.text_boxes {
-            text_box.handle_event(&event, &self.window);
-        }
-        for text_box in &mut self.static_text_boxes {
-            text_box.handle_event_no_edit(&event);
-        }
+        // for text_box in &mut self.text_boxes {
+        //     text_box.handle_event(&event, &self.window);
+        // }
+        // for text_box in &mut self.static_text_boxes {
+        //     text_box.handle_event_no_edit(&event);
+        // }
 
 
         match event {
