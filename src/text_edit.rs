@@ -137,19 +137,20 @@ impl TextBox<String> {
                 if action_mod {
                     match event.key_without_modifiers() {
                         Key::Character(c) => {
-                            use clipboard_rs::{Clipboard, ClipboardContext};
                             match c.as_str() {
                                 "x" if !shift => {
-                                    if let Some(text) = self.selected_text() {
-                                        let cb = ClipboardContext::new().unwrap();
-                                        cb.set_text(text.to_owned()).ok();
-                                        self.delete_selection();
-                                    }
+                                    with_clipboard(|cb| {
+                                        if let Some(text) = self.selected_text() {
+                                            cb.set_text(text.to_owned()).ok();
+                                            self.delete_selection();
+                                        }
+                                    });
                                 }
                                 "v" if !shift => {
-                                    let cb = ClipboardContext::new().unwrap();
-                                    let text = cb.get_text().unwrap_or_default();
-                                    self.insert_or_replace_selection(&text);
+                                    with_clipboard(|cb| {
+                                        let text = cb.get_text().unwrap_or_default();
+                                        self.insert_or_replace_selection(&text);
+                                    });
                                 }
                                 "z" => {
                                     if shift {

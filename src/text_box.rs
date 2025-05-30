@@ -6,10 +6,10 @@ use parley::*;
 use winit::{
     event::WindowEvent, keyboard::{Key, NamedKey}, platform::modifier_supplement::KeyEventExtModifierSupplement
 };
+use arboard::Clipboard;
 
 use parley::{Affinity, Alignment, AlignmentOptions, Selection, TextStyle};
 use winit::event::Modifiers;
-use clipboard_rs::{Clipboard, ClipboardContext};
 
 use crate::*;
 
@@ -34,6 +34,15 @@ thread_local! {
 
 pub(crate) fn with_text_cx<R>(f: impl FnOnce(&mut LayoutContext<ColorBrush>, &mut FontContext) -> R) -> R {
     let res = TEXT_CX.with_borrow_mut(|text_cx| f(&mut text_cx.layout_cx, &mut text_cx.font_cx));
+    res
+}
+
+thread_local! {
+    static CLIPBOARD: RefCell<Clipboard> = RefCell::new(Clipboard::new().unwrap());
+}
+
+pub(crate) fn with_clipboard<R>(f: impl FnOnce(&mut Clipboard) -> R) -> R {
+    let res = CLIPBOARD.with_borrow_mut(|clipboard| f(clipboard));
     res
 }
 
@@ -319,10 +328,11 @@ impl<T: AsRef<str>> TextBox<T> {
                         Key::Character(c) => {
                             match c.as_str() {
                                 "c" if !shift => {
-                                    if let Some(text) = self.selected_text() {
-                                        let cb = ClipboardContext::new().unwrap();
-                                        cb.set_text(text.to_owned()).ok();
-                                    }
+                                    with_clipboard(|cb| {
+                                        if let Some(text) = self.selected_text() {
+                                            cb.set_text(text.to_owned()).ok();
+                                        }
+                                    })
                                 }
                                 "a" => {
                                     self.selection.selection = Selection::from_byte_index(
