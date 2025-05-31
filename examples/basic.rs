@@ -47,7 +47,7 @@ impl State {
 
         let big_text_style: SharedStyle = SharedStyle::new(TextStyle {
             font_size: 64.0,
-            brush: ColorBrush([0,0,0,255]),
+            brush: ColorBrush([200,0,0,255]),
             ..Default::default()
         });
 
@@ -106,13 +106,12 @@ impl State {
                 already_grabbed = true;
             }
         }
-
+        
         for text_box in &mut self.static_text_boxes {
-            if text_box.handle_event_no_edit(&event, already_grabbed) {
+            if text_box.static_handle_event(&event, already_grabbed) {
                 already_grabbed = true;
             }
         }
-
 
         match event {
             WindowEvent::Resized(size) => {

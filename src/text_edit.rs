@@ -92,18 +92,21 @@ impl TextBox<String> {
     }
 
     pub fn handle_event(&mut self, event: &WindowEvent, window: &Window, focus_already_grabbed: bool) -> bool {
-        let focus_grabbed = self.update_focus(event, focus_already_grabbed);
+        self.update_mouse_state(event);
 
         if focus_already_grabbed {
+            self.reset_selection();
             return false;
         }
 
+        let focus_grabbed = self.update_focus(event, focus_already_grabbed);
+        
         if !self.editable || !self.focused() {
             self.show_cursor = false;
         }
         
         if !self.selectable {
-            self.selection.focused = false;
+            self.reset_selection();
             return focus_grabbed;
         }
         if !self.focused() {
