@@ -112,7 +112,7 @@ impl TextBox<String> {
 
         self.refresh_layout();
 
-        self.handle_event_no_edit(event);
+        self.handle_event_no_edit_inner(event);
 
         if ! self.editable {
             return focus_grabbed

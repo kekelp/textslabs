@@ -259,6 +259,10 @@ impl<T: AsRef<str>> TextBox<T> {
     }
 
     pub fn handle_event_no_edit(&mut self, event: &winit::event::WindowEvent) {
+
+    }
+
+    pub fn handle_event_no_edit_inner(&mut self, event: &winit::event::WindowEvent) {
         if !self.selection.focused {
             self.show_cursor = false;
             return;
@@ -280,10 +284,15 @@ impl<T: AsRef<str>> TextBox<T> {
                             self.selection.cursor_pos.1 as f64 - self.top,
                         );
 
-                        if !self.layout.hit_bounding_box(offset) {
+                        let hit = if self.editable {
+                            self.hit_full_rect(offset)
+                        } else {
+                            self.layout.hit_bounding_box(offset)
+                        };
+
+                        if !hit {
                             self.selection.focused = false;
-                            self.selection
-                                .set_selection(self.selection.selection.collapse());
+                            self.selection.set_selection(self.selection.selection.collapse());
                         }
                     }
                 } else {
@@ -380,7 +389,7 @@ impl<T: AsRef<str>> TextBox<T> {
                         self.selection.cursor_pos.0 as f64 - self.left,
                         self.selection.cursor_pos.1 as f64 - self.top,
                     );
-                    if self.layout.hit_bounding_box(offset) {
+                    if self.hit_full_rect(offset) {
                         self.selection.pointer_down = true;
                     }
                 }
@@ -408,7 +417,14 @@ impl<T: AsRef<str>> TextBox<T> {
                         self.selection.cursor_pos.0 as f64 - self.left,
                         self.selection.cursor_pos.1 as f64 - self.top,
                     );
-                    if self.layout.hit_bounding_box(offset) {
+
+                    let hit = if self.editable {
+                        self.hit_full_rect(offset)
+                    } else {
+                        self.layout.hit_bounding_box(offset)
+                    };
+
+                    if hit {
                         self.selection.focused = true;
                         return true;
                     } else {
