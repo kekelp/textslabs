@@ -4,7 +4,7 @@ use std::sync::Arc;
 use wgpu::*;
 use winit::{
     dpi::LogicalSize,
-    event::{Modifiers, WindowEvent},
+    event::WindowEvent,
     event_loop::EventLoop,
     window::Window,
 };
@@ -47,7 +47,7 @@ impl State {
 
         let big_text_style: SharedStyle = SharedStyle::new(TextStyle {
             font_size: 64.0,
-            brush: ColorBrush([200,0,0,255]),
+            brush: ColorBrush([255,0,0,255]),
             ..Default::default()
         });
 
@@ -142,7 +142,7 @@ impl State {
                             view: &view,
                             resolve_target: None,
                             ops: Operations {
-                                load: LoadOp::Clear(wgpu::Color::WHITE),
+                                load: LoadOp::Clear(wgpu::Color::GREEN),
                                 store: wgpu::StoreOp::Store,
                             },
                         })],

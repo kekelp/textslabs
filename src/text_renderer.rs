@@ -1,5 +1,3 @@
-use swash::text;
-
 use crate::*;
 
 pub struct TextRenderer {
@@ -640,12 +638,11 @@ impl GlyphWithContext {
         let (quantized_pos_x, frac_pos_x, subpixel_bin_x) = quantize(glyph_x);
         let (quantized_pos_y, frac_pos_y, subpixel_bin_y) = quantize(glyph_y);
 
-        // let color = 
-        //   ((color.0[3] as u32) << 24)
-        // + ((color.0[2] as u32) << 16)
-        // + ((color.0[1] as u32) << 8)
-        // + ((color.0[0] as u32) << 0);
-        let color = 0x00_00_00_ff;
+        let color = 
+          ((color.0[0] as u32) << 24)
+        + ((color.0[1] as u32) << 16)
+        + ((color.0[2] as u32) << 8)
+        + ((color.0[3] as u32) << 0);
 
         Self { glyph, color, font_key, font_size, quantized_pos_x, quantized_pos_y, frac_pos_x, frac_pos_y, subpixel_bin_x, subpixel_bin_y,}
     }
