@@ -53,7 +53,7 @@ impl State {
 
         let mut text_boxes = vec![
             TextBox::new("Text box".to_string(), (10.0, 15.0), (100.0, 50.0), 0.0, true),
-            TextBox::new("Saddy (rare) ".to_string(), (100.0, 200.0), (100.0, 50.0), 0.0, true),
+            TextBox::new("Saddy (rare) ".to_string(), (100.0, 200.0), (400.0, 200.0), 0.0, true),
             TextBox::new("Words words words ".to_string(), (20.0, 20.0), (100.0, 50.0), 0.0, false),
             TextBox::new(
                 "Amogus (non selectable)".to_string(),
@@ -107,11 +107,11 @@ impl State {
             }
         }
 
-        // for text_box in &mut self.static_text_boxes {
-        //     if text_box.handle_event_no_edit_inner(&event, already_grabbed) {
-        //         already_grabbed = true;
-        //     }
-        // }
+        for text_box in &mut self.static_text_boxes {
+            if text_box.handle_event_no_edit(&event, already_grabbed) {
+                already_grabbed = true;
+            }
+        }
 
 
         match event {

@@ -258,8 +258,16 @@ impl<T: AsRef<str>> TextBox<T> {
         });
     }
 
-    pub fn handle_event_no_edit(&mut self, event: &winit::event::WindowEvent) {
+    pub fn handle_event_no_edit(&mut self, event: &winit::event::WindowEvent, focus_already_grabbed: bool) -> bool {
+        let focus_grabbed = self.update_focus(event, focus_already_grabbed);
 
+        if focus_already_grabbed {
+            return false;
+        }
+
+        self.handle_event_no_edit_inner(event);
+
+        return focus_grabbed;
     }
 
     pub fn handle_event_no_edit_inner(&mut self, event: &winit::event::WindowEvent) {
