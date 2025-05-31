@@ -147,20 +147,6 @@ impl ContextlessTextRenderer {
             label: Some("uniforms bind group"),
         });
 
-        let uniforms_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            entries: &[BindGroupLayoutEntry {
-                binding: 0,
-                visibility: ShaderStages::VERTEX,
-                ty: BindingType::Buffer {
-                    ty: BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: NonZeroU64::new(mem::size_of::<Params>() as u64),
-                },
-                count: None,
-            }],
-            label: Some("uniforms bind group layout"),
-        });
-
         let atlas_bind_group_layout = device.create_bind_group_layout(&ATLAS_BIND_GROUP_LAYOUT);
         let mask_bind_group = device.create_bind_group(&BindGroupDescriptor {
             layout: &atlas_bind_group_layout,
@@ -244,7 +230,7 @@ impl ContextlessTextRenderer {
 
         let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: None,
-            bind_group_layouts: &[&atlas_bind_group_layout, &uniforms_layout],
+            bind_group_layouts: &[&atlas_bind_group_layout, &params_layout],
             push_constant_ranges: &[],
         });
 
