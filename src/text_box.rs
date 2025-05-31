@@ -58,6 +58,7 @@ pub struct TextBox<T: AsRef<str>> {
     pub(crate) depth: f32,
     pub(crate) selection: SelectionState,
     pub(crate) width: Option<f32>,
+    pub(crate) base_height: f32, 
     pub(crate) alignment: Alignment,
     pub(crate) modifiers: Modifiers,
     pub(crate) scale: f32,
@@ -153,7 +154,7 @@ impl SelectionState {
 }
 
 impl<T: AsRef<str>> TextBox<T> {
-    pub fn new(text: T, pos: (f64, f64), max_advance: f32, depth: f32, editable: bool) -> Self {
+    pub fn new(text: T, pos: (f64, f64), size: (f32, f32), depth: f32, editable: bool) -> Self {
         let history = if editable {
             TextEditHistory::new()
         } else {
@@ -167,13 +168,14 @@ impl<T: AsRef<str>> TextBox<T> {
             needs_relayout: true,
             left: pos.0,
             top: pos.1,
-            max_advance,
+            max_advance: size.0,
+            base_height: size.1,
             depth,
             selection: SelectionState::new(),
             style: Style::default(),
             compose: Default::default(),
             show_cursor: true,
-            width: Default::default(),
+            width: Some(size.0), 
             alignment: Default::default(),
             start_time: Default::default(),
             blink_period: Default::default(),
@@ -187,6 +189,15 @@ impl<T: AsRef<str>> TextBox<T> {
     pub fn layout(&mut self) -> &Layout<ColorBrush> {
         self.refresh_layout();
         &self.layout
+    }
+
+    pub fn hit_full_rect(&self, cursor_pos: (f64, f64)) -> bool {
+        let hit = cursor_pos.0 > -X_TOLERANCE
+            && cursor_pos.0 < self.max_advance as f64 + X_TOLERANCE
+            && cursor_pos.1 > 0.0
+            && cursor_pos.1 < self.base_height as f64;
+
+        return hit;
     }
 
     pub fn refresh_layout(&mut self) {
@@ -443,11 +454,11 @@ pub(crate) trait Ext1 {
     fn hit_bounding_box(&self, cursor_pos: (f64, f64)) -> bool;
 }
 impl Ext1 for Layout<ColorBrush> {
-    fn hit_bounding_box(&self, top_left_corner: (f64, f64)) -> bool {
-        let hit = top_left_corner.0 > -X_TOLERANCE
-            && top_left_corner.0 < self.max_content_width() as f64 + X_TOLERANCE
-            && top_left_corner.1 > 0.0
-            && top_left_corner.1 < self.height() as f64;
+    fn hit_bounding_box(&self, cursor_pos: (f64, f64)) -> bool {
+        let hit = cursor_pos.0 > -X_TOLERANCE
+            && cursor_pos.0 < self.max_content_width() as f64 + X_TOLERANCE
+            && cursor_pos.1 > 0.0
+            && cursor_pos.1 < self.height() as f64;
 
         return hit;
     }

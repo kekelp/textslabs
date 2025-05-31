@@ -663,6 +663,7 @@ impl TextBox<String> {
             .unwrap_or(16.0);
         // Using 0.6 as an estimate of the average advance
         let inflate = 3. * 0.6 * font_size as f64;
+        // todo, what is this
         let editor_width = self.width.map(f64::from).unwrap_or(f64::INFINITY);
         Rect {
             x0: (area.x0 - inflate).max(0.),

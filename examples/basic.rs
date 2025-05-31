@@ -52,13 +52,13 @@ impl State {
         });
 
         let mut text_boxes = vec![
-            TextBox::new("Text box".to_string(), (10.0, 15.0), 300.0, 0.0, true),
-            TextBox::new("Saddy (rare) ".to_string(), (100.0, 200.0), 300.0, 0.0, true),
-            TextBox::new("Words words words ".to_string(), (20.0, 20.0), 300.0, 0.0, false),
+            TextBox::new("Text box".to_string(), (10.0, 15.0), (300.0, 100.0), 0.0, true),
+            TextBox::new("Saddy (rare) ".to_string(), (100.0, 200.0), (300.0, 100.0), 0.0, true),
+            TextBox::new("Words words words ".to_string(), (20.0, 20.0), (300.0, 100.0), 0.0, false),
             TextBox::new(
                 "Amogus (non selectable)".to_string(),
                 (10.0, 110.0),
-                300.0,
+                (300.0, 100.0),
                 0.0,
                 false,
             ),
@@ -75,8 +75,8 @@ impl State {
         big_text_style.with_borrow_mut(|style| style.font_size = 32.0);
 
         let mut static_text_boxes = vec![
-            TextBox::new("&'static str", (400.0, 500.0), 300.0, 0.0, false),
-            TextBox::new("Static words ", (200.0, 400.0), 300.0, 0.0, false),
+            TextBox::new("&'static str", (400.0, 500.0), (300.0, 100.0), 0.0, false),
+            TextBox::new("Static words ", (200.0, 400.0), (300.0, 100.0), 0.0, false),
         ];
         static_text_boxes[1].set_shared_style(&big_text_style);
 
