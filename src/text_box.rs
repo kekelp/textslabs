@@ -62,6 +62,7 @@ pub struct TextBox<T: AsRef<str>> {
     pub(crate) alignment: Alignment,
     pub(crate) modifiers: Modifiers,
     pub(crate) scale: f32,
+    pub(crate) clip_rect: Option<parley::Rect>,
     
     pub(crate) selectable: bool,
 
@@ -185,6 +186,7 @@ impl<T: AsRef<str>> TextBox<T> {
             blink_period: Default::default(),
             modifiers: Default::default(),
             scale: Default::default(),
+            clip_rect: None,
             history,
             editable,
         }
@@ -446,6 +448,13 @@ impl<T: AsRef<str>> TextBox<T> {
     }
     pub fn depth(&self) -> f32 {
         self.depth
+    }
+
+    pub fn set_clip_rect(&mut self, clip_rect: Option<parley::Rect>) {
+        self.clip_rect = clip_rect;
+    }
+    pub fn clip_rect(&self) -> Option<parley::Rect> {
+        self.clip_rect
     }
 }
 

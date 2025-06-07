@@ -72,14 +72,32 @@ impl ContextlessTextRenderer {
         self.last_frame_evicted != current_frame
     }
 
-    fn add_selection_rect(&mut self, rect: parley::Rect, left: f32, top: f32, color: u32) {        
+    fn add_selection_rect(&mut self, rect: parley::Rect, left: f32, top: f32, color: u32, clip_rect: Option<parley::Rect>) {        
         let left = left as i32;
         let top = top as i32;
 
-        let x0 = left + rect.x0 as i32;
-        let x1 = left + rect.x1 as i32;
-        let y0 = top + rect.y0 as i32;
-        let y1 = top + rect.y1 as i32;
+        let mut x0 = left + rect.x0 as i32;
+        let mut x1 = left + rect.x1 as i32;
+        let mut y0 = top + rect.y0 as i32;
+        let mut y1 = top + rect.y1 as i32;
+
+        // Apply clipping if clip_rect is provided
+        if let Some(clip) = clip_rect {
+            let clip_x0 = left + clip.x0 as i32;
+            let clip_x1 = left + clip.x1 as i32;
+            let clip_y0 = top + clip.y0 as i32;
+            let clip_y1 = top + clip.y1 as i32;
+
+            x0 = x0.max(clip_x0);
+            x1 = x1.min(clip_x1);
+            y0 = y0.max(clip_y0);
+            y1 = y1.min(clip_y1);
+
+            // If the rectangle is completely clipped out, don't add it
+            if x0 >= x1 || y0 >= y1 {
+                return;
+            }
+        }
 
         let quad = Quad {
             pos: [x0, y0],
@@ -181,6 +199,53 @@ fn make_quad(glyph: &GlyphWithContext, stored_glyph: &StoredGlyph) -> Quad {
     };
 }
 
+fn clip_quad(quad: Quad, left: f32, top: f32, clip_rect: Option<parley::Rect>) -> Option<Quad> {
+    if let Some(clip) = clip_rect {
+        let left = left as i32;
+        let top = top as i32;
+        
+        let clip_x0 = left + clip.x0 as i32;
+        let clip_x1 = left + clip.x1 as i32;
+        let clip_y0 = top + clip.y0 as i32;
+        let clip_y1 = top + clip.y1 as i32;
+
+        let quad_x0 = quad.pos[0];
+        let quad_y0 = quad.pos[1];
+        let quad_x1 = quad_x0 + quad.dim[0] as i32;
+        let quad_y1 = quad_y0 + quad.dim[1] as i32;
+
+        // Calculate clipped bounds
+        let clipped_x0 = quad_x0.max(clip_x0);
+        let clipped_x1 = quad_x1.min(clip_x1);
+        let clipped_y0 = quad_y0.max(clip_y0);
+        let clipped_y1 = quad_y1.min(clip_y1);
+
+        // If completely clipped out, return None
+        if clipped_x0 >= clipped_x1 || clipped_y0 >= clipped_y1 {
+            return None;
+        }
+
+        // Calculate how much was clipped from the left and top
+        let left_clip = clipped_x0 - quad_x0;
+        let top_clip = clipped_y0 - quad_y0;
+
+        // Adjust UV coordinates to match the clipped area
+        let new_uv_x = quad.uv_origin[0] + left_clip as u16;
+        let new_uv_y = quad.uv_origin[1] + top_clip as u16;
+
+        Some(Quad {
+            pos: [clipped_x0, clipped_y0],
+            dim: [(clipped_x1 - clipped_x0) as u16, (clipped_y1 - clipped_y0) as u16],
+            uv_origin: [new_uv_x, new_uv_y],
+            color: quad.color,
+            depth: quad.depth,
+            flags: quad.flags,
+        })
+    } else {
+        Some(quad)
+    }
+}
+
 /// A glyph as stored in a glyph atlas.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct StoredGlyph {
@@ -251,7 +316,7 @@ impl TextRenderer {
     }
 
     pub fn prepare_layout(&mut self, layout: &Layout<ColorBrush>, left: f32, top: f32) {
-        self.text_renderer.prepare_layout(layout, &mut self.scale_cx, left, top);
+        self.text_renderer.prepare_layout(layout, &mut self.scale_cx, left, top, None);
     }
 
     pub fn prepare_text_box<T: AsRef<str>>(&mut self, text_box: &mut TextBox<T>) {
@@ -259,22 +324,23 @@ impl TextRenderer {
         
         let (left, top) = text_box.pos();
         let (left, top) = (left as f32, top as f32);
+        let clip_rect = text_box.clip_rect();
 
         let selection_color = 0xff_44_44_20;
         let cursor_color = 0x00_00_00_ff;
 
         text_box.selection().geometry_with(&text_box.layout, |rect, _line_i| {
-            self.text_renderer.add_selection_rect(rect, left, top, selection_color);
+            self.text_renderer.add_selection_rect(rect, left, top, selection_color, clip_rect);
         });
         
         let show_cursor = text_box.editable && text_box.focused() && text_box.selection.selection.is_collapsed(); 
         if show_cursor {
             let size = 3.0;
             let cursor_rect = text_box.selection().focus().geometry(&text_box.layout, size);
-            self.text_renderer.add_selection_rect(cursor_rect, left, top, cursor_color);
+            self.text_renderer.add_selection_rect(cursor_rect, left, top, cursor_color, clip_rect);
         }
 
-        self.text_renderer.prepare_layout(text_box.layout(), &mut self.scale_cx, left, top);
+        self.text_renderer.prepare_layout(text_box.layout(), &mut self.scale_cx, left, top, clip_rect);
     }
 
     pub fn gpu_load(&mut self, device: &Device, queue: &Queue) {
@@ -385,12 +451,12 @@ impl ContextlessTextRenderer {
         }
     }
 
-    fn prepare_layout(&mut self, layout: &Layout<ColorBrush>, scale_cx: &mut ScaleContext, left: f32, top: f32) {
+    fn prepare_layout(&mut self, layout: &Layout<ColorBrush>, scale_cx: &mut ScaleContext, left: f32, top: f32, clip_rect: Option<parley::Rect>) {
         for line in layout.lines() {
             for item in line.items() {
                 match item {
                     PositionedLayoutItem::GlyphRun(glyph_run) => {
-                        self.prepare_glyph_run(&glyph_run, scale_cx, left, top);
+                        self.prepare_glyph_run(&glyph_run, scale_cx, left, top, clip_rect);
                     }
                     PositionedLayoutItem::InlineBox(_inline_box) => {}
                 }
@@ -403,7 +469,8 @@ impl ContextlessTextRenderer {
         glyph_run: &GlyphRun<'_, ColorBrush>,
         scale_cx: &mut ScaleContext,
         left: f32,
-        top: f32
+        top: f32,
+        clip_rect: Option<parley::Rect>
     ) {
         let mut run_x = left + glyph_run.offset();
         let run_y = top + glyph_run.baseline();
@@ -429,24 +496,27 @@ impl ContextlessTextRenderer {
             if let Some(stored_glyph) = self.glyph_cache.get(&glyph_ctx.key()) {
                 if let Some(stored_glyph) = stored_glyph {
                     let quad = make_quad(&glyph_ctx, stored_glyph);
-                    let page = stored_glyph.page as usize;
+                    if let Some(clipped_quad) = clip_quad(quad, left, top, clip_rect) {
+                        let page = stored_glyph.page as usize;
 
-                    match stored_glyph.content_type {
-                        Content::Mask => self.mask_atlas_pages[page].quads.push(quad),
-                        Content::Color => self.color_atlas_pages[page].quads.push(quad),
-                        Content::SubpixelMask => unreachable!()
-                    };
+                        match stored_glyph.content_type {
+                            Content::Mask => self.mask_atlas_pages[page].quads.push(clipped_quad),
+                            Content::Color => self.color_atlas_pages[page].quads.push(clipped_quad),
+                            Content::SubpixelMask => unreachable!()
+                        };
+                    }
                 }
             } else {
                 if let Some((quad, stored_glyph)) = self.prepare_glyph(&glyph_ctx, &mut scaler) {
-                    // todo: make more symmetric
-                    let page = stored_glyph.page as usize;
+                    if let Some(clipped_quad) = clip_quad(quad, left, top, clip_rect) {
+                        let page = stored_glyph.page as usize;
 
-                    match stored_glyph.content_type {
-                        Content::Mask => self.mask_atlas_pages[page].quads.push(quad),
-                        Content::Color => self.color_atlas_pages[page].quads.push(quad),
-                        Content::SubpixelMask => unreachable!()
-                    };
+                        match stored_glyph.content_type {
+                            Content::Mask => self.mask_atlas_pages[page].quads.push(clipped_quad),
+                            Content::Color => self.color_atlas_pages[page].quads.push(clipped_quad),
+                            Content::SubpixelMask => unreachable!()
+                        };
+                    }
                 }
             }
 

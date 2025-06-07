@@ -72,6 +72,15 @@ impl State {
             ..Default::default()
         });
 
+        // Add a clip rectangle to the second text box to demonstrate clipping
+        // This will clip the text box to a smaller rectangle, cutting off part of the text
+        text_boxes[1].set_clip_rect(Some(parley::Rect {
+            x0: 0.0,   // Start from left edge of text box
+            y0: 0.0,   // Start from top edge of text box 
+            x1: 200.0, // Clip width to 200 pixels (original is 400)
+            y1: 20.0, // Clip height to 100 pixels (original is 200)
+        }));
+
         big_text_style.with_borrow_mut(|style| style.font_size = 32.0);
 
         let mut static_text_boxes = vec![
