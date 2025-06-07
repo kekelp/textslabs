@@ -225,15 +225,21 @@ pub struct Params {
 }
 
 impl TextRenderer {
-    pub fn new_with_params(device: &Device, _queue: &Queue, format: TextureFormat, params: TextRendererParams) -> Self {
+    pub fn new_with_params(
+        device: &Device,
+        _queue: &Queue,
+        format: TextureFormat,
+        depth_stencil: Option<DepthStencilState>,
+        params: TextRendererParams,
+    ) -> Self {
         Self {
             scale_cx: ScaleContext::new(),
-            text_renderer: ContextlessTextRenderer::new_with_params(device, _queue, format, params),
+            text_renderer: ContextlessTextRenderer::new_with_params(device, _queue, format, depth_stencil, params),
         }
     }
 
     pub fn new(device: &Device, queue: &Queue, format: TextureFormat) -> Self {
-        Self::new_with_params(device, queue, format, TextRendererParams::default())
+        Self::new_with_params(device, queue, format, None, TextRendererParams::default())
     }
 
     pub fn update_resolution(&mut self, width: f32, height: f32) {
@@ -254,7 +260,7 @@ impl TextRenderer {
         let (left, top) = text_box.pos();
         let (left, top) = (left as f32, top as f32);
 
-        let selection_color = 0x99_99_ff_cc;
+        let selection_color = 0xff_44_44_20;
         let cursor_color = 0x00_00_00_ff;
 
         text_box.selection().geometry_with(&text_box.layout, |rect, _line_i| {

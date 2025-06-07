@@ -27,12 +27,12 @@ struct State {
 impl State {
     fn new(window: Arc<Window>) -> Self {
         let physical_size = window.inner_size();
-        let instance = Instance::new(&InstanceDescriptor::default());
+        let instance = Instance::new(InstanceDescriptor::default());
         let adapter =
             pollster::block_on(instance.request_adapter(&RequestAdapterOptions::default()))
                 .unwrap();
         let (device, queue) =
-            pollster::block_on(adapter.request_device(&DeviceDescriptor::default())).unwrap();
+            pollster::block_on(adapter.request_device(&DeviceDescriptor::default(), None)).unwrap();
         let surface = instance
             .create_surface(window.clone())
             .expect("Create surface");
@@ -51,7 +51,7 @@ impl State {
             atlas_page_size: AtlasPageSize::Flat(300), // tiny page to test out multi-page stuff
         };
         
-        let text_renderer = TextRenderer::new_with_params(&device, &queue, surface_config.format, text_renderer_params);
+        let text_renderer = TextRenderer::new_with_params(&device, &queue, surface_config.format, None, text_renderer_params);
 
         Self {
             device,

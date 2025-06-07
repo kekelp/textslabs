@@ -45,7 +45,7 @@ impl PartialEq<&'_ str> for SplitString<'_> {
 // for simplicity, as the impl wouldn't be useful and is non-trivial
 
 impl Display for SplitString<'_> {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let [a, b] = self.0;
         write!(f, "{a}{b}")
     }
@@ -91,6 +91,7 @@ impl TextBox<String> {
         });
     }
 
+    #[must_use]
     pub fn handle_event(&mut self, event: &WindowEvent, window: &Window, focus_already_grabbed: bool) -> bool {
         self.update_mouse_state(event);
 
@@ -573,7 +574,7 @@ impl TextBox<String> {
         }
     }
 
-    /// Replace the whole text text.
+    /// Replace the whole text.
     pub fn set_text(&mut self, is: &str) {
         assert!(!self.is_composing());
 

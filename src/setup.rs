@@ -1,3 +1,5 @@
+use wgpu::hal::DepthStencilAttachment;
+
 use crate::*;
 
 const ATLAS_BIND_GROUP_LAYOUT: BindGroupLayoutDescriptor = wgpu::BindGroupLayoutDescriptor {
@@ -53,7 +55,13 @@ impl AtlasPageSize {
 }
 
 impl ContextlessTextRenderer {
-    pub fn new_with_params(device: &Device, _queue: &Queue, format: TextureFormat, params: TextRendererParams) -> Self {
+    pub fn new_with_params(
+        device: &Device,
+        _queue: &Queue,
+        format: TextureFormat,
+        depth_stencil: Option<DepthStencilState>,
+        params: TextRendererParams,
+    ) -> Self {
         let srgb = format.is_srgb();
         // todo put this in the uniform and use it
         
@@ -235,7 +243,7 @@ impl ContextlessTextRenderer {
         });
 
         let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
-            label: Some("pipeline"),
+            label: Some("parley2 pipeline"),
             layout: Some(&pipeline_layout),
             vertex: VertexState {
                 module: &shader,
@@ -258,7 +266,7 @@ impl ContextlessTextRenderer {
                 topology: PrimitiveTopology::TriangleStrip,
                 ..Default::default()
             },
-            depth_stencil: None,
+            depth_stencil,
             multisample: MultisampleState::default(),
             multiview: None,
             cache: None,
@@ -291,7 +299,7 @@ impl ContextlessTextRenderer {
 impl ContextlessTextRenderer {
     pub fn gpu_load(&mut self, device: &Device, queue: &Queue) {
         queue.write_buffer(&self.params_buffer, 0, unsafe {
-            core::slice::from_raw_parts(
+            std::slice::from_raw_parts(
                 &self.params as *const Params as *const u8,
                 mem::size_of::<Params>(),
             )
@@ -344,18 +352,19 @@ impl ContextlessTextRenderer {
                 })
             }
 
+            
             let bytes: &[u8] = bytemuck::cast_slice(&page.quads);
             queue.write_buffer(&page.gpu.as_ref().unwrap().vertex_buffer, 0, &bytes);
 
             queue.write_texture(
-                TexelCopyTextureInfo {
+                ImageCopyTexture {
                     texture: &page.gpu.as_ref().unwrap().texture,
                     mip_level: 0,
                     origin: Origin3d { x: 0, y: 0, z: 0 },
                     aspect: TextureAspect::All,
                 },
                 &page.image.as_raw(),
-                TexelCopyBufferLayout {
+                ImageDataLayout {
                     offset: 0,
                     bytes_per_row: Some(page.image.width()),
                     rows_per_image: None,
@@ -419,14 +428,14 @@ impl ContextlessTextRenderer {
             queue.write_buffer(&page.gpu.as_ref().unwrap().vertex_buffer, 0, &bytes);
     
             queue.write_texture(
-                TexelCopyTextureInfo {
+                ImageCopyTexture {
                     texture: &page.gpu.as_ref().unwrap().texture,
                     mip_level: 0,
                     origin: Origin3d { x: 0, y: 0, z: 0 },
                     aspect: TextureAspect::All,
                 },
                 &page.image.as_raw(),
-                TexelCopyBufferLayout {
+                ImageDataLayout {
                     offset: 0,
                     bytes_per_row: Some(page.image.width() * 4),
                     rows_per_image: None,

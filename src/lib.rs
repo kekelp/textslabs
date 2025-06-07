@@ -10,6 +10,8 @@ pub use text_box::*;
 mod text_edit;
 pub use text_edit::*;
 
+pub use parley::TextStyle;
+
 use bytemuck::{Pod, Zeroable};
 use etagere::euclid::{Size2D, UnknownUnit};
 use etagere::{size2, Allocation, BucketedAtlasAllocator};

@@ -58,7 +58,7 @@ pub struct TextBox<T: AsRef<str>> {
     pub(crate) depth: f32,
     pub(crate) selection: SelectionState,
     pub(crate) width: Option<f32>,
-    pub(crate) base_height: f32, 
+    pub(crate) height: f32, 
     pub(crate) alignment: Alignment,
     pub(crate) modifiers: Modifiers,
     pub(crate) scale: f32,
@@ -75,7 +75,11 @@ pub struct TextBox<T: AsRef<str>> {
 }
 
 lazy_static::lazy_static! {
-    pub static ref DEFAULT_TEXT_STYLE: SharedStyle = SharedStyle::new(TextStyle::default());
+    pub static ref DEFAULT_TEXT_STYLE: SharedStyle = SharedStyle::new(TextStyle { 
+        brush: ColorBrush([255,255,255,255]),
+        font_size: 24.0,
+        ..Default::default()
+    });
 }
 
 pub enum Style {
@@ -169,7 +173,7 @@ impl<T: AsRef<str>> TextBox<T> {
             left: pos.0,
             top: pos.1,
             max_advance: size.0,
-            base_height: size.1,
+            height: size.1,
             depth,
             selection: SelectionState::new(),
             style: Style::default(),
@@ -195,7 +199,7 @@ impl<T: AsRef<str>> TextBox<T> {
         let hit = cursor_pos.0 > -X_TOLERANCE
             && cursor_pos.0 < self.max_advance as f64 + X_TOLERANCE
             && cursor_pos.1 > 0.0
-            && cursor_pos.1 < self.base_height as f64;
+            && cursor_pos.1 < self.height as f64;
 
         return hit;
     }
@@ -414,6 +418,10 @@ impl<T: AsRef<str>> TextBox<T> {
 
     pub fn focused(&self) -> bool {
         self.selection.focused
+    }
+
+    pub fn editable(&self) -> bool {
+        self.editable
     }
 
     pub fn set_shared_style(&mut self, style: &SharedStyle) {
@@ -706,6 +714,10 @@ impl<T: AsRef<str>> TextBox<T> {
         (self.left, self.top)
     }
 
+    pub fn set_pos(&mut self, pos: (f64, f64)) {
+        (self.left, self.top) = pos;
+    }
+
 
     /// Borrow the current selection. The indices returned by functions
     /// such as [`Selection::text_range`] refer to the raw text text,
@@ -752,8 +764,9 @@ impl<T: AsRef<str>> TextBox<T> {
     }
 
     /// Set the width of the layout.
-    pub fn set_width(&mut self, width: Option<f32>) {
-        self.width = width;
+    pub fn set_size(&mut self, size: (f32, f32)) {
+        self.width = Some(size.0);
+        self.height = size.1;
         self.needs_relayout = true;
     }
 
