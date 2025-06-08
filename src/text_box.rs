@@ -209,7 +209,7 @@ impl<T: AsRef<str>> TextBox<T> {
     pub fn refresh_layout(&mut self) {
         self.style.with_text_style(|style, version| {
             let shared_style_changed = if let Some(version) = version {
-                self.shared_style_version == version
+                self.shared_style_version != version
             } else { false };
 
             if self.needs_relayout || shared_style_changed {
@@ -428,12 +428,10 @@ impl<T: AsRef<str>> TextBox<T> {
 
     pub fn set_shared_style(&mut self, style: &SharedStyle) {
         self.style = Style::Shared(style.clone());
-        self.needs_relayout = true;
     }
 
     pub fn set_unique_style(&mut self, style: TextStyle<'static, ColorBrush>) {
         self.style = Style::Unique(style);
-        self.needs_relayout = true;
     }
 
     pub fn set_selectable(&mut self, value: bool) {
@@ -457,6 +455,8 @@ impl<T: AsRef<str>> TextBox<T> {
         self.clip_rect
     }
 }
+
+pub use parley::Rect;
 
 pub(crate) trait Ext1 {
     fn hit_bounding_box(&self, cursor_pos: (f64, f64)) -> bool;
@@ -774,9 +774,12 @@ impl<T: AsRef<str>> TextBox<T> {
 
     /// Set the width of the layout.
     pub fn set_size(&mut self, size: (f32, f32)) {
+        let relayout = (self.width != Some(size.0)) || (self.height != size.1);
         self.width = Some(size.0);
         self.height = size.1;
-        self.needs_relayout = true;
+        if relayout {
+            self.needs_relayout = true;
+        }
     }
 
     /// Set the alignment of the layout.

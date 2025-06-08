@@ -93,13 +93,14 @@ impl TextBox<String> {
 
     #[must_use]
     pub fn handle_event(&mut self, event: &WindowEvent, window: &Window, focus_already_grabbed: bool) -> bool {
-        self.update_mouse_state(event);
 
+        self.update_mouse_state(event);
+        
         if focus_already_grabbed {
             self.reset_selection();
             return false;
         }
-
+        
         let focus_grabbed = self.update_focus(event, focus_already_grabbed);
         
         if !self.editable || !self.focused() {
@@ -494,6 +495,8 @@ impl TextBox<String> {
             self.cursor_at(start + cursor.0),
             self.cursor_at(start + cursor.1),
         ));
+
+        self.needs_relayout = true;
     }
 
     /// Stop IME composing.

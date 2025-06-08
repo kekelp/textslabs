@@ -292,6 +292,7 @@ impl ContextlessTextRenderer {
             params_bind_group,
             glyph_cache,
             last_frame_evicted: 0,
+            cached_scaler: None,
         }
     }
 }
