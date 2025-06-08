@@ -28,6 +28,10 @@ pub struct ContextlessTextRenderer {
     pub atlas_size: u32,
     
     pub(crate) cached_scaler: Option<CachedScaler>,
+    
+    // Shared growable vertex buffer for all pages
+    pub(crate) shared_vertex_buffer: Buffer,
+    pub(crate) shared_vertex_buffer_size: u64,
 }
 
 pub(crate) struct CachedScaler {
@@ -40,12 +44,10 @@ pub(crate) struct AtlasPage<ImageType> {
     pub quads: Vec<Quad>,
     pub(crate) packer: BucketedAtlasAllocator,
     pub(crate) image: ImageType,
-    pub vertex_buffer_size: u64,
     pub gpu: Option<GpuAtlasPage>,
 }
 
 pub(crate) struct GpuAtlasPage {
-    pub vertex_buffer: Buffer,
     pub texture: Texture, // the format here has to match the image type...
     pub bind_group: BindGroup,
 }
@@ -360,7 +362,7 @@ impl TextRenderer {
         self.text_renderer.render(pass);
     }
 
-    pub fn gpu_load_atlas_debug(&mut self, _device: &Device, queue: &Queue) {
+    pub fn gpu_load_atlas_debug(&mut self, device: &Device, queue: &Queue) {
         let atlas_size = self.text_renderer.atlas_size;
         
         for (i, page) in self.text_renderer.mask_atlas_pages.iter_mut().enumerate() {
@@ -374,9 +376,6 @@ impl TextRenderer {
                 depth: 0.0,
                 flags: 0,
             }];
-            
-            let bytes: &[u8] = bytemuck::cast_slice(&page.quads);
-            queue.write_buffer(&page.gpu.as_ref().unwrap().vertex_buffer, 0, &bytes);
         }
     
         for (i, page) in self.text_renderer.color_atlas_pages.iter_mut().enumerate() {
@@ -390,29 +389,16 @@ impl TextRenderer {
                 depth: 0.0,
                 flags: 1,
             }];
-            
-            let bytes: &[u8] = bytemuck::cast_slice(&page.quads);
-            queue.write_buffer(&page.gpu.as_ref().unwrap().vertex_buffer, 0, &bytes);
         }
+        
+        // Update shared vertex buffer with debug quads
+        self.text_renderer.gpu_load(device, queue);
     }
     
     pub fn render_atlas_debug(&self, pass: &mut RenderPass<'_>) {
         if self.text_renderer.mask_atlas_pages[0].quads.is_empty() { return }
         
-        pass.set_pipeline(&self.text_renderer.pipeline);
-        pass.set_bind_group(1, &self.text_renderer.params_bind_group, &[]);
-        
-        for page in &self.text_renderer.mask_atlas_pages {
-            pass.set_bind_group(0, &page.gpu.as_ref().unwrap().bind_group, &[]);
-            pass.set_vertex_buffer(0, page.gpu.as_ref().unwrap().vertex_buffer.slice(..));
-            pass.draw(0..4, 0..1);
-        }
-
-        for page in &self.text_renderer.color_atlas_pages {
-            pass.set_bind_group(0, &page.gpu.as_ref().unwrap().bind_group, &[]);
-            pass.set_vertex_buffer(0, page.gpu.as_ref().unwrap().vertex_buffer.slice(..));
-            pass.draw(0..4, 0..1);
-        }
+        self.text_renderer.render(pass);
     }
 }
 
@@ -426,20 +412,23 @@ impl ContextlessTextRenderer {
     pub fn render(&self, pass: &mut RenderPass<'_>) {
         pass.set_pipeline(&self.pipeline);
         pass.set_bind_group(1, &self.params_bind_group, &[]);
+        pass.set_vertex_buffer(0, self.shared_vertex_buffer.slice(..));
+
+        let mut instance_offset = 0u32;
 
         for page in &self.mask_atlas_pages {
             if !page.quads.is_empty() {
                 pass.set_bind_group(0, &page.gpu.as_ref().unwrap().bind_group, &[]);
-                pass.set_vertex_buffer(0, page.gpu.as_ref().unwrap().vertex_buffer.slice(..));
-                pass.draw(0..4, 0..page.quads.len() as u32);
+                pass.draw(0..4, instance_offset..(instance_offset + page.quads.len() as u32));
+                instance_offset += page.quads.len() as u32;
             }
         }
 
         for page in &self.color_atlas_pages {
             if !page.quads.is_empty() {
                 pass.set_bind_group(0, &page.gpu.as_ref().unwrap().bind_group, &[]);
-                pass.set_vertex_buffer(0, page.gpu.as_ref().unwrap().vertex_buffer.slice(..));
-                pass.draw(0..4, 0..page.quads.len() as u32);
+                pass.draw(0..4, instance_offset..(instance_offset + page.quads.len() as u32));
+                instance_offset += page.quads.len() as u32;
             }
         }
     }
@@ -759,7 +748,6 @@ impl ContextlessTextRenderer {
                 self.mask_atlas_pages.push(AtlasPage::<GrayImage> {
                     image: GrayImage::from_pixel(atlas_size, atlas_size, Luma([0])),
                     packer: BucketedAtlasAllocator::new(size2(atlas_size as i32, atlas_size as i32)),
-                    vertex_buffer_size: 4096 * 9,
                     quads: Vec::<Quad>::with_capacity(300),
                     gpu: None, // will be created later
                 });
@@ -769,7 +757,6 @@ impl ContextlessTextRenderer {
                 self.color_atlas_pages.push(AtlasPage::<RgbaImage> {
                     image: RgbaImage::from_pixel(atlas_size, atlas_size, Rgba([0, 0, 0, 0])),
                     packer: BucketedAtlasAllocator::new(size2(atlas_size as i32, atlas_size as i32)),
-                    vertex_buffer_size: 4096 * 9,
                     quads: Vec::<Quad>::with_capacity(300),
                     gpu: None, // will be created later
                 });
