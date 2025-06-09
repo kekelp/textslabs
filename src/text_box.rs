@@ -774,9 +774,10 @@ impl<T: AsRef<str>> TextBox<T> {
 
     /// Set the width of the layout.
     pub fn set_size(&mut self, size: (f32, f32)) {
-        let relayout = (self.width != Some(size.0)) || (self.height != size.1);
+        let relayout = (self.width != Some(size.0)) || (self.height != size.1) || (self.max_advance != size.0);
         self.width = Some(size.0);
         self.height = size.1;
+        self.max_advance = size.0;
         if relayout {
             self.needs_relayout = true;
         }
