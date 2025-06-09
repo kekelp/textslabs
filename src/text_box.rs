@@ -263,19 +263,29 @@ impl<T: AsRef<str>> TextBox<T> {
     }
 
     // todo: need some better names
-    pub fn static_handle_event(&mut self, event: &winit::event::WindowEvent, focus_already_grabbed: bool) -> bool {
+    pub fn static_handle_event(&mut self, event: &winit::event::WindowEvent, focus_already_grabbed: bool) -> TextEventResult {
+        let initial_selection = self.selection.selection;
+        let initial_show_cursor = self.show_cursor;
+        
+        let mut result = TextEventResult::new(false);
+        
         self.update_mouse_state(event);
         
         if focus_already_grabbed {
             self.reset_selection();
-            return false;
+            result.focus_grabbed = false;
+        } else {
+            let focus_grabbed = self.update_focus(event, focus_already_grabbed);
+            result.focus_grabbed = focus_grabbed;
         }
-        
-        let focus_grabbed = self.update_focus(event, focus_already_grabbed);
 
         self.handle_event_no_edit_inner(event);
 
-        return focus_grabbed;
+        if selection_decorations_changed(initial_selection, self.selection.selection, initial_show_cursor, self.show_cursor, self.editable) {
+            result.set_decorations_changed();
+        }
+
+        return result;
     }
 
     pub fn handle_event_no_edit_inner(&mut self, event: &winit::event::WindowEvent) {
@@ -289,11 +299,7 @@ impl<T: AsRef<str>> TextBox<T> {
         }
 
         self.refresh_layout();
-
-        // if !self.selection.focused {
-        //     return;
-        // }
-
+        
         self.selection.handle_event(
             event,
             &self.modifiers,

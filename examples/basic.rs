@@ -1,6 +1,7 @@
 use parley::TextStyle;
 use parley2::*;
 use std::sync::Arc;
+use std::time::SystemTime;
 use wgpu::*;
 use winit::{
     dpi::LogicalSize,
@@ -8,6 +9,13 @@ use winit::{
     event_loop::EventLoop,
     window::Window,
 };
+
+fn timestamp() -> u128 {
+    SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap()
+        .as_millis()
+}
 
 fn main() {
     let event_loop = EventLoop::new().unwrap();
@@ -111,14 +119,30 @@ impl State {
     ) {
         let mut already_grabbed = false;
         for text_box in &mut self.text_boxes {
-            if text_box.handle_event(&event, &self.window, already_grabbed) {
+            let result = text_box.handle_event(&event, &self.window, already_grabbed);
+            if result.focus_grabbed {
                 already_grabbed = true;
+            }
+
+            if result.text_changed {
+                println!("[{}] Text changed", timestamp());
+            }
+            if result.decorations_changed {
+                println!("[{}] Decorations changed", timestamp());
             }
         }
         
         for text_box in &mut self.static_text_boxes {
-            if text_box.static_handle_event(&event, already_grabbed) {
+            let result = text_box.static_handle_event(&event, already_grabbed);
+            if result.focus_grabbed {
                 already_grabbed = true;
+            }
+            
+            if result.text_changed {
+                println!("[{}] Static text changed", timestamp());
+            }
+            if result.decorations_changed {
+                println!("[{}] Static decorations changed", timestamp());
             }
         }
 

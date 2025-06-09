@@ -11,6 +11,36 @@ const INSET: f32 = 2.0;
 
 use crate::*;
 
+/// Result of handling a window event on a text box.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TextEventResult {
+    /// Whether focus was grabbed by this text box
+    pub focus_grabbed: bool,
+    /// Whether the text content changed
+    pub text_changed: bool,
+    /// Whether visual decorations (selection, cursor position, etc.) changed
+    pub decorations_changed: bool,
+}
+
+impl TextEventResult {
+    pub fn new(focus_grabbed: bool) -> Self {
+        Self {
+            focus_grabbed,
+            text_changed: false,
+            decorations_changed: false,
+        }
+    }
+    
+    pub fn set_text_changed(&mut self) {
+        self.text_changed = true;
+    }
+    
+    pub fn set_decorations_changed(&mut self) {
+        self.decorations_changed = true;
+    }
+    
+}
+
 /// A string which is potentially discontiguous in memory.
 ///
 /// This is returned by [`PlainEditor::text`], as the IME preedit
@@ -60,6 +90,23 @@ impl<'source> IntoIterator for SplitString<'source> {
     }
 }
 
+pub fn selection_decorations_changed(initial_selection: Selection, new_selection: Selection, initial_show_cursor: bool, new_show_cursor: bool, is_editable: bool) -> bool {
+    if initial_show_cursor != new_show_cursor {
+        return true;
+    }
+    
+    // For non-editable boxes, if both selections are collapsed, no decoration change
+    if !is_editable && initial_selection.is_collapsed() && new_selection.is_collapsed() {
+        return false;
+    }
+    
+    // Compare selections ignoring affinity-only changes
+    let initial_range = initial_selection.text_range();
+    let new_range = new_selection.text_range();
+    
+    initial_range != new_range
+}
+
 impl TextBox<String> {
     pub fn cursor_reset(&mut self) {
         self.start_time = Some(Instant::now());
@@ -92,16 +139,22 @@ impl TextBox<String> {
     }
 
     #[must_use]
-    pub fn handle_event(&mut self, event: &WindowEvent, window: &Window, focus_already_grabbed: bool) -> bool {
+    pub fn handle_event(&mut self, event: &WindowEvent, window: &Window, focus_already_grabbed: bool) -> TextEventResult {
+        // Capture initial state for comparison
+        let initial_selection = self.selection.selection;
+        let initial_show_cursor = self.show_cursor;
+        
+        let mut result = TextEventResult::new(false);
 
         self.update_mouse_state(event);
         
         if focus_already_grabbed {
             self.reset_selection();
-            return false;
+            result.focus_grabbed = false;
+        } else {
+            let focus_grabbed = self.update_focus(event, focus_already_grabbed);
+            result.focus_grabbed = focus_grabbed;
         }
-        
-        let focus_grabbed = self.update_focus(event, focus_already_grabbed);
         
         if !self.editable || !self.focused() {
             self.show_cursor = false;
@@ -109,10 +162,10 @@ impl TextBox<String> {
         
         if !self.selectable {
             self.reset_selection();
-            return focus_grabbed;
+            return result;
         }
         if !self.focused() {
-            return focus_grabbed;
+            return result;
         }
 
         self.refresh_layout();
@@ -120,13 +173,16 @@ impl TextBox<String> {
         self.handle_event_no_edit_inner(event);
 
         if ! self.editable {
-            return focus_grabbed
+            if selection_decorations_changed(initial_selection, self.selection.selection, initial_show_cursor, self.show_cursor, self.editable) {
+                result.set_decorations_changed();
+            }
+            return result
         }
-
+        
         match event {
             WindowEvent::KeyboardInput { event, .. } if !self.is_composing() => {
                 if !event.state.is_pressed() {
-                    return focus_grabbed;
+                    return result;
                 }
                 self.cursor_reset();
                 #[allow(unused)]
@@ -148,6 +204,7 @@ impl TextBox<String> {
                                         if let Some(text) = self.selected_text() {
                                             cb.set_text(text.to_owned()).ok();
                                             self.delete_selection();
+                                            result.set_text_changed();
                                         }
                                     });
                                 }
@@ -155,13 +212,16 @@ impl TextBox<String> {
                                     with_clipboard(|cb| {
                                         let text = cb.get_text().unwrap_or_default();
                                         self.insert_or_replace_selection(&text);
+                                        result.set_text_changed();
                                     });
                                 }
                                 "z" => {
                                     if shift {
                                         self.redo();
+                                        result.set_text_changed();
                                     } else {
                                         self.undo();
+                                        result.set_text_changed();
                                     }
                                 }
                                 _ => (),
@@ -224,6 +284,7 @@ impl TextBox<String> {
                         } else {
                             self.delete();
                         }
+                        result.set_text_changed();
                     }
                     Key::Named(NamedKey::Backspace) => {
                         if action_mod {
@@ -231,21 +292,25 @@ impl TextBox<String> {
                         } else {
                             self.backdelete();
                         }
+                        result.set_text_changed();
                     }
                     Key::Named(NamedKey::Enter) => {
                         // todo: make shift-enter, ctrl-enter configurable
                         if ! action_mod {
                             self.insert_or_replace_selection("\n");
+                            result.set_text_changed();
                         }
                     }
                     Key::Named(NamedKey::Space) => {
                         if ! action_mod {
                             self.insert_or_replace_selection(" ");
+                            result.set_text_changed();
                         }
                     }
                     Key::Character(s) => {
                         if ! action_mod {
                             self.insert_or_replace_selection(&s);
+                            result.set_text_changed();
                         }
                     }
                     _ => (),
@@ -277,15 +342,19 @@ impl TextBox<String> {
             }
             WindowEvent::Ime(Ime::Disabled) => {
                 self.clear_compose();
+                result.set_text_changed();
             }
             WindowEvent::Ime(Ime::Commit(text)) => {
                 self.insert_or_replace_selection(&text);
+                result.set_text_changed();
             }
             WindowEvent::Ime(Ime::Preedit(text, cursor)) => {
                 if text.is_empty() {
                     self.clear_compose();
+                    result.set_text_changed();
                 } else {
                     self.set_compose(&text, *cursor);
+                    result.set_text_changed();
                     // todo: no idea if it's correct to call this here.
                     self.set_ime_cursor_area(window);
                 }
@@ -293,7 +362,11 @@ impl TextBox<String> {
             _ => {}
         }
 
-        return focus_grabbed;
+        if selection_decorations_changed(initial_selection, self.selection.selection, initial_show_cursor, self.show_cursor, self.editable) {
+            result.set_decorations_changed();
+        }
+
+        return result;
     }
 
     #[cfg(feature = "accesskit")]
