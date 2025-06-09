@@ -338,7 +338,7 @@ impl TextRenderer {
         let clip_rect = text_box.clip_rect();
 
         let selection_color = 0x33_33_ff_aa;
-        let cursor_color = 0x00_00_00_ff;
+        let cursor_color = 0xee_ee_ee_ff;
 
         text_box.selection().geometry_with(&text_box.layout, |rect, _line_i| {
             self.text_renderer.add_selection_rect(rect, left, top, selection_color, clip_rect);
