@@ -1,3 +1,28 @@
+//! Parley2 is an experimental high level text library based on Parley.
+//! 
+//! The goal is to allow any winit/wgpu program to have full-featured text and text editing with minimal integration effort.
+//! 
+//! Most GUI programs or toolkits, games, etc. don't have any advanced requirements for text: they just want basic text boxes that "work the same way as everywhere else" (browsers, native operating system GUIs, etc.).
+//! 
+//! If all that is available is a low level flexible library such as Parley, all these projects will have to do a large amount of repeated work, needlessly raising the barrier of entry to GUI programming.
+//! 
+//! # Example
+//! 
+//! 
+//! # Limitations
+//! 
+//! This library is not ready for use. It currently does not reach its own goal of "full featured text".
+//! 
+//! - Accessibility is supported in Parley itself but not in Parley2, because of my personal lack of familiarity with the subject.
+//! 
+//! - Parley2 currently uses the built-in Swash CPU rasterizer and a basic homemade atlas renderer to actually show the text on screen. The performance is acceptable but it is not as good as it could be. There is also a questionable bit of unsafe code to circumvent some performance problems in Swash. This should be fixed soon by switching to the new Vello Hybrid renderer.
+//! 
+//! - Parley itself has some limitations:
+//!     - font selection on Linux is incomplete
+//!     - IME area positioning on Linux is wrong
+//!     - some advanced shaping cases are apparently non supported coorrectly
+//! 
+
 mod setup;
 pub use setup::*;
 

@@ -510,7 +510,7 @@ impl ContextlessTextRenderer {
         let font_ref = FontRef::from_index(font.data.as_ref(), font.index as usize).unwrap();
         let font_key = font.data.id();
 
-        // Why is creating this dumb struct of pointers so slow anyway?
+        // Why is creating this struct of pointers so slow anyway?
         // This optimization won't do anything if the font size changes a lot.
         // It might be over.
         // todo: feel bad about this
