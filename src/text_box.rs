@@ -20,7 +20,7 @@ pub(crate) struct TextContext {
     font_cx: FontContext,
 }
 impl TextContext {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             layout_cx: LayoutContext::new(),
             font_cx: FontContext::new(),
@@ -95,7 +95,7 @@ impl Default for Style {
     }
 }
 impl Style {
-    pub fn with_text_style<F, R>(&mut self, f: F) -> R
+    pub(crate) fn with_text_style<F, R>(&mut self, f: F) -> R
     where
         F: FnOnce(&TextStyle<'static, ColorBrush>, Option<u32>) -> R,
     {
@@ -147,7 +147,7 @@ pub struct SelectionState {
     pub(crate) cursor_pos: (f32, f32),
 }
 impl SelectionState {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             pointer_down: false,
             focused: false,
@@ -200,7 +200,7 @@ impl<T: AsRef<str>> TextBox<T> {
         &self.layout
     }
 
-    pub fn hit_full_rect(&self, cursor_pos: (f64, f64)) -> bool {
+    pub(crate) fn hit_full_rect(&self, cursor_pos: (f64, f64)) -> bool {
         let hit = cursor_pos.0 > -X_TOLERANCE
             && cursor_pos.0 < self.max_advance as f64 + X_TOLERANCE
             && cursor_pos.1 > 0.0
@@ -209,7 +209,7 @@ impl<T: AsRef<str>> TextBox<T> {
         return hit;
     }
 
-    pub fn refresh_layout(&mut self) {
+    pub(crate) fn refresh_layout(&mut self) {
         self.style.with_text_style(|style, version| {
             let shared_style_changed = if let Some(version) = version {
                 self.shared_style_version != version
@@ -238,7 +238,7 @@ impl<T: AsRef<str>> TextBox<T> {
         });
     }
 
-    pub fn update_layout(&mut self) {
+    pub(crate) fn update_layout(&mut self) {
         self.style.with_text_style(|style, _version| {
 
             // todo: deduplicate
@@ -294,7 +294,7 @@ impl<T: AsRef<str>> TextBox<T> {
         return result;
     }
 
-    pub fn handle_event_no_edit_inner(&mut self, event: &winit::event::WindowEvent) {
+    pub(crate) fn handle_event_no_edit_inner(&mut self, event: &winit::event::WindowEvent) {
         if self.hidden {
             return;
         }
@@ -360,7 +360,7 @@ impl<T: AsRef<str>> TextBox<T> {
         }
     }
 
-    pub fn update_mouse_state(&mut self, event: &WindowEvent) {
+    pub(crate) fn update_mouse_state(&mut self, event: &WindowEvent) {
         match event {
             WindowEvent::ModifiersChanged(modifiers) => {
                 self.modifiers = *modifiers;
@@ -385,12 +385,12 @@ impl<T: AsRef<str>> TextBox<T> {
         }
     }
 
-    pub fn reset_selection(&mut self) {
+    pub(crate) fn reset_selection(&mut self) {
         self.set_selection(self.selection.selection.collapse());
         self.selection.focused = false;
     }
 
-    pub fn update_focus(
+    pub(crate) fn update_focus(
         &mut self,
         event: &WindowEvent,
         focus_already_grabbed: bool,
@@ -481,266 +481,6 @@ impl<T: AsRef<str>> TextBox<T> {
     pub fn hidden(&self) -> bool {
         self.hidden
     }
-}
-
-pub use parley::Rect;
-
-pub(crate) trait Ext1 {
-    fn hit_bounding_box(&self, cursor_pos: (f64, f64)) -> bool;
-}
-impl Ext1 for Layout<ColorBrush> {
-    fn hit_bounding_box(&self, cursor_pos: (f64, f64)) -> bool {
-        let hit = cursor_pos.0 > -X_TOLERANCE
-            && cursor_pos.0 < self.max_content_width() as f64 + X_TOLERANCE
-            && cursor_pos.1 > 0.0
-            && cursor_pos.1 < self.height() as f64;
-
-        return hit;
-    }
-}
-
-const MULTICLICK_DELAY: f64 = 0.4;
-
-impl SelectionState {
-    pub fn handle_event(
-        &mut self,
-        event: &winit::event::WindowEvent,
-        modifiers: &Modifiers,
-        layout: &Layout<ColorBrush>,
-        left: f32,
-        top: f32,
-    ) {
-        match event {
-            WindowEvent::CursorMoved { position, .. } => {
-                let cursor_pos = (position.x as f32, position.y as f32);
-                // macOS seems to generate a spurious move after selecting word?
-                if self.pointer_down {
-                    let cursor_pos = (
-                        cursor_pos.0 - left as f32,
-                        cursor_pos.1 - top as f32,
-                    );
-                    self.extend_selection_to_point(
-                        &layout,
-                        cursor_pos.0,
-                        cursor_pos.1,
-                        true,
-                    );
-                }
-            }
-            WindowEvent::MouseInput { state, button, .. } => {
-                let shift = modifiers.state().shift_key();
-                if *button == winit::event::MouseButton::Left {
-                    self.pointer_down = state.is_pressed();
-
-                    let cursor_pos = (
-                        self.cursor_pos.0 as f32 - left,
-                        self.cursor_pos.1 as f32 - top,
-                    );
-
-                    if self.pointer_down {
-                        let now = Instant::now();
-                        if let Some(last) = self.last_click_time.take() {
-                            if now.duration_since(last).as_secs_f64() < MULTICLICK_DELAY {
-                                self.click_count = (self.click_count + 1) % 4;
-                            } else {
-                                self.click_count = 1;
-                            }
-                        } else {
-                            self.click_count = 1;
-                        }
-                        self.last_click_time = Some(now);
-                        let click_count = self.click_count;
-                        match click_count {
-                            2 => self.select_word_at_point(layout, cursor_pos.0, cursor_pos.1),
-                            3 => self.select_line_at_point(layout, cursor_pos.0, cursor_pos.1),
-                            _ => {
-                                if shift {
-                                    self.extend_selection_with_anchor(
-                                        layout,
-                                        cursor_pos.0,
-                                        cursor_pos.1,
-                                    )
-                                } else {
-                                    self.move_to_point(layout, cursor_pos.0, cursor_pos.1)
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            WindowEvent::KeyboardInput { event, .. } => {
-                if !event.state.is_pressed() {
-                    return;
-                }
-                #[allow(unused)]
-                let mods_state = modifiers.state();
-                let shift = mods_state.shift_key();
-                let action_mod = if cfg!(target_os = "macos") {
-                    mods_state.super_key()
-                } else {
-                    mods_state.control_key()
-                };
-
-                if shift {
-                    match &event.logical_key {
-                        Key::Named(NamedKey::ArrowLeft) => {
-                            if action_mod {
-                                self.select_word_left(layout);
-                            } else {
-                                self.select_left(layout);
-                            }
-                        }
-                        Key::Named(NamedKey::ArrowRight) => {
-                            if action_mod {
-                                self.select_word_right(layout);
-                            } else {
-                                self.select_right(layout);
-                            }
-                        }
-                        Key::Named(NamedKey::ArrowUp) => {
-                            self.select_up(layout);
-                        }
-                        Key::Named(NamedKey::ArrowDown) => {
-                            self.select_down(layout);
-                        }
-                        Key::Named(NamedKey::Home) => {
-                            if action_mod {
-                                self.select_to_text_start(layout);
-                            } else {
-                                self.select_to_line_start(layout);
-                            }
-                        }
-                        Key::Named(NamedKey::End) => {
-                            if action_mod {
-                                self.select_to_text_end(layout);
-                            } else {
-                                self.select_to_line_end(layout);
-                            }
-                        }
-                        _ => (),
-                    }
-                }
-            }
-            _ => {}
-        }
-    }
-
-    /// Move the cursor to the cluster boundary nearest this point in the layout.
-    pub fn move_to_point(&mut self, layout: &Layout<ColorBrush>, x: f32, y: f32) {
-        self.set_selection(Selection::from_point(layout, x, y));
-    }
-
-    pub fn select_word_at_point(&mut self, layout: &Layout<ColorBrush>, x: f32, y: f32) {
-        self.set_selection(Selection::word_from_point(layout, x, y));
-    }
-
-    /// Select the physical line at the point.
-    pub fn select_line_at_point(&mut self, layout: &Layout<ColorBrush>, x: f32, y: f32) {
-        let line = Selection::line_from_point(layout, x, y);
-        self.set_selection(line);
-    }
-
-    /// Move the selection focus point to the cluster boundary closest to point.
-    pub fn extend_selection_to_point(
-        &mut self,
-        layout: &Layout<ColorBrush>,
-        x: f32,
-        y: f32,
-        keep_granularity: bool,
-    ) {
-        // FIXME: This is usually the wrong way to handle selection extension for mouse moves, but not a regression.
-        self.set_selection(
-            self.selection
-                .extend_to_point(layout, x, y, keep_granularity),
-        );
-    }
-
-    /// Extend the selection starting from the previous anchor, moving the selection focus point to the cluster boundary closest to point.
-    ///
-    /// Used for shift-click behavior.
-    pub fn extend_selection_with_anchor(&mut self, layout: &Layout<ColorBrush>, x: f32, y: f32) {
-        if let Some(prev_selection) = self.prev_anchor {
-            self.set_selection_with_old_anchor(prev_selection);
-        } else {
-            self.prev_anchor = Some(self.selection);
-        }
-        // FIXME: This is usually the wrong way to handle selection extension for mouse moves, but not a regression.
-        self.set_selection_with_old_anchor(self.selection.extend_to_point(layout, x, y, false));
-    }
-
-    /// Update the selection, and nudge the `Generation` if something other than `h_pos` changed.
-    pub(crate) fn set_selection(&mut self, new_sel: Selection) {
-        self.set_selection_inner(new_sel);
-        self.prev_anchor = None;
-    }
-
-    /// Update the selection without resetting the previous anchor.
-    fn set_selection_with_old_anchor(&mut self, new_sel: Selection) {
-        self.set_selection_inner(new_sel);
-    }
-
-    fn set_selection_inner(&mut self, new_sel: Selection) {
-        self.selection = new_sel;
-    }
-
-    /// Move the selection focus point to the start of the buffer.
-    pub fn select_to_text_start(&mut self, layout: &Layout<ColorBrush>) {
-        self.selection = self.selection.move_lines(layout, isize::MIN, true);
-    }
-
-    /// Move the selection focus point to the start of the physical line.
-    pub fn select_to_line_start(&mut self, layout: &Layout<ColorBrush>) {
-        self.selection = self.selection.line_start(layout, true);
-    }
-
-    /// Move the selection focus point to the end of the buffer.
-    pub fn select_to_text_end(&mut self, layout: &Layout<ColorBrush>) {
-        self.selection = self.selection.move_lines(layout, isize::MAX, true);
-    }
-
-    /// Move the selection focus point to the end of the physical line.
-    pub fn select_to_line_end(&mut self, layout: &Layout<ColorBrush>) {
-        self.selection = self.selection.line_end(layout, true);
-    }
-
-    /// Move the selection focus point up to the nearest cluster boundary on the previous line, preserving the horizontal position for repeated movements.
-    pub fn select_up(&mut self, layout: &Layout<ColorBrush>) {
-        self.selection = self.selection.previous_line(layout, true);
-    }
-
-    /// Move the selection focus point down to the nearest cluster boundary on the next line, preserving the horizontal position for repeated movements.
-    pub fn select_down(&mut self, layout: &Layout<ColorBrush>) {
-        self.selection = self.selection.next_line(layout, true);
-    }
-
-    /// Move the selection focus point to the next cluster left in visual order.
-    pub fn select_left(&mut self, layout: &Layout<ColorBrush>) {
-        self.selection = self.selection.previous_visual(layout, true);
-    }
-
-    /// Move the selection focus point to the next cluster right in visual order.
-    pub fn select_right(&mut self, layout: &Layout<ColorBrush>) {
-        self.selection = self.selection.next_visual(layout, true);
-    }
-
-    /// Move the selection focus point to the next word boundary left.
-    pub fn select_word_left(&mut self, layout: &Layout<ColorBrush>) {
-        self.selection = self.selection.previous_visual_word(layout, true);
-    }
-
-    /// Move the selection focus point to the next word boundary right.
-    pub fn select_word_right(&mut self, layout: &Layout<ColorBrush>) {
-        self.selection = self.selection.next_visual_word(layout, true);
-    }
-}
-
-impl<T: AsRef<str>> TextBox<T> {
-    pub fn text_real(&self) -> &T {
-        &self.text
-    }
-    pub fn text_mut(&mut self) -> &mut T {
-        &mut self.text
-    }
 
     pub fn selection(&self) -> &Selection {
         &self.selection.selection
@@ -799,6 +539,11 @@ impl<T: AsRef<str>> TextBox<T> {
         &self.text.as_ref()
     }
 
+    pub fn raw_text_mut(&mut self) -> &mut T {
+        self.needs_relayout = true;
+        &mut self.text
+    }
+
     /// Set the width of the layout.
     pub fn set_size(&mut self, size: (f32, f32)) {
         let relayout = (self.width != Some(size.0)) || (self.height != size.1) || (self.max_advance != size.0);
@@ -820,28 +565,6 @@ impl<T: AsRef<str>> TextBox<T> {
     pub fn set_scale(&mut self, scale: f32) {
         self.scale = scale;
         self.needs_relayout = true;
-    }
-
-    // /// Modify the styles provided for this editor.
-    // pub fn edit_styles(&mut self) -> &mut StyleSet<ColorBrush> {
-    //     self.needs_relayout = true;
-    //     &mut self.default_style
-    // }
-
-    // --- MARK: Raw APIs ---
-    /// Get the full read-only details from the layout, if valid.
-    ///
-    /// Returns `None` if the layout is not up-to-date.
-    /// You can call [`refresh_layout`](Self::refresh_layout) before using this method,
-    /// to ensure that the layout is up-to-date.
-    ///
-    /// The [`layout`](Self::layout) method should generally be preferred.
-    pub fn try_layout(&self) -> Option<&Layout<ColorBrush>> {
-        if self.needs_relayout {
-            None
-        } else {
-            Some(&self.layout)
-        }
     }
 
     #[cfg(feature = "accesskit")]
@@ -965,7 +688,7 @@ impl<T: AsRef<str>> TextBox<T> {
 
     // --- MARK: Cursor Movement ---
     /// Move the cursor to the cluster boundary nearest this point in the layout.
-    pub fn move_to_point(&mut self, x: f32, y: f32) {
+    pub(crate) fn move_to_point(&mut self, x: f32, y: f32) {
         self.refresh_layout();
         self.set_selection(Selection::from_point(&self.layout, x, y));
     }
@@ -973,7 +696,7 @@ impl<T: AsRef<str>> TextBox<T> {
     /// Move the cursor to a byte index.
     ///
     /// No-op if index is not a char boundary.
-    pub fn move_to_byte(&mut self, index: usize) {
+    pub(crate) fn move_to_byte(&mut self, index: usize) {
         if self.text.as_ref().is_char_boundary(index) {
             self.refresh_layout();
             self.set_selection(self.cursor_at(index).into());
@@ -981,7 +704,7 @@ impl<T: AsRef<str>> TextBox<T> {
     }
 
     /// Move the cursor to the start of the text.
-    pub fn move_to_text_start(&mut self) {
+    pub(crate) fn move_to_text_start(&mut self) {
         self.refresh_layout();
         self.set_selection(
             self.selection
@@ -991,13 +714,13 @@ impl<T: AsRef<str>> TextBox<T> {
     }
 
     /// Move the cursor to the start of the physical line.
-    pub fn move_to_line_start(&mut self) {
+    pub(crate) fn move_to_line_start(&mut self) {
         self.refresh_layout();
         self.set_selection(self.selection.selection.line_start(&self.layout, false));
     }
 
     /// Move the cursor to the end of the text.
-    pub fn move_to_text_end(&mut self) {
+    pub(crate) fn move_to_text_end(&mut self) {
         self.refresh_layout();
         self.set_selection(
             self.selection
@@ -1007,25 +730,25 @@ impl<T: AsRef<str>> TextBox<T> {
     }
 
     /// Move the cursor to the end of the physical line.
-    pub fn move_to_line_end(&mut self) {
+    pub(crate) fn move_to_line_end(&mut self) {
         self.refresh_layout();
         self.set_selection(self.selection.selection.line_end(&self.layout, false));
     }
 
     /// Move up to the closest physical cluster boundary on the previous line, preserving the horizontal position for repeated movements.
-    pub fn move_up(&mut self) {
+    pub(crate) fn move_up(&mut self) {
         self.refresh_layout();
         self.set_selection(self.selection.selection.previous_line(&self.layout, false));
     }
 
     /// Move down to the closest physical cluster boundary on the next line, preserving the horizontal position for repeated movements.
-    pub fn move_down(&mut self) {
+    pub(crate) fn move_down(&mut self) {
         self.refresh_layout();
         self.set_selection(self.selection.selection.next_line(&self.layout, false));
     }
 
     /// Move to the next cluster left in visual order.
-    pub fn move_left(&mut self) {
+    pub(crate) fn move_left(&mut self) {
         self.refresh_layout();
         self.set_selection(
             self.selection
@@ -1035,13 +758,13 @@ impl<T: AsRef<str>> TextBox<T> {
     }
 
     /// Move to the next cluster right in visual order.
-    pub fn move_right(&mut self) {
+    pub(crate) fn move_right(&mut self) {
         self.refresh_layout();
         self.set_selection(self.selection.selection.next_visual(&self.layout, false));
     }
 
     /// Move to the next word boundary left.
-    pub fn move_word_left(&mut self) {
+    pub(crate) fn move_word_left(&mut self) {
         self.refresh_layout();
         self.set_selection(
             self.selection
@@ -1051,7 +774,7 @@ impl<T: AsRef<str>> TextBox<T> {
     }
 
     /// Move to the next word boundary right.
-    pub fn move_word_right(&mut self) {
+    pub(crate) fn move_word_right(&mut self) {
         self.refresh_layout();
         self.set_selection(
             self.selection
@@ -1061,7 +784,7 @@ impl<T: AsRef<str>> TextBox<T> {
     }
 
     /// Select the whole text.
-    pub fn select_all(&mut self) {
+    pub(crate) fn select_all(&mut self) {
         self.refresh_layout();
         self.set_selection(
             Selection::from_byte_index(&self.layout, 0_usize, Affinity::default()).move_lines(
@@ -1073,12 +796,12 @@ impl<T: AsRef<str>> TextBox<T> {
     }
 
     /// Collapse selection into caret.
-    pub fn collapse_selection(&mut self) {
+    pub(crate) fn collapse_selection(&mut self) {
         self.set_selection(self.selection.selection.collapse());
     }
 
     /// Move the selection focus point to the cluster boundary closest to point.
-    pub fn extend_selection_to_point(&mut self, x: f32, y: f32, keep_granularity: bool) {
+    pub(crate) fn extend_selection_to_point(&mut self, x: f32, y: f32, keep_granularity: bool) {
         self.refresh_layout();
 
         self.selection
@@ -1087,3 +810,255 @@ impl<T: AsRef<str>> TextBox<T> {
 
 }
 
+
+
+pub use parley::Rect;
+
+pub(crate) trait Ext1 {
+    fn hit_bounding_box(&self, cursor_pos: (f64, f64)) -> bool;
+}
+impl Ext1 for Layout<ColorBrush> {
+    fn hit_bounding_box(&self, cursor_pos: (f64, f64)) -> bool {
+        let hit = cursor_pos.0 > -X_TOLERANCE
+            && cursor_pos.0 < self.max_content_width() as f64 + X_TOLERANCE
+            && cursor_pos.1 > 0.0
+            && cursor_pos.1 < self.height() as f64;
+
+        return hit;
+    }
+}
+
+const MULTICLICK_DELAY: f64 = 0.4;
+
+impl SelectionState {
+    pub(crate) fn handle_event(
+        &mut self,
+        event: &winit::event::WindowEvent,
+        modifiers: &Modifiers,
+        layout: &Layout<ColorBrush>,
+        left: f32,
+        top: f32,
+    ) {
+        match event {
+            WindowEvent::CursorMoved { position, .. } => {
+                let cursor_pos = (position.x as f32, position.y as f32);
+                // macOS seems to generate a spurious move after selecting word?
+                if self.pointer_down {
+                    let cursor_pos = (
+                        cursor_pos.0 - left as f32,
+                        cursor_pos.1 - top as f32,
+                    );
+                    self.extend_selection_to_point(
+                        &layout,
+                        cursor_pos.0,
+                        cursor_pos.1,
+                        true,
+                    );
+                }
+            }
+            WindowEvent::MouseInput { state, button, .. } => {
+                let shift = modifiers.state().shift_key();
+                if *button == winit::event::MouseButton::Left {
+                    self.pointer_down = state.is_pressed();
+
+                    let cursor_pos = (
+                        self.cursor_pos.0 as f32 - left,
+                        self.cursor_pos.1 as f32 - top,
+                    );
+
+                    if self.pointer_down {
+                        let now = Instant::now();
+                        if let Some(last) = self.last_click_time.take() {
+                            if now.duration_since(last).as_secs_f64() < MULTICLICK_DELAY {
+                                self.click_count = (self.click_count + 1) % 4;
+                            } else {
+                                self.click_count = 1;
+                            }
+                        } else {
+                            self.click_count = 1;
+                        }
+                        self.last_click_time = Some(now);
+                        let click_count = self.click_count;
+                        match click_count {
+                            2 => self.select_word_at_point(layout, cursor_pos.0, cursor_pos.1),
+                            3 => self.select_line_at_point(layout, cursor_pos.0, cursor_pos.1),
+                            _ => {
+                                if shift {
+                                    self.extend_selection_with_anchor(
+                                        layout,
+                                        cursor_pos.0,
+                                        cursor_pos.1,
+                                    )
+                                } else {
+                                    self.move_to_point(layout, cursor_pos.0, cursor_pos.1)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            WindowEvent::KeyboardInput { event, .. } => {
+                if !event.state.is_pressed() {
+                    return;
+                }
+                #[allow(unused)]
+                let mods_state = modifiers.state();
+                let shift = mods_state.shift_key();
+                let action_mod = if cfg!(target_os = "macos") {
+                    mods_state.super_key()
+                } else {
+                    mods_state.control_key()
+                };
+
+                if shift {
+                    match &event.logical_key {
+                        Key::Named(NamedKey::ArrowLeft) => {
+                            if action_mod {
+                                self.select_word_left(layout);
+                            } else {
+                                self.select_left(layout);
+                            }
+                        }
+                        Key::Named(NamedKey::ArrowRight) => {
+                            if action_mod {
+                                self.select_word_right(layout);
+                            } else {
+                                self.select_right(layout);
+                            }
+                        }
+                        Key::Named(NamedKey::ArrowUp) => {
+                            self.select_up(layout);
+                        }
+                        Key::Named(NamedKey::ArrowDown) => {
+                            self.select_down(layout);
+                        }
+                        Key::Named(NamedKey::Home) => {
+                            if action_mod {
+                                self.select_to_text_start(layout);
+                            } else {
+                                self.select_to_line_start(layout);
+                            }
+                        }
+                        Key::Named(NamedKey::End) => {
+                            if action_mod {
+                                self.select_to_text_end(layout);
+                            } else {
+                                self.select_to_line_end(layout);
+                            }
+                        }
+                        _ => (),
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Move the cursor to the cluster boundary nearest this point in the layout.
+    pub(crate) fn move_to_point(&mut self, layout: &Layout<ColorBrush>, x: f32, y: f32) {
+        self.set_selection(Selection::from_point(layout, x, y));
+    }
+
+    pub(crate) fn select_word_at_point(&mut self, layout: &Layout<ColorBrush>, x: f32, y: f32) {
+        self.set_selection(Selection::word_from_point(layout, x, y));
+    }
+
+    /// Select the physical line at the point.
+    pub(crate) fn select_line_at_point(&mut self, layout: &Layout<ColorBrush>, x: f32, y: f32) {
+        let line = Selection::line_from_point(layout, x, y);
+        self.set_selection(line);
+    }
+
+    /// Move the selection focus point to the cluster boundary closest to point.
+    pub(crate) fn extend_selection_to_point(
+        &mut self,
+        layout: &Layout<ColorBrush>,
+        x: f32,
+        y: f32,
+        keep_granularity: bool,
+    ) {
+        // FIXME: This is usually the wrong way to handle selection extension for mouse moves, but not a regression.
+        self.set_selection(
+            self.selection
+                .extend_to_point(layout, x, y, keep_granularity),
+        );
+    }
+
+    /// Extend the selection starting from the previous anchor, moving the selection focus point to the cluster boundary closest to point.
+    ///
+    /// Used for shift-click behavior.
+    pub(crate) fn extend_selection_with_anchor(&mut self, layout: &Layout<ColorBrush>, x: f32, y: f32) {
+        if let Some(prev_selection) = self.prev_anchor {
+            self.set_selection_with_old_anchor(prev_selection);
+        } else {
+            self.prev_anchor = Some(self.selection);
+        }
+        // FIXME: This is usually the wrong way to handle selection extension for mouse moves, but not a regression.
+        self.set_selection_with_old_anchor(self.selection.extend_to_point(layout, x, y, false));
+    }
+
+    /// Update the selection, and nudge the `Generation` if something other than `h_pos` changed.
+    pub(crate) fn set_selection(&mut self, new_sel: Selection) {
+        self.set_selection_inner(new_sel);
+        self.prev_anchor = None;
+    }
+
+    /// Update the selection without resetting the previous anchor.
+    fn set_selection_with_old_anchor(&mut self, new_sel: Selection) {
+        self.set_selection_inner(new_sel);
+    }
+
+    fn set_selection_inner(&mut self, new_sel: Selection) {
+        self.selection = new_sel;
+    }
+
+    /// Move the selection focus point to the start of the buffer.
+    pub(crate) fn select_to_text_start(&mut self, layout: &Layout<ColorBrush>) {
+        self.selection = self.selection.move_lines(layout, isize::MIN, true);
+    }
+
+    /// Move the selection focus point to the start of the physical line.
+    pub(crate) fn select_to_line_start(&mut self, layout: &Layout<ColorBrush>) {
+        self.selection = self.selection.line_start(layout, true);
+    }
+
+    /// Move the selection focus point to the end of the buffer.
+    pub(crate) fn select_to_text_end(&mut self, layout: &Layout<ColorBrush>) {
+        self.selection = self.selection.move_lines(layout, isize::MAX, true);
+    }
+
+    /// Move the selection focus point to the end of the physical line.
+    pub(crate) fn select_to_line_end(&mut self, layout: &Layout<ColorBrush>) {
+        self.selection = self.selection.line_end(layout, true);
+    }
+
+    /// Move the selection focus point up to the nearest cluster boundary on the previous line, preserving the horizontal position for repeated movements.
+    pub(crate) fn select_up(&mut self, layout: &Layout<ColorBrush>) {
+        self.selection = self.selection.previous_line(layout, true);
+    }
+
+    /// Move the selection focus point down to the nearest cluster boundary on the next line, preserving the horizontal position for repeated movements.
+    pub(crate) fn select_down(&mut self, layout: &Layout<ColorBrush>) {
+        self.selection = self.selection.next_line(layout, true);
+    }
+
+    /// Move the selection focus point to the next cluster left in visual order.
+    pub(crate) fn select_left(&mut self, layout: &Layout<ColorBrush>) {
+        self.selection = self.selection.previous_visual(layout, true);
+    }
+
+    /// Move the selection focus point to the next cluster right in visual order.
+    pub(crate) fn select_right(&mut self, layout: &Layout<ColorBrush>) {
+        self.selection = self.selection.next_visual(layout, true);
+    }
+
+    /// Move the selection focus point to the next word boundary left.
+    pub(crate) fn select_word_left(&mut self, layout: &Layout<ColorBrush>) {
+        self.selection = self.selection.previous_visual_word(layout, true);
+    }
+
+    /// Move the selection focus point to the next word boundary right.
+    pub(crate) fn select_word_right(&mut self, layout: &Layout<ColorBrush>) {
+        self.selection = self.selection.next_visual_word(layout, true);
+    }
+}

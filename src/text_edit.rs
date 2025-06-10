@@ -23,7 +23,7 @@ pub struct TextEventResult {
 }
 
 impl TextEventResult {
-    pub fn new(focus_grabbed: bool) -> Self {
+    pub(crate) fn new(focus_grabbed: bool) -> Self {
         Self {
             focus_grabbed,
             text_changed: false,
@@ -31,11 +31,11 @@ impl TextEventResult {
         }
     }
     
-    pub fn set_text_changed(&mut self) {
+    pub(crate) fn set_text_changed(&mut self) {
         self.text_changed = true;
     }
     
-    pub fn set_decorations_changed(&mut self) {
+    pub(crate) fn set_decorations_changed(&mut self) {
         self.decorations_changed = true;
     }
     
@@ -90,7 +90,7 @@ impl<'source> IntoIterator for SplitString<'source> {
     }
 }
 
-pub fn selection_decorations_changed(initial_selection: Selection, new_selection: Selection, initial_show_cursor: bool, new_show_cursor: bool, is_editable: bool) -> bool {
+pub(crate) fn selection_decorations_changed(initial_selection: Selection, new_selection: Selection, initial_show_cursor: bool, new_show_cursor: bool, is_editable: bool) -> bool {
     if initial_show_cursor != new_show_cursor {
         return true;
     }
@@ -375,18 +375,18 @@ impl TextEdit {
 
 
 impl TextBox<String> {
-    pub fn cursor_reset(&mut self) {
+    pub(crate) fn cursor_reset(&mut self) {
         self.start_time = Some(Instant::now());
         // TODO: for real world use, this should be reading from the system settings
         self.blink_period = Duration::from_millis(500);
         self.show_cursor = true;
     }
 
-    pub fn disable_blink(&mut self) {
+    pub(crate) fn disable_blink(&mut self) {
         self.start_time = None;
     }
 
-    pub fn next_blink_time(&self) -> Option<Instant> {
+    pub(crate) fn next_blink_time(&self) -> Option<Instant> {
         self.start_time.map(|start_time| {
             let phase = Instant::now().duration_since(start_time);
 
@@ -398,7 +398,7 @@ impl TextBox<String> {
         })
     }
 
-    pub fn cursor_blink(&mut self) {
+    pub(crate) fn cursor_blink(&mut self) {
         self.show_cursor = self.start_time.is_some_and(|start_time| {
             let elapsed = Instant::now().duration_since(start_time);
             (elapsed.as_millis() / self.blink_period.as_millis()) % 2 == 0
@@ -406,7 +406,7 @@ impl TextBox<String> {
     }
 
     #[must_use]
-    fn handle_event_inner(&mut self, event: &WindowEvent, window: &Window, focus_already_grabbed: bool) -> TextEventResult {
+    pub(crate) fn handle_event_inner(&mut self, event: &WindowEvent, window: &Window, focus_already_grabbed: bool) -> TextEventResult {
         if self.hidden {
             return TextEventResult::new(false);
         }
@@ -641,7 +641,7 @@ impl TextBox<String> {
     }
 
     #[cfg(feature = "accesskit")]
-    pub fn handle_accesskit_action_request(&mut self, req: &accesskit::ActionRequest) {
+    pub(crate) fn handle_accesskit_action_request(&mut self, req: &accesskit::ActionRequest) {
         if req.action == accesskit::Action::SetTextSelection {
             if let Some(accesskit::ActionData::SetTextSelection(selection)) = &req.data {
                 self.select_from_accesskit(selection);
@@ -679,21 +679,21 @@ impl TextBox<String> {
 
     // --- MARK: Forced relayout ---
     /// Insert at cursor, or replace selection.
-    pub fn insert_or_replace_selection(&mut self, s: &str) {
+    pub(crate) fn insert_or_replace_selection(&mut self, s: &str) {
         assert!(!self.is_composing());
 
         self.replace_selection_and_record(s);
     }
 
     /// Delete the selection.
-    pub fn delete_selection(&mut self) {
+    pub(crate) fn delete_selection(&mut self) {
         assert!(!self.is_composing());
 
         self.insert_or_replace_selection("");
     }
 
     /// Delete the selection or the next cluster (typical ‘delete’ behavior).
-    pub fn delete(&mut self) {
+    pub(crate) fn delete(&mut self) {
         assert!(!self.is_composing());
 
         if self.selection.selection.is_collapsed() {
@@ -717,7 +717,7 @@ impl TextBox<String> {
     }
 
     /// Delete the selection or up to the next word boundary (typical ‘ctrl + delete’ behavior).
-    pub fn delete_word(&mut self) {
+    pub(crate) fn delete_word(&mut self) {
         assert!(!self.is_composing());
 
         if self.selection.selection.is_collapsed() {
@@ -738,7 +738,7 @@ impl TextBox<String> {
     }
 
     /// Delete the selection or the previous cluster (typical ‘backspace’ behavior).
-    pub fn backdelete(&mut self) {
+    pub(crate) fn backdelete(&mut self) {
         assert!(!self.is_composing());
 
         if self.selection.selection.is_collapsed() {
@@ -779,7 +779,7 @@ impl TextBox<String> {
     }
 
     /// Delete the selection or back to the previous word boundary (typical ‘ctrl + backspace’ behavior).
-    pub fn backdelete_word(&mut self) {
+    pub(crate) fn backdelete_word(&mut self) {
         assert!(!self.is_composing());
 
         if self.selection.selection.is_collapsed() {
@@ -810,7 +810,7 @@ impl TextBox<String> {
     ///
     /// The selection is updated based on `cursor`, which contains the byte offsets relative to the
     /// start of the preedit text. If `cursor` is `None`, the selection and caret are hidden.
-    pub fn set_compose(&mut self, text: &str, cursor: Option<(usize, usize)>) {
+    pub(crate) fn set_compose(&mut self, text: &str, cursor: Option<(usize, usize)>) {
         debug_assert!(!text.is_empty());
         debug_assert!(cursor.map(|cursor| cursor.1 <= text.len()).unwrap_or(true));
 
@@ -846,7 +846,7 @@ impl TextBox<String> {
     /// Stop IME composing.
     ///
     /// This removes the IME preedit text.
-    pub fn clear_compose(&mut self) {
+    pub(crate) fn clear_compose(&mut self) {
         if let Some(preedit_range) = self.compose.take() {
             self.text.replace_range(preedit_range.clone(), "");
             self.show_cursor = true;
@@ -858,7 +858,7 @@ impl TextBox<String> {
 
     #[cfg(feature = "accesskit")]
     /// Select inside the editor based on the selection provided by accesskit.
-    pub fn select_from_accesskit(&mut self, selection: &accesskit::TextSelection) {
+    pub(crate) fn select_from_accesskit(&mut self, selection: &accesskit::TextSelection) {
         assert!(!self.is_composing());
 
         self.refresh_layout();
@@ -872,7 +872,7 @@ impl TextBox<String> {
     // --- MARK: Rendering ---
     #[cfg(feature = "accesskit")]
     /// Perform an accessibility update.
-    pub fn accessibility(
+    pub(crate) fn accessibility(
         &mut self,
         update: &mut TreeUpdate,
         node: &mut Node,
@@ -885,7 +885,7 @@ impl TextBox<String> {
         Some(())
     }
 
-    pub fn undo(&mut self) {
+    pub(crate) fn undo(&mut self) {
         if ! self.is_composing() {
             if let Some(op) = self.history.undo(&self.text) {
                 self
@@ -902,7 +902,7 @@ impl TextBox<String> {
         }
     }
 
-    pub fn redo(&mut self) {
+    pub(crate) fn redo(&mut self) {
         if let Some(op) = self.history.redo() {
             self
                 .text
@@ -922,7 +922,7 @@ impl TextBox<String> {
     }
 
     /// Replace the whole text.
-    pub fn set_text(&mut self, is: &str) {
+    pub(crate) fn set_text(&mut self, is: &str) {
         assert!(!self.is_composing());
 
         self.text.clear();
@@ -953,7 +953,7 @@ impl TextBox<String> {
     ///
     /// The return value is a `SplitString` because it
     /// excludes the IME preedit region.
-    pub fn text(&self) -> SplitString<'_> {
+    pub(crate) fn text(&self) -> SplitString<'_> {
         if let Some(preedit_range) = &self.compose {
             SplitString([
                 &self.text[..preedit_range.start],
@@ -970,7 +970,7 @@ impl TextBox<String> {
     /// This is useful for suggesting an exclusion area to the platform for, e.g., IME candidate
     /// box placement. This bounds the area of the preedit text if present, otherwise it bounds the
     /// selection on the focused line.
-    pub fn ime_cursor_area(&self) -> Rect {
+    pub(crate) fn ime_cursor_area(&self) -> Rect {
         let (area, focus) = if let Some(preedit_range) = &self.compose {
             let selection = Selection::new(
                 self.cursor_at(preedit_range.start),
@@ -1024,7 +1024,7 @@ impl TextBox<String> {
         }
     }
 
-    pub fn set_ime_cursor_area(&self, window: &Window) {
+    pub(crate) fn set_ime_cursor_area(&self, window: &Window) {
         let area = self.ime_cursor_area();
         // Note: on X11 `set_ime_cursor_area` may cause the exclusion area to be obscured
         // until https://github.com/rust-windowing/winit/pull/3966 is in the Winit release
@@ -1039,7 +1039,7 @@ impl TextBox<String> {
     }
 
     /// Whether the editor is currently in IME composing mode.
-    pub fn is_composing(&self) -> bool {
+    pub(crate) fn is_composing(&self) -> bool {
         self.compose.is_some()
     }
 
@@ -1047,7 +1047,7 @@ impl TextBox<String> {
     ///
     /// There is not always a caret. For example, the IME may have indicated the caret should be
     /// hidden.
-    pub fn cursor_geometry(&self, size: f32) -> Option<Rect> {
+    pub(crate) fn cursor_geometry(&self, size: f32) -> Option<Rect> {
         self.show_cursor.then(|| {
             self.selection
                 .selection
