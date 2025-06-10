@@ -66,8 +66,6 @@ pub struct TextBox<T: AsRef<str>> {
     
     pub(crate) selectable: bool,
 
-    pub(crate) editable: bool,
-
     pub(crate) hidden: bool,
 
     pub(crate) compose: Option<Range<usize>>,
@@ -161,12 +159,8 @@ impl SelectionState {
 }
 
 impl<T: AsRef<str>> TextBox<T> {
-    pub fn new(text: T, pos: (f64, f64), size: (f32, f32), depth: f32, editable: bool) -> Self {
-        let history = if editable {
-            TextEditHistory::new()
-        } else {
-            TextEditHistory::empty()
-        };
+    pub fn new(text: T, pos: (f64, f64), size: (f32, f32), depth: f32) -> Self {
+        let empty_history = TextEditHistory::empty();
         Self {
             text,
             shared_style_version: 0,
@@ -189,8 +183,8 @@ impl<T: AsRef<str>> TextBox<T> {
             modifiers: Default::default(),
             scale: Default::default(),
             clip_rect: None,
-            history,
-            editable,
+            // todo: just move this to the other struct?
+            history: empty_history,
             hidden: false,
         }
     }
@@ -281,13 +275,13 @@ impl<T: AsRef<str>> TextBox<T> {
             self.reset_selection();
             result.focus_grabbed = false;
         } else {
-            let focus_grabbed = self.update_focus(event, focus_already_grabbed);
+            let focus_grabbed = self.update_focus(event, focus_already_grabbed, false);
             result.focus_grabbed = focus_grabbed;
         }
 
         self.handle_event_no_edit_inner(event);
 
-        if selection_decorations_changed(initial_selection, self.selection.selection, initial_show_cursor, self.show_cursor, self.editable) {
+        if selection_decorations_changed(initial_selection, self.selection.selection, initial_show_cursor, self.show_cursor, false) {
             result.set_decorations_changed();
         }
 
@@ -394,6 +388,7 @@ impl<T: AsRef<str>> TextBox<T> {
         &mut self,
         event: &WindowEvent,
         focus_already_grabbed: bool,
+        editable: bool,
     ) -> bool {
 
         if !self.selectable || focus_already_grabbed {
@@ -413,7 +408,7 @@ impl<T: AsRef<str>> TextBox<T> {
                         self.selection.cursor_pos.1 as f64 - self.top,
                     );
 
-                    let hit = if self.editable {
+                    let hit = if editable {
                         self.hit_full_rect(offset)
                     } else {
                         self.layout.hit_bounding_box(offset)
@@ -435,10 +430,6 @@ impl<T: AsRef<str>> TextBox<T> {
 
     pub fn focused(&self) -> bool {
         self.selection.focused
-    }
-
-    pub fn editable(&self) -> bool {
-        self.editable
     }
 
     pub fn set_shared_style(&mut self, style: &SharedStyle) {

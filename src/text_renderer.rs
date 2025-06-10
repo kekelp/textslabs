@@ -345,13 +345,31 @@ impl TextRenderer {
         let clip_rect = text_box.clip_rect();
 
         // Prepare decorations (selection and cursor)
-        self.prepare_text_box_decorations(text_box);
+        self.prepare_text_box_decorations(text_box, false);
 
         // Prepare text layout
         self.text_renderer.prepare_layout(text_box.layout(), &mut self.scale_cx, left, top, clip_rect);
     }
 
-    pub fn prepare_text_box_decorations<T: AsRef<str>>(&mut self, text_box: &TextBox<T>) {
+    pub fn prepare_text_edit(&mut self, text_edit: &mut TextEdit) {
+        if text_edit.hidden() {
+            return;
+        }
+        
+        text_edit.refresh_layout();
+        
+        let (left, top) = text_edit.pos();
+        let (left, top) = (left as f32, top as f32);
+        let clip_rect = text_edit.clip_rect();
+
+        // Prepare decorations (selection and cursor)
+        self.prepare_text_box_decorations(&text_edit.text_box, true);
+
+        // Prepare text layout
+        self.text_renderer.prepare_layout(text_edit.layout(), &mut self.scale_cx, left, top, clip_rect);
+    }
+
+    pub fn prepare_text_box_decorations<T: AsRef<str>>(&mut self, text_box: &TextBox<T>, editable: bool) {
         let (left, top) = text_box.pos();
         let (left, top) = (left as f32, top as f32);
         let clip_rect = text_box.clip_rect();
@@ -363,7 +381,7 @@ impl TextRenderer {
             self.text_renderer.add_selection_rect(rect, left, top, selection_color, clip_rect);
         });
         
-        let show_cursor = text_box.editable && text_box.focused() && text_box.selection.selection.is_collapsed(); 
+        let show_cursor = editable && text_box.focused() && text_box.selection.selection.is_collapsed(); 
         if show_cursor {
             let size = 3.0;
             let cursor_rect = text_box.selection().focus().geometry(&text_box.layout, size);

@@ -33,6 +33,7 @@ struct State {
 
     text_renderer: TextRenderer,
     text_boxes: Vec<TextBox<String>>,
+    text_edits: Vec<TextEdit>,
     static_text_boxes: Vec<TextBox<&'static str>>,
 }
 
@@ -59,26 +60,29 @@ impl State {
             ..Default::default()
         });
 
+        let mut text_edits = vec![
+            TextEdit::new("Text box".to_string(), (10.0, 15.0), (100.0, 50.0), 0.0),
+            TextEdit::new("Saddy (rare) ".to_string(), (100.0, 200.0), (400.0, 200.0), 0.0),
+        ];
+        
+        text_edits[1].set_shared_style(&big_text_style);
+
         let mut text_boxes = vec![
-            TextBox::new("Text box".to_string(), (10.0, 15.0), (100.0, 50.0), 0.0, true),
-            TextBox::new("Saddy (rare) ".to_string(), (100.0, 200.0), (400.0, 200.0), 0.0, true),
-            TextBox::new("Words words words ".to_string(), (20.0, 20.0), (100.0, 50.0), 0.0, false),
+            TextBox::new("Words words words ".to_string(), (20.0, 20.0), (100.0, 50.0), 0.0),
             TextBox::new(
                 "Amogus (non selectable)".to_string(),
                 (10.0, 110.0),
                 (100.0, 50.0),
-                0.0,
-                false,
+                0.0
             ),
         ];
-        text_boxes[3].set_selectable(false);
-
-        text_boxes[1].set_shared_style(&big_text_style);
-        text_boxes[2].set_shared_style(&big_text_style);
-        text_boxes[3].set_unique_style(TextStyle {
+        text_boxes[1].set_selectable(false);
+        text_boxes[0].set_shared_style(&big_text_style);
+        text_boxes[1].set_unique_style(TextStyle {
             font_size: 24.0,
             ..Default::default()
         });
+
 
         // Add a clip rectangle to the second text box to demonstrate clipping
         // This will clip the text box to a smaller rectangle, cutting off part of the text
@@ -92,8 +96,8 @@ impl State {
         big_text_style.with_borrow_mut(|style| style.font_size = 32.0);
 
         let mut static_text_boxes = vec![
-            TextBox::new("&'static str", (400.0, 500.0), (100.0, 50.0), 0.0, false),
-            TextBox::new("Static words ", (200.0, 400.0), (100.0, 50.0), 0.0, false),
+            TextBox::new("&'static str", (400.0, 500.0), (100.0, 50.0), 0.0),
+            TextBox::new("Static words ", (200.0, 400.0), (100.0, 50.0), 0.0),
         ];
         static_text_boxes[1].set_shared_style(&big_text_style);
 
@@ -108,6 +112,7 @@ impl State {
             window,
             text_renderer,
             text_boxes,
+            text_edits,
             static_text_boxes,
         }
     }
@@ -118,6 +123,20 @@ impl State {
         event: WindowEvent,
     ) {
         let mut already_grabbed = false;
+        for text_edit in &mut self.text_edits {
+            let result = text_edit.handle_event(&event, &self.window, already_grabbed);
+            if result.focus_grabbed {
+                already_grabbed = true;
+            }
+
+            if result.text_changed {
+                println!("[{}] Editor Text changed", timestamp());
+            }
+            if result.decorations_changed {
+                println!("[{}] Editor Decorations changed", timestamp());
+            }
+        }
+
         for text_box in &mut self.text_boxes {
             let result = text_box.handle_event(&event, &self.window, already_grabbed);
             if result.focus_grabbed {
@@ -159,6 +178,9 @@ impl State {
                 let view = frame.texture.create_view(&TextureViewDescriptor::default());
 
                 self.text_renderer.clear();
+                for text_edit in &mut self.text_edits {
+                    self.text_renderer.prepare_text_edit(text_edit);
+                }
                 for text_box in &mut self.text_boxes {
                     self.text_renderer.prepare_text_box(text_box);
                 }

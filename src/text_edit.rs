@@ -109,19 +109,19 @@ pub(crate) fn selection_decorations_changed(initial_selection: Selection, new_se
 
 /// A text editor widget that wraps a TextBox<String> and provides editing functionality.
 pub struct TextEdit {
-    text_box: TextBox<String>,
+    pub(crate) text_box: TextBox<String>,
 }
 
 impl TextEdit {
     pub fn new(text: String, pos: (f64, f64), size: (f32, f32), depth: f32) -> Self {
         Self {
-            text_box: TextBox::new(text, pos, size, depth, true),
+            text_box: TextBox::new(text, pos, size, depth),
         }
     }
 
     #[must_use]
     pub fn handle_event(&mut self, event: &WindowEvent, window: &Window, focus_already_grabbed: bool) -> TextEventResult {
-        self.text_box.handle_event_inner(event, window, focus_already_grabbed)
+        self.text_box.handle_event_editable(event, window, focus_already_grabbed)
     }
 
     // Getter methods
@@ -143,10 +143,6 @@ impl TextEdit {
 
     pub fn focused(&self) -> bool {
         self.text_box.focused()
-    }
-
-    pub fn editable(&self) -> bool {
-        self.text_box.editable()
     }
 
     pub fn selectable(&self) -> bool {
@@ -406,7 +402,7 @@ impl TextBox<String> {
     }
 
     #[must_use]
-    pub(crate) fn handle_event_inner(&mut self, event: &WindowEvent, window: &Window, focus_already_grabbed: bool) -> TextEventResult {
+    pub(crate) fn handle_event_editable(&mut self, event: &WindowEvent, window: &Window, focus_already_grabbed: bool) -> TextEventResult {
         if self.hidden {
             return TextEventResult::new(false);
         }
@@ -423,11 +419,11 @@ impl TextBox<String> {
             self.reset_selection();
             result.focus_grabbed = false;
         } else {
-            let focus_grabbed = self.update_focus(event, focus_already_grabbed);
+            let focus_grabbed = self.update_focus(event, focus_already_grabbed, true);
             result.focus_grabbed = focus_grabbed;
         }
         
-        if !self.editable || !self.focused() {
+        if !self.focused() {
             self.show_cursor = false;
         }
         
@@ -443,13 +439,6 @@ impl TextBox<String> {
 
         self.handle_event_no_edit_inner(event);
 
-        if ! self.editable {
-            if selection_decorations_changed(initial_selection, self.selection.selection, initial_show_cursor, self.show_cursor, self.editable) {
-                result.set_decorations_changed();
-            }
-            return result
-        }
-        
         match event {
             WindowEvent::KeyboardInput { event, .. } if !self.is_composing() => {
                 if !event.state.is_pressed() {
@@ -633,7 +622,7 @@ impl TextBox<String> {
             _ => {}
         }
 
-        if selection_decorations_changed(initial_selection, self.selection.selection, initial_show_cursor, self.show_cursor, self.editable) {
+        if selection_decorations_changed(initial_selection, self.selection.selection, initial_show_cursor, self.show_cursor, true) {
             result.set_decorations_changed();
         }
 
