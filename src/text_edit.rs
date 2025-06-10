@@ -110,23 +110,40 @@ pub(crate) fn selection_decorations_changed(initial_selection: Selection, new_se
 /// A text editor widget that wraps a TextBox<String> and provides editing functionality.
 pub struct TextEdit {
     pub(crate) text_box: TextBox<String>,
+    pub(crate) compose: Option<Range<usize>>,
+    pub(crate) show_cursor: bool,
+    pub(crate) start_time: Option<Instant>,
+    pub(crate) blink_period: Duration,
+    pub(crate) history: TextEditHistory,
 }
 
 impl TextEdit {
     pub fn new(text: String, pos: (f64, f64), size: (f32, f32), depth: f32) -> Self {
         Self {
             text_box: TextBox::new(text, pos, size, depth),
+            compose: Default::default(),
+            show_cursor: true,
+            start_time: Default::default(),
+            blink_period: Default::default(),
+            history: TextEditHistory::new(),
         }
     }
 
     #[must_use]
     pub fn handle_event(&mut self, event: &WindowEvent, window: &Window, focus_already_grabbed: bool) -> TextEventResult {
-        self.text_box.handle_event_editable(event, window, focus_already_grabbed)
+        self.handle_event_editable(event, window, focus_already_grabbed)
     }
 
     // Getter methods
     pub fn text(&self) -> SplitString<'_> {
-        self.text_box.text()
+        if let Some(preedit_range) = &self.compose {
+            SplitString([
+                &self.text_box.text[..preedit_range.start],
+                &self.text_box.text[preedit_range.end..],
+            ])
+        } else {
+            SplitString([&self.text_box.text, ""])
+        }
     }
 
     pub fn raw_text(&self) -> &str {
@@ -178,15 +195,70 @@ impl TextEdit {
     }
 
     pub fn is_composing(&self) -> bool {
-        self.text_box.is_composing()
+        self.compose.is_some()
     }
 
     pub fn cursor_geometry(&self, size: f32) -> Option<Rect> {
-        self.text_box.cursor_geometry(size)
+        self.show_cursor.then(|| {
+            self.text_box.selection
+                .selection
+                .focus()
+                .geometry(&self.text_box.layout, size)
+        })
     }
 
     pub fn ime_cursor_area(&self) -> Rect {
-        self.text_box.ime_cursor_area()
+        let (area, focus) = if let Some(preedit_range) = &self.compose {
+            let selection = Selection::new(
+                self.text_box.cursor_at(preedit_range.start),
+                self.text_box.cursor_at(preedit_range.end),
+            );
+
+            // Bound the entire preedit text.
+            let mut area = None;
+            selection.geometry_with(&self.text_box.layout, |rect, _| {
+                let area = area.get_or_insert(rect);
+                *area = area.union(rect);
+            });
+
+            (
+                area.unwrap_or_else(|| selection.focus().geometry(&self.text_box.layout, 0.)),
+                selection.focus(),
+            )
+        } else {
+            // Bound the selected parts of the focused line only.
+            let focus = self.text_box.selection.selection.focus().geometry(&self.text_box.layout, 0.);
+            let mut area = focus;
+            self.text_box.selection
+                .selection
+                .geometry_with(&self.text_box.layout, |rect, _| {
+                    if rect.y0 == focus.y0 {
+                        area = area.union(rect);
+                    }
+                });
+
+            (area, self.text_box.selection.selection.focus())
+        };
+
+        // Ensure some context is captured even for tiny or collapsed selections by including a
+        // region surrounding the selection. Doing this unconditionally, the IME candidate box
+        // usually does not need to jump around when composing starts or the preedit is added to.
+        let [upstream, downstream] = focus.logical_clusters(&self.text_box.layout);
+        let font_size = downstream
+            .or(upstream)
+            .map(|cluster| cluster.run().font_size())
+            // .unwrap_or(ResolvedStyle::<ColorBrush>::default().font_size);
+            .unwrap_or(16.0);
+        // Using 0.6 as an estimate of the average advance
+        let inflate = 3. * 0.6 * font_size as f64;
+        // todo, what is this
+        let editor_width = self.text_box.width.map(f64::from).unwrap_or(f64::INFINITY);
+        Rect {
+            x0: (area.x0 - inflate).max(0.),
+            x1: (area.x1 + inflate).min(editor_width),
+            y0: area.y0,
+            y1: area.y1,
+        }
     }
 
     // Setter methods
@@ -230,46 +302,20 @@ impl TextEdit {
         self.text_box.set_unique_style(style)
     }
 
-    pub fn set_text(&mut self, text: &str) {
-        self.text_box.set_text(text)
-    }
-
     pub fn set_ime_cursor_area(&self, window: &Window) {
-        self.text_box.set_ime_cursor_area(window)
+        let area = self.ime_cursor_area();
+        // Note: on X11 `set_ime_cursor_area` may cause the exclusion area to be obscured
+        // until https://github.com/rust-windowing/winit/pull/3966 is in the Winit release
+        // used by this example.
+        window.set_ime_cursor_area(
+            winit::dpi::PhysicalPosition::new(
+                area.x0 + self.text_box.left as f64,
+                area.y0 + self.text_box.top as f64,
+            ),
+            winit::dpi::PhysicalSize::new(area.width(), area.height()),
+        );
     }
 
-    // Text manipulation methods
-    pub fn insert_or_replace_selection(&mut self, s: &str) {
-        self.text_box.insert_or_replace_selection(s)
-    }
-
-    pub fn delete_selection(&mut self) {
-        self.text_box.delete_selection()
-    }
-
-    pub fn delete(&mut self) {
-        self.text_box.delete()
-    }
-
-    pub fn delete_word(&mut self) {
-        self.text_box.delete_word()
-    }
-
-    pub fn backdelete(&mut self) {
-        self.text_box.backdelete()
-    }
-
-    pub fn backdelete_word(&mut self) {
-        self.text_box.backdelete_word()
-    }
-
-    pub fn undo(&mut self) {
-        self.text_box.undo()
-    }
-
-    pub fn redo(&mut self) {
-        self.text_box.redo()
-    }
 
     // Cursor movement methods
     pub fn move_to_point(&mut self, x: f32, y: f32) {
@@ -335,29 +381,35 @@ impl TextEdit {
 
     // Cursor blinking methods
     pub fn cursor_reset(&mut self) {
-        self.text_box.cursor_reset()
+        self.start_time = Some(Instant::now());
+        // TODO: for real world use, this should be reading from the system settings
+        self.blink_period = Duration::from_millis(500);
+        self.show_cursor = true;
     }
 
     pub fn disable_blink(&mut self) {
-        self.text_box.disable_blink()
+        self.start_time = None;
     }
 
     pub fn cursor_blink(&mut self) {
-        self.text_box.cursor_blink()
+        self.show_cursor = self.start_time.is_some_and(|start_time| {
+            let elapsed = Instant::now().duration_since(start_time);
+            (elapsed.as_millis() / self.blink_period.as_millis()) % 2 == 0
+        });
     }
 
     pub fn next_blink_time(&self) -> Option<Instant> {
-        self.text_box.next_blink_time()
+        self.start_time.map(|start_time| {
+            let phase = Instant::now().duration_since(start_time);
+
+            start_time
+                + Duration::from_nanos(
+                    ((phase.as_nanos() / self.blink_period.as_nanos() + 1)
+                        * self.blink_period.as_nanos()) as u64,
+                )
+        })
     }
 
-    // IME methods
-    pub fn set_compose(&mut self, text: &str, cursor: Option<(usize, usize)>) {
-        self.text_box.set_compose(text, cursor)
-    }
-
-    pub fn clear_compose(&mut self) {
-        self.text_box.clear_compose()
-    }
 
     // Utility methods
     pub fn selection_geometry_with(&self, f: impl FnMut(Rect, usize)) {
@@ -370,56 +422,27 @@ impl TextEdit {
 }
 
 
-impl TextBox<String> {
-    pub(crate) fn cursor_reset(&mut self) {
-        self.start_time = Some(Instant::now());
-        // TODO: for real world use, this should be reading from the system settings
-        self.blink_period = Duration::from_millis(500);
-        self.show_cursor = true;
-    }
-
-    pub(crate) fn disable_blink(&mut self) {
-        self.start_time = None;
-    }
-
-    pub(crate) fn next_blink_time(&self) -> Option<Instant> {
-        self.start_time.map(|start_time| {
-            let phase = Instant::now().duration_since(start_time);
-
-            start_time
-                + Duration::from_nanos(
-                    ((phase.as_nanos() / self.blink_period.as_nanos() + 1)
-                        * self.blink_period.as_nanos()) as u64,
-                )
-        })
-    }
-
-    pub(crate) fn cursor_blink(&mut self) {
-        self.show_cursor = self.start_time.is_some_and(|start_time| {
-            let elapsed = Instant::now().duration_since(start_time);
-            (elapsed.as_millis() / self.blink_period.as_millis()) % 2 == 0
-        });
-    }
+impl TextEdit {
 
     #[must_use]
     pub(crate) fn handle_event_editable(&mut self, event: &WindowEvent, window: &Window, focus_already_grabbed: bool) -> TextEventResult {
-        if self.hidden {
+        if self.text_box.hidden {
             return TextEventResult::new(false);
         }
         
         // Capture initial state for comparison
-        let initial_selection = self.selection.selection;
+        let initial_selection = self.text_box.selection.selection;
         let initial_show_cursor = self.show_cursor;
         
         let mut result = TextEventResult::new(false);
 
-        self.update_mouse_state(event);
+        self.text_box.update_mouse_state(event);
         
         if focus_already_grabbed {
-            self.reset_selection();
+            self.text_box.reset_selection();
             result.focus_grabbed = false;
         } else {
-            let focus_grabbed = self.update_focus(event, focus_already_grabbed, true);
+            let focus_grabbed = self.text_box.update_focus(event, focus_already_grabbed, true);
             result.focus_grabbed = focus_grabbed;
         }
         
@@ -427,17 +450,17 @@ impl TextBox<String> {
             self.show_cursor = false;
         }
         
-        if !self.selectable {
-            self.reset_selection();
+        if !self.text_box.selectable {
+            self.text_box.reset_selection();
             return result;
         }
-        if !self.focused() {
+        if !self.text_box.focused() {
             return result;
         }
 
-        self.refresh_layout();
+        self.text_box.refresh_layout();
 
-        self.handle_event_no_edit_inner(event);
+        self.text_box.handle_event_no_edit_inner(event);
 
         match event {
             WindowEvent::KeyboardInput { event, .. } if !self.is_composing() => {
@@ -446,7 +469,7 @@ impl TextBox<String> {
                 }
                 self.cursor_reset();
                 #[allow(unused)]
-                let mods_state = self.modifiers.state();
+                let mods_state = self.text_box.modifiers.state();
                 let shift = mods_state.shift_key();
                 let action_mod = if cfg!(target_os = "macos") {
                     mods_state.super_key()
@@ -461,7 +484,7 @@ impl TextBox<String> {
                             match c.as_str() {
                                 "x" if !shift => {
                                     with_clipboard(|cb| {
-                                        if let Some(text) = self.selected_text() {
+                                        if let Some(text) = self.text_box.selected_text() {
                                             cb.set_text(text.to_owned()).ok();
                                             self.delete_selection();
                                             result.set_text_changed();
@@ -495,46 +518,46 @@ impl TextBox<String> {
                     Key::Named(NamedKey::ArrowLeft) => {
                         if !shift {
                             if action_mod {
-                                self.move_word_left();
+                                self.text_box.move_word_left();
                             } else {
-                                self.move_left();
+                                self.text_box.move_left();
                             }
                         }
                     }
                     Key::Named(NamedKey::ArrowRight) => {
                         if !shift {                            
                             if action_mod {
-                                self.move_word_right();
+                                self.text_box.move_word_right();
                             } else {
-                                self.move_right();
+                                self.text_box.move_right();
                             }
                         }
                     }
                     Key::Named(NamedKey::ArrowUp) => {
                         if !shift {
-                            self.move_up();
+                            self.text_box.move_up();
                         }
                     }
                     Key::Named(NamedKey::ArrowDown) => {
                         if !shift {
-                            self.move_down();
+                            self.text_box.move_down();
                         }
                     }
                     Key::Named(NamedKey::Home) => {
                         if !shift {
                             if action_mod {
-                                self.move_to_text_start();
+                                self.text_box.move_to_text_start();
                             } else {
-                                self.move_to_line_start();
+                                self.text_box.move_to_line_start();
                             }
                         }
                     }
                     Key::Named(NamedKey::End) => {
                         if !shift {
                             if action_mod {
-                                self.move_to_text_end();
+                                self.text_box.move_to_text_end();
                             } else {
-                                self.move_to_line_end();
+                                self.text_box.move_to_line_end();
                             }
                         }
                     }
@@ -584,14 +607,14 @@ impl TextBox<String> {
                     Started => {
                         // todo: use left and top. I can't test this though
                         // TODO: start a timer to convert to a SelectWordAtPoint
-                        self.move_to_point(location.x as f32 - INSET, location.y as f32 - INSET);
+                        self.text_box.move_to_point(location.x as f32 - INSET, location.y as f32 - INSET);
                     }
                     Cancelled => {
-                        self.collapse_selection();
+                        self.text_box.collapse_selection();
                     }
                     Moved => {
                         // TODO: cancel SelectWordAtPoint timer
-                        self.extend_selection_to_point(
+                        self.text_box.extend_selection_to_point(
                             location.x as f32 - INSET,
                             location.y as f32 - INSET,
                             true,
@@ -622,7 +645,7 @@ impl TextBox<String> {
             _ => {}
         }
 
-        if selection_decorations_changed(initial_selection, self.selection.selection, initial_show_cursor, self.show_cursor, true) {
+        if selection_decorations_changed(initial_selection, self.text_box.selection.selection, initial_show_cursor, self.show_cursor, true) {
             result.set_decorations_changed();
         }
 
@@ -641,7 +664,7 @@ impl TextBox<String> {
     // --- MARK: Forced relayout ---
     /// Insert at cursor, or replace selection.
     fn replace_range_and_record(&mut self, range: Range<usize>, old_selection: Selection, s: &str) {
-        let old_text = &self.text[range.clone()];
+        let old_text = &self.text_box.text[range.clone()];
 
         let new_range_start = range.start;
         let new_range_end = range.start + s.len();
@@ -649,14 +672,14 @@ impl TextBox<String> {
         self.history
             .record(&old_text, s, old_selection, new_range_start..new_range_end);
 
-        self.text.replace_range(range, s);
+        self.text_box.text.replace_range(range, s);
     }
 
     fn replace_selection_and_record(&mut self, s: &str) {
-        let old_selection = self.selection.selection;
+        let old_selection = self.text_box.selection.selection;
 
-        let range = self.selection.selection.text_range();
-        let old_text = &self.text[range.clone()];
+        let range = self.text_box.selection.selection.text_range();
+        let old_text = &self.text_box.text[range.clone()];
 
         let new_range_start = range.start;
         let new_range_end = range.start + s.len();
@@ -685,20 +708,20 @@ impl TextBox<String> {
     pub(crate) fn delete(&mut self) {
         assert!(!self.is_composing());
 
-        if self.selection.selection.is_collapsed() {
+        if self.text_box.selection.selection.is_collapsed() {
             // Upstream cluster range
             if let Some(range) = self
-                .selection
+                .text_box.selection
                 .selection
                 .focus()
-                .logical_clusters(&self.layout)[1]
+                .logical_clusters(&self.text_box.layout)[1]
                 .as_ref()
                 .map(|cluster| cluster.text_range())
                 .and_then(|range| (!range.is_empty()).then_some(range))
             {
-                self.replace_range_and_record(range, self.selection.selection, "");
+                self.replace_range_and_record(range, self.text_box.selection.selection, "");
                 // seems ok to not do the relayout immediately
-                self.needs_relayout = true;
+                self.text_box.needs_relayout = true;
             }
         } else {
             self.delete_selection();
@@ -709,16 +732,16 @@ impl TextBox<String> {
     pub(crate) fn delete_word(&mut self) {
         assert!(!self.is_composing());
 
-        if self.selection.selection.is_collapsed() {
-            let focus = self.selection.selection.focus();
+        if self.text_box.selection.selection.is_collapsed() {
+            let focus = self.text_box.selection.selection.focus();
             let start = focus.index();
-            let end = focus.next_logical_word(&self.layout).index();
-            if self.text.get(start..end).is_some() {
-                self.replace_range_and_record(start..end, self.selection.selection, "");
+            let end = focus.next_logical_word(&self.text_box.layout).index();
+            if self.text_box.text.get(start..end).is_some() {
+                self.replace_range_and_record(start..end, self.text_box.selection.selection, "");
                 // seems ok to not do the relayout immediately
-                self.needs_relayout = true;
-                self.set_selection(
-                    Cursor::from_byte_index(&self.layout, start, Affinity::Downstream).into(),
+                self.text_box.needs_relayout = true;
+                self.text_box.set_selection(
+                    Cursor::from_byte_index(&self.text_box.layout, start, Affinity::Downstream).into(),
                 );
             }
         } else {
@@ -730,13 +753,13 @@ impl TextBox<String> {
     pub(crate) fn backdelete(&mut self) {
         assert!(!self.is_composing());
 
-        if self.selection.selection.is_collapsed() {
+        if self.text_box.selection.selection.is_collapsed() {
             // Upstream cluster
             if let Some(cluster) = self
-                .selection
+                .text_box.selection
                 .selection
                 .focus()
-                .logical_clusters(&self.layout)[0]
+                .logical_clusters(&self.text_box.layout)[0]
                 .clone()
             {
                 let range = cluster.text_range();
@@ -747,7 +770,7 @@ impl TextBox<String> {
                 } else {
                     // Otherwise, delete the previous character
                     let Some((start, _)) = self
-                        .text
+                        .text_box.text
                         .get(..end)
                         .and_then(|str| str.char_indices().next_back())
                     else {
@@ -755,11 +778,11 @@ impl TextBox<String> {
                     };
                     start
                 };
-                self.replace_range_and_record(start..end, self.selection.selection, "");
+                self.replace_range_and_record(start..end, self.text_box.selection.selection, "");
                 // seems ok to not do the relayout immediately
-                self.needs_relayout = true;
-                self.set_selection(
-                    Cursor::from_byte_index(&self.layout, start, Affinity::Downstream).into(),
+                self.text_box.needs_relayout = true;
+                self.text_box.set_selection(
+                    Cursor::from_byte_index(&self.text_box.layout, start, Affinity::Downstream).into(),
                 );
             }
         } else {
@@ -771,16 +794,16 @@ impl TextBox<String> {
     pub(crate) fn backdelete_word(&mut self) {
         assert!(!self.is_composing());
 
-        if self.selection.selection.is_collapsed() {
-            let focus = self.selection.selection.focus();
+        if self.text_box.selection.selection.is_collapsed() {
+            let focus = self.text_box.selection.selection.focus();
             let end = focus.index();
-            let start = focus.previous_logical_word(&self.layout).index();
-            if self.text.get(start..end).is_some() {
-                self.replace_range_and_record(start..end, self.selection.selection, "");
+            let start = focus.previous_logical_word(&self.text_box.layout).index();
+            if self.text_box.text.get(start..end).is_some() {
+                self.replace_range_and_record(start..end, self.text_box.selection.selection, "");
                 // seems ok to not do the relayout immediately
-                self.needs_relayout = true;
-                self.set_selection(
-                    Cursor::from_byte_index(&self.layout, start, Affinity::Downstream).into(),
+                self.text_box.needs_relayout = true;
+                self.text_box.set_selection(
+                    Cursor::from_byte_index(&self.text_box.layout, start, Affinity::Downstream).into(),
                 );
             }
         } else {
@@ -804,32 +827,32 @@ impl TextBox<String> {
         debug_assert!(cursor.map(|cursor| cursor.1 <= text.len()).unwrap_or(true));
 
         let start = if let Some(preedit_range) = &self.compose {
-            self.text.replace_range(preedit_range.clone(), text);
+            self.text_box.text.replace_range(preedit_range.clone(), text);
             preedit_range.start
         } else {
-            if self.selection.selection.is_collapsed() {
-                self.text
-                    .insert_str(self.selection.selection.text_range().start, text);
+            if self.text_box.selection.selection.is_collapsed() {
+                self.text_box.text
+                    .insert_str(self.text_box.selection.selection.text_range().start, text);
             } else {
-                self.text
-                    .replace_range(self.selection.selection.text_range(), text);
+                self.text_box.text
+                    .replace_range(self.text_box.selection.selection.text_range(), text);
             }
-            self.selection.selection.text_range().start
+            self.text_box.selection.selection.text_range().start
         };
         self.compose = Some(start..start + text.len());
         self.show_cursor = cursor.is_some();
-        self.update_layout();
+        self.text_box.update_layout();
 
         // Select the location indicated by the IME. If `cursor` is none, collapse the selection to
         // a caret at the start of the preedit text. As `self.show_cursor` is `false`, it
         // won't show up.
         let cursor = cursor.unwrap_or((0, 0));
-        self.set_selection(Selection::new(
-            self.cursor_at(start + cursor.0),
-            self.cursor_at(start + cursor.1),
+        self.text_box.set_selection(Selection::new(
+            self.text_box.cursor_at(start + cursor.0),
+            self.text_box.cursor_at(start + cursor.1),
         ));
 
-        self.needs_relayout = true;
+        self.text_box.needs_relayout = true;
     }
 
     /// Stop IME composing.
@@ -837,11 +860,11 @@ impl TextBox<String> {
     /// This removes the IME preedit text.
     pub(crate) fn clear_compose(&mut self) {
         if let Some(preedit_range) = self.compose.take() {
-            self.text.replace_range(preedit_range.clone(), "");
+            self.text_box.text.replace_range(preedit_range.clone(), "");
             self.show_cursor = true;
-            self.update_layout();
+            self.text_box.update_layout();
 
-            self.set_selection(self.cursor_at(preedit_range.start).into());
+            self.text_box.set_selection(self.text_box.cursor_at(preedit_range.start).into());
         }
     }
 
@@ -876,17 +899,17 @@ impl TextBox<String> {
 
     pub(crate) fn undo(&mut self) {
         if ! self.is_composing() {
-            if let Some(op) = self.history.undo(&self.text) {
+            if let Some(op) = self.history.undo(&self.text_box.text) {
                 self
-                    .text
+                    .text_box.text
                     .replace_range(op.range_to_clear.clone(), "");
                 self
-                    .text
+                    .text_box.text
                     .insert_str(op.range_to_clear.start, op.text_to_restore);
 
                 let prev_selection = op.prev_selection;
-                self.set_selection(prev_selection);
-                self.update_layout();
+                self.text_box.set_selection(prev_selection);
+                self.text_box.update_layout();
             }
         }
     }
@@ -894,19 +917,19 @@ impl TextBox<String> {
     pub(crate) fn redo(&mut self) {
         if let Some(op) = self.history.redo() {
             self
-                .text
+                .text_box.text
                 .replace_range(op.range_to_clear.clone(), "");
             self
-                .text
+                .text_box.text
                 .insert_str(op.range_to_clear.start, op.text_to_restore);
 
             let end = op.range_to_clear.start + op.text_to_restore.len();
 
-            self.update_layout();
+            self.text_box.update_layout();
 
             let new_selection =
-                Selection::from_byte_index(&self.layout, end, Affinity::Upstream);
-            self.set_selection(new_selection);
+                Selection::from_byte_index(&self.text_box.layout, end, Affinity::Upstream);
+            self.text_box.set_selection(new_selection);
         }
     }
 
@@ -914,136 +937,30 @@ impl TextBox<String> {
     pub(crate) fn set_text(&mut self, is: &str) {
         assert!(!self.is_composing());
 
-        self.text.clear();
-        self.text.push_str(is);
-        self.needs_relayout = true;
+        self.text_box.text.clear();
+        self.text_box.text.push_str(is);
+        self.text_box.needs_relayout = true;
     }
 
     fn replace_selection(&mut self, s: &str) {
-        let range = self.selection.selection.text_range();
+        let range = self.text_box.selection.selection.text_range();
         let start = range.start;
-        if self.selection.selection.is_collapsed() {
-            self.text.insert_str(start, s);
+        if self.text_box.selection.selection.is_collapsed() {
+            self.text_box.text.insert_str(start, s);
         } else {
-            self.text.replace_range(range, s);
+            self.text_box.text.replace_range(range, s);
         }
 
-        self.update_layout();
+        self.text_box.update_layout();
         let new_index = start.saturating_add(s.len());
         let affinity = if s.ends_with("\n") {
             Affinity::Downstream
         } else {
             Affinity::Upstream
         };
-        self.set_selection(Cursor::from_byte_index(&self.layout, new_index, affinity).into());
+        self.text_box.set_selection(Cursor::from_byte_index(&self.text_box.layout, new_index, affinity).into());
     }
 
-    /// Borrow the text content of the text.
-    ///
-    /// The return value is a `SplitString` because it
-    /// excludes the IME preedit region.
-    pub(crate) fn text(&self) -> SplitString<'_> {
-        if let Some(preedit_range) = &self.compose {
-            SplitString([
-                &self.text[..preedit_range.start],
-                &self.text[preedit_range.end..],
-            ])
-        } else {
-            SplitString([&self.text, ""])
-        }
-    }
-
-
-    /// Get a rectangle bounding the text the user is currently editing.
-    ///
-    /// This is useful for suggesting an exclusion area to the platform for, e.g., IME candidate
-    /// box placement. This bounds the area of the preedit text if present, otherwise it bounds the
-    /// selection on the focused line.
-    pub(crate) fn ime_cursor_area(&self) -> Rect {
-        let (area, focus) = if let Some(preedit_range) = &self.compose {
-            let selection = Selection::new(
-                self.cursor_at(preedit_range.start),
-                self.cursor_at(preedit_range.end),
-            );
-
-            // Bound the entire preedit text.
-            let mut area = None;
-            selection.geometry_with(&self.layout, |rect, _| {
-                let area = area.get_or_insert(rect);
-                *area = area.union(rect);
-            });
-
-            (
-                area.unwrap_or_else(|| selection.focus().geometry(&self.layout, 0.)),
-                selection.focus(),
-            )
-        } else {
-            // Bound the selected parts of the focused line only.
-            let focus = self.selection.selection.focus().geometry(&self.layout, 0.);
-            let mut area = focus;
-            self.selection
-                .selection
-                .geometry_with(&self.layout, |rect, _| {
-                    if rect.y0 == focus.y0 {
-                        area = area.union(rect);
-                    }
-                });
-
-            (area, self.selection.selection.focus())
-        };
-
-        // Ensure some context is captured even for tiny or collapsed selections by including a
-        // region surrounding the selection. Doing this unconditionally, the IME candidate box
-        // usually does not need to jump around when composing starts or the preedit is added to.
-        let [upstream, downstream] = focus.logical_clusters(&self.layout);
-        let font_size = downstream
-            .or(upstream)
-            .map(|cluster| cluster.run().font_size())
-            // .unwrap_or(ResolvedStyle::<ColorBrush>::default().font_size);
-            .unwrap_or(16.0);
-        // Using 0.6 as an estimate of the average advance
-        let inflate = 3. * 0.6 * font_size as f64;
-        // todo, what is this
-        let editor_width = self.width.map(f64::from).unwrap_or(f64::INFINITY);
-        Rect {
-            x0: (area.x0 - inflate).max(0.),
-            x1: (area.x1 + inflate).min(editor_width),
-            y0: area.y0,
-            y1: area.y1,
-        }
-    }
-
-    pub(crate) fn set_ime_cursor_area(&self, window: &Window) {
-        let area = self.ime_cursor_area();
-        // Note: on X11 `set_ime_cursor_area` may cause the exclusion area to be obscured
-        // until https://github.com/rust-windowing/winit/pull/3966 is in the Winit release
-        // used by this example.
-        window.set_ime_cursor_area(
-            PhysicalPosition::new(
-                area.x0 + self.left as f64,
-                area.y0 + self.top as f64,
-            ),
-            PhysicalSize::new(area.width(), area.height()),
-        );
-    }
-
-    /// Whether the editor is currently in IME composing mode.
-    pub(crate) fn is_composing(&self) -> bool {
-        self.compose.is_some()
-    }
-
-    /// Get a rectangle representing the current caret cursor position.
-    ///
-    /// There is not always a caret. For example, the IME may have indicated the caret should be
-    /// hidden.
-    pub(crate) fn cursor_geometry(&self, size: f32) -> Option<Rect> {
-        self.show_cursor.then(|| {
-            self.selection
-                .selection
-                .focus()
-                .geometry(&self.layout, size)
-        })
-    }
 }
 
 

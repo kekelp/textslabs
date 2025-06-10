@@ -68,11 +68,6 @@ pub struct TextBox<T: AsRef<str>> {
 
     pub(crate) hidden: bool,
 
-    pub(crate) compose: Option<Range<usize>>,
-    pub(crate) show_cursor: bool,
-    pub(crate) start_time: Option<Instant>,
-    pub(crate) blink_period: Duration,
-    pub(crate) history: TextEditHistory,
 }
 
 lazy_static::lazy_static! {
@@ -160,7 +155,6 @@ impl SelectionState {
 
 impl<T: AsRef<str>> TextBox<T> {
     pub fn new(text: T, pos: (f64, f64), size: (f32, f32), depth: f32) -> Self {
-        let empty_history = TextEditHistory::empty();
         Self {
             text,
             shared_style_version: 0,
@@ -174,17 +168,11 @@ impl<T: AsRef<str>> TextBox<T> {
             depth,
             selection: SelectionState::new(),
             style: Style::default(),
-            compose: Default::default(),
-            show_cursor: true,
             width: Some(size.0), 
             alignment: Default::default(),
-            start_time: Default::default(),
-            blink_period: Default::default(),
             modifiers: Default::default(),
             scale: Default::default(),
             clip_rect: None,
-            // todo: just move this to the other struct?
-            history: empty_history,
             hidden: false,
         }
     }
@@ -265,7 +253,6 @@ impl<T: AsRef<str>> TextBox<T> {
         }
         
         let initial_selection = self.selection.selection;
-        let initial_show_cursor = self.show_cursor;
         
         let mut result = TextEventResult::new(false);
         
@@ -281,7 +268,7 @@ impl<T: AsRef<str>> TextBox<T> {
 
         self.handle_event_no_edit_inner(event);
 
-        if selection_decorations_changed(initial_selection, self.selection.selection, initial_show_cursor, self.show_cursor, false) {
+        if selection_decorations_changed(initial_selection, self.selection.selection, false, false, false) {
             result.set_decorations_changed();
         }
 
@@ -293,7 +280,6 @@ impl<T: AsRef<str>> TextBox<T> {
             return;
         }
         if !self.selection.focused {
-            self.show_cursor = false;
             return;
         }
         if !self.selectable {
