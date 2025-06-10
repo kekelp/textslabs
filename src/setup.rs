@@ -1,5 +1,8 @@
 use crate::*;
 
+pub(crate) const INITIAL_BUFFER_SIZE: u64 = 4096;
+
+
 const ATLAS_BIND_GROUP_LAYOUT: BindGroupLayoutDescriptor = wgpu::BindGroupLayoutDescriptor {
     entries: &[
         BindGroupLayoutEntry {
@@ -52,7 +55,7 @@ impl AtlasPageSize {
     }
 }
 
-fn create_shared_vertex_buffer(device: &Device, size: u64) -> Buffer {
+fn create_vertex_buffer(device: &Device, size: u64) -> Buffer {
     device.create_buffer(&BufferDescriptor {
         label: Some("shared vertex buffer"),
         size,
@@ -177,6 +180,7 @@ impl ContextlessTextRenderer {
             image: GrayImage::from_pixel(atlas_size, atlas_size, Luma([0])),
             packer: BucketedAtlasAllocator::new(size2(atlas_size as i32, atlas_size as i32)),
             quads: Vec::<Quad>::with_capacity(300),
+            decoration_quads: Vec::<Quad>::with_capacity(25),
             gpu: Some(GpuAtlasPage {
                 texture: mask_texture,
                 bind_group: mask_bind_group,
@@ -219,6 +223,7 @@ impl ContextlessTextRenderer {
             image: RgbaImage::from_pixel(atlas_size, atlas_size, Rgba([0, 0, 0, 0])),
             packer: BucketedAtlasAllocator::new(size2(atlas_size as i32, atlas_size as i32)),
             quads: Vec::<Quad>::with_capacity(300),
+            decoration_quads: Vec::<Quad>::with_capacity(25),
             gpu: Some(GpuAtlasPage {
                 texture: color_texture,
                 bind_group: color_bind_group,
@@ -266,9 +271,7 @@ impl ContextlessTextRenderer {
         let layout_cx = LayoutContext::<ColorBrush>::new();
         let frame = 1;
         
-        // Create initial shared vertex buffer
-        let initial_buffer_size = 4096 * 9; // Same initial size as in gpu_load
-        let shared_vertex_buffer = create_shared_vertex_buffer(device, initial_buffer_size);
+        let vertex_buffer = create_vertex_buffer(device, INITIAL_BUFFER_SIZE);
         
         Self {
             frame,
@@ -287,8 +290,7 @@ impl ContextlessTextRenderer {
             glyph_cache,
             last_frame_evicted: 0,
             cached_scaler: None,
-            shared_vertex_buffer,
-            shared_vertex_buffer_size: initial_buffer_size,
+            vertex_buffer,
         }
     }
 }
@@ -302,33 +304,37 @@ impl ContextlessTextRenderer {
             )
         });
 
-        // Calculate total number of quads across all pages
-        let total_quads = self.mask_atlas_pages.iter().map(|p| p.quads.len()).sum::<usize>()
-                        + self.color_atlas_pages.iter().map(|p| p.quads.len()).sum::<usize>();
+        // Calculate total number of quads across all pages (including decorations)
+        let total_quads = self.mask_atlas_pages.iter().map(|p| p.quads.len() + p.decoration_quads.len()).sum::<usize>()
+                        + self.color_atlas_pages.iter().map(|p| p.quads.len() + p.decoration_quads.len()).sum::<usize>();
         
         let required_size = (total_quads * std::mem::size_of::<Quad>()) as u64;
         
         // Grow shared vertex buffer if needed
-        if self.shared_vertex_buffer_size < required_size {
-            let new_size = (required_size.max(4096 * 9) * 3 / 2).max(self.shared_vertex_buffer_size * 3 / 2);
+        if self.vertex_buffer.size() < required_size {
+            let min_size = u64::max(required_size, INITIAL_BUFFER_SIZE);
+            let growth_size = min_size * 3 / 2;
+            let current_growth = self.vertex_buffer.size() * 3 / 2;
+            let new_size = u64::max(growth_size, current_growth);
             
-            self.shared_vertex_buffer = create_shared_vertex_buffer(device, new_size);
-            self.shared_vertex_buffer_size = new_size;
+            self.vertex_buffer = create_vertex_buffer(device, new_size);
         }
 
-        // Collect all quads and write to shared buffer
+        // Collect all quads and write to shared buffer 
         let mut all_quads = Vec::with_capacity(total_quads);
         
         for page in &self.mask_atlas_pages {
             all_quads.extend_from_slice(&page.quads);
+            all_quads.extend_from_slice(&page.decoration_quads);
         }
         for page in &self.color_atlas_pages {
             all_quads.extend_from_slice(&page.quads);
+            all_quads.extend_from_slice(&page.decoration_quads);
         }
         
         if !all_quads.is_empty() {
             let bytes: &[u8] = bytemuck::cast_slice(&all_quads);
-            queue.write_buffer(&self.shared_vertex_buffer, 0, &bytes);
+            queue.write_buffer(&self.vertex_buffer, 0, &bytes);
         }
 
         // Handle mask atlas pages

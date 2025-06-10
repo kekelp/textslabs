@@ -29,9 +29,7 @@ pub struct ContextlessTextRenderer {
     
     pub(crate) cached_scaler: Option<CachedScaler>,
     
-    // Shared growable vertex buffer for all pages
-    pub(crate) shared_vertex_buffer: Buffer,
-    pub(crate) shared_vertex_buffer_size: u64,
+    pub(crate) vertex_buffer: Buffer,
 }
 
 pub(crate) struct CachedScaler {
@@ -42,6 +40,7 @@ pub(crate) struct CachedScaler {
 
 pub(crate) struct AtlasPage<ImageType> {
     pub quads: Vec<Quad>,
+    pub decoration_quads: Vec<Quad>,
     pub(crate) packer: BucketedAtlasAllocator,
     pub(crate) image: ImageType,
     pub gpu: Option<GpuAtlasPage>,
@@ -117,7 +116,7 @@ impl ContextlessTextRenderer {
             depth: 0.0,
             flags: 2, // todo make names for these
         };
-        self.mask_atlas_pages[0].quads.push(quad);
+        self.mask_atlas_pages[0].decoration_quads.push(quad);
     }
 }
 
@@ -326,6 +325,10 @@ impl TextRenderer {
         self.text_renderer.clear();
     }
 
+    pub fn clear_decorations(&mut self) {
+        self.text_renderer.clear_decorations();
+    }
+
     pub fn prepare_layout(&mut self, layout: &Layout<ColorBrush>, left: f32, top: f32) {
         self.text_renderer.prepare_layout(layout, &mut self.scale_cx, left, top, None);
     }
@@ -333,6 +336,18 @@ impl TextRenderer {
     pub fn prepare_text_box<T: AsRef<str>>(&mut self, text_box: &mut TextBox<T>) {
         text_box.refresh_layout();
         
+        let (left, top) = text_box.pos();
+        let (left, top) = (left as f32, top as f32);
+        let clip_rect = text_box.clip_rect();
+
+        // Prepare decorations (selection and cursor)
+        self.prepare_text_box_decorations(text_box);
+
+        // Prepare text layout
+        self.text_renderer.prepare_layout(text_box.layout(), &mut self.scale_cx, left, top, clip_rect);
+    }
+
+    pub fn prepare_text_box_decorations<T: AsRef<str>>(&mut self, text_box: &TextBox<T>) {
         let (left, top) = text_box.pos();
         let (left, top) = (left as f32, top as f32);
         let clip_rect = text_box.clip_rect();
@@ -350,8 +365,6 @@ impl TextRenderer {
             let cursor_rect = text_box.selection().focus().geometry(&text_box.layout, size);
             self.text_renderer.add_selection_rect(cursor_rect, left, top, cursor_color, clip_rect);
         }
-
-        self.text_renderer.prepare_layout(text_box.layout(), &mut self.scale_cx, left, top, clip_rect);
     }
 
     pub fn gpu_load(&mut self, device: &Device, queue: &Queue) {
@@ -412,23 +425,25 @@ impl ContextlessTextRenderer {
     pub fn render(&self, pass: &mut RenderPass<'_>) {
         pass.set_pipeline(&self.pipeline);
         pass.set_bind_group(1, &self.params_bind_group, &[]);
-        pass.set_vertex_buffer(0, self.shared_vertex_buffer.slice(..));
+        pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
 
         let mut instance_offset = 0u32;
 
         for page in &self.mask_atlas_pages {
-            if !page.quads.is_empty() {
+            let total_quads = page.quads.len() + page.decoration_quads.len();
+            if total_quads > 0 {
                 pass.set_bind_group(0, &page.gpu.as_ref().unwrap().bind_group, &[]);
-                pass.draw(0..4, instance_offset..(instance_offset + page.quads.len() as u32));
-                instance_offset += page.quads.len() as u32;
+                pass.draw(0..4, instance_offset..(instance_offset + total_quads as u32));
+                instance_offset += total_quads as u32;
             }
         }
 
         for page in &self.color_atlas_pages {
-            if !page.quads.is_empty() {
+            let total_quads = page.quads.len() + page.decoration_quads.len();
+            if total_quads > 0 {
                 pass.set_bind_group(0, &page.gpu.as_ref().unwrap().bind_group, &[]);
-                pass.draw(0..4, instance_offset..(instance_offset + page.quads.len() as u32));
-                instance_offset += page.quads.len() as u32;
+                pass.draw(0..4, instance_offset..(instance_offset + total_quads as u32));
+                instance_offset += total_quads as u32;
             }
         }
     }
@@ -443,11 +458,23 @@ impl ContextlessTextRenderer {
 
         for page in &mut self.mask_atlas_pages {
             page.quads.clear();
+            page.decoration_quads.clear();
         }
         for page in &mut self.color_atlas_pages {
             page.quads.clear();
+            page.decoration_quads.clear();
         }
     }
+
+    pub fn clear_decorations(&mut self) {
+        for page in &mut self.mask_atlas_pages {
+            page.decoration_quads.clear();
+        }
+        for page in &mut self.color_atlas_pages {
+            page.decoration_quads.clear();
+        }
+    }
+
 
     fn prepare_layout(&mut self, layout: &Layout<ColorBrush>, scale_cx: &mut ScaleContext, left: f32, top: f32, clip_rect: Option<parley::Rect>) {
         for line in layout.lines() {
@@ -749,6 +776,7 @@ impl ContextlessTextRenderer {
                     image: GrayImage::from_pixel(atlas_size, atlas_size, Luma([0])),
                     packer: BucketedAtlasAllocator::new(size2(atlas_size as i32, atlas_size as i32)),
                     quads: Vec::<Quad>::with_capacity(300),
+                    decoration_quads: Vec::<Quad>::with_capacity(50),
                     gpu: None, // will be created later
                 });
                 return self.mask_atlas_pages.len() - 1;
@@ -758,6 +786,7 @@ impl ContextlessTextRenderer {
                     image: RgbaImage::from_pixel(atlas_size, atlas_size, Rgba([0, 0, 0, 0])),
                     packer: BucketedAtlasAllocator::new(size2(atlas_size as i32, atlas_size as i32)),
                     quads: Vec::<Quad>::with_capacity(300),
+                    decoration_quads: Vec::<Quad>::with_capacity(50),
                     gpu: None, // will be created later
                 });
                 return self.color_atlas_pages.len() - 1;
