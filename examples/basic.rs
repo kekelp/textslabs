@@ -133,7 +133,7 @@ impl State {
         }
         
         for text_box in &mut self.static_text_boxes {
-            let result = text_box.static_handle_event(&event, already_grabbed);
+            let result = text_box.handle_event(&event, &self.window, already_grabbed);
             if result.focus_grabbed {
                 already_grabbed = true;
             }

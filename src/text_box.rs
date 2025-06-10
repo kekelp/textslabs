@@ -4,7 +4,7 @@ use std::{
 
 use parley::*;
 use winit::{
-    event::WindowEvent, keyboard::{Key, NamedKey}, platform::modifier_supplement::KeyEventExtModifierSupplement
+    event::WindowEvent, keyboard::{Key, NamedKey}, platform::modifier_supplement::KeyEventExtModifierSupplement, window::Window
 };
 use arboard::Clipboard;
 
@@ -67,6 +67,8 @@ pub struct TextBox<T: AsRef<str>> {
     pub(crate) selectable: bool,
 
     pub(crate) editable: bool,
+
+    pub(crate) hidden: bool,
 
     pub(crate) compose: Option<Range<usize>>,
     pub(crate) show_cursor: bool,
@@ -189,6 +191,7 @@ impl<T: AsRef<str>> TextBox<T> {
             clip_rect: None,
             history,
             editable,
+            hidden: false,
         }
     }
 
@@ -262,8 +265,11 @@ impl<T: AsRef<str>> TextBox<T> {
         });
     }
 
-    // todo: need some better names
-    pub fn static_handle_event(&mut self, event: &winit::event::WindowEvent, focus_already_grabbed: bool) -> TextEventResult {
+    pub fn handle_event(&mut self, event: &WindowEvent, _window: &Window, focus_already_grabbed: bool) -> TextEventResult {
+        if self.hidden {
+            return TextEventResult::new(false);
+        }
+        
         let initial_selection = self.selection.selection;
         let initial_show_cursor = self.show_cursor;
         
@@ -289,6 +295,9 @@ impl<T: AsRef<str>> TextBox<T> {
     }
 
     pub fn handle_event_no_edit_inner(&mut self, event: &winit::event::WindowEvent) {
+        if self.hidden {
+            return;
+        }
         if !self.selection.focused {
             self.show_cursor = false;
             return;
@@ -459,6 +468,18 @@ impl<T: AsRef<str>> TextBox<T> {
     }
     pub fn clip_rect(&self) -> Option<parley::Rect> {
         self.clip_rect
+    }
+
+    pub fn set_hidden(&mut self, hidden: bool) {
+        if self.hidden != hidden {
+            self.hidden = hidden;
+            if hidden {
+                self.reset_selection();
+            }
+        }
+    }
+    pub fn hidden(&self) -> bool {
+        self.hidden
     }
 }
 

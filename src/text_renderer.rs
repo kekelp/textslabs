@@ -334,6 +334,10 @@ impl TextRenderer {
     }
 
     pub fn prepare_text_box<T: AsRef<str>>(&mut self, text_box: &mut TextBox<T>) {
+        if text_box.hidden() {
+            return;
+        }
+        
         text_box.refresh_layout();
         
         let (left, top) = text_box.pos();

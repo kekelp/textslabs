@@ -107,6 +107,273 @@ pub fn selection_decorations_changed(initial_selection: Selection, new_selection
     initial_range != new_range
 }
 
+/// A text editor widget that wraps a TextBox<String> and provides editing functionality.
+pub struct TextEdit {
+    text_box: TextBox<String>,
+}
+
+impl TextEdit {
+    pub fn new(text: String, pos: (f64, f64), size: (f32, f32), depth: f32) -> Self {
+        Self {
+            text_box: TextBox::new(text, pos, size, depth, true),
+        }
+    }
+
+    #[must_use]
+    pub fn handle_event(&mut self, event: &WindowEvent, window: &Window, focus_already_grabbed: bool) -> TextEventResult {
+        self.text_box.handle_event_inner(event, window, focus_already_grabbed)
+    }
+
+    // Getter methods
+    pub fn text(&self) -> SplitString<'_> {
+        self.text_box.text()
+    }
+
+    pub fn raw_text(&self) -> &str {
+        self.text_box.raw_text()
+    }
+
+    pub fn selected_text(&self) -> Option<&str> {
+        self.text_box.selected_text()
+    }
+
+    pub fn pos(&self) -> (f64, f64) {
+        self.text_box.pos()
+    }
+
+    pub fn focused(&self) -> bool {
+        self.text_box.focused()
+    }
+
+    pub fn editable(&self) -> bool {
+        self.text_box.editable()
+    }
+
+    pub fn selectable(&self) -> bool {
+        self.text_box.selectable()
+    }
+
+    pub fn hidden(&self) -> bool {
+        self.text_box.hidden()
+    }
+
+    pub fn depth(&self) -> f32 {
+        self.text_box.depth()
+    }
+
+    pub fn clip_rect(&self) -> Option<parley::Rect> {
+        self.text_box.clip_rect()
+    }
+
+    pub fn selection(&self) -> &Selection {
+        self.text_box.selection()
+    }
+
+    pub fn raw_selection(&self) -> &Selection {
+        self.text_box.raw_selection()
+    }
+
+    pub fn selection_geometry(&self) -> Vec<(Rect, usize)> {
+        self.text_box.selection_geometry()
+    }
+
+    pub fn layout(&mut self) -> &Layout<ColorBrush> {
+        self.text_box.layout()
+    }
+
+    pub fn is_composing(&self) -> bool {
+        self.text_box.is_composing()
+    }
+
+    pub fn cursor_geometry(&self, size: f32) -> Option<Rect> {
+        self.text_box.cursor_geometry(size)
+    }
+
+    pub fn ime_cursor_area(&self) -> Rect {
+        self.text_box.ime_cursor_area()
+    }
+
+    // Setter methods
+    pub fn set_pos(&mut self, pos: (f64, f64)) {
+        self.text_box.set_pos(pos)
+    }
+
+    pub fn set_size(&mut self, size: (f32, f32)) {
+        self.text_box.set_size(size)
+    }
+
+    pub fn set_alignment(&mut self, alignment: Alignment) {
+        self.text_box.set_alignment(alignment)
+    }
+
+    pub fn set_scale(&mut self, scale: f32) {
+        self.text_box.set_scale(scale)
+    }
+
+    pub fn set_selectable(&mut self, value: bool) {
+        self.text_box.set_selectable(value)
+    }
+
+    pub fn set_hidden(&mut self, hidden: bool) {
+        self.text_box.set_hidden(hidden)
+    }
+
+    pub fn set_depth(&mut self, value: f32) {
+        self.text_box.set_depth(value)
+    }
+
+    pub fn set_clip_rect(&mut self, clip_rect: Option<parley::Rect>) {
+        self.text_box.set_clip_rect(clip_rect)
+    }
+
+    pub fn set_shared_style(&mut self, style: &SharedStyle) {
+        self.text_box.set_shared_style(style)
+    }
+
+    pub fn set_unique_style(&mut self, style: TextStyle<'static, ColorBrush>) {
+        self.text_box.set_unique_style(style)
+    }
+
+    pub fn set_text(&mut self, text: &str) {
+        self.text_box.set_text(text)
+    }
+
+    pub fn set_ime_cursor_area(&self, window: &Window) {
+        self.text_box.set_ime_cursor_area(window)
+    }
+
+    // Text manipulation methods
+    pub fn insert_or_replace_selection(&mut self, s: &str) {
+        self.text_box.insert_or_replace_selection(s)
+    }
+
+    pub fn delete_selection(&mut self) {
+        self.text_box.delete_selection()
+    }
+
+    pub fn delete(&mut self) {
+        self.text_box.delete()
+    }
+
+    pub fn delete_word(&mut self) {
+        self.text_box.delete_word()
+    }
+
+    pub fn backdelete(&mut self) {
+        self.text_box.backdelete()
+    }
+
+    pub fn backdelete_word(&mut self) {
+        self.text_box.backdelete_word()
+    }
+
+    pub fn undo(&mut self) {
+        self.text_box.undo()
+    }
+
+    pub fn redo(&mut self) {
+        self.text_box.redo()
+    }
+
+    // Cursor movement methods
+    pub fn move_to_point(&mut self, x: f32, y: f32) {
+        self.text_box.move_to_point(x, y)
+    }
+
+    pub fn move_to_byte(&mut self, index: usize) {
+        self.text_box.move_to_byte(index)
+    }
+
+    pub fn move_to_text_start(&mut self) {
+        self.text_box.move_to_text_start()
+    }
+
+    pub fn move_to_line_start(&mut self) {
+        self.text_box.move_to_line_start()
+    }
+
+    pub fn move_to_text_end(&mut self) {
+        self.text_box.move_to_text_end()
+    }
+
+    pub fn move_to_line_end(&mut self) {
+        self.text_box.move_to_line_end()
+    }
+
+    pub fn move_up(&mut self) {
+        self.text_box.move_up()
+    }
+
+    pub fn move_down(&mut self) {
+        self.text_box.move_down()
+    }
+
+    pub fn move_left(&mut self) {
+        self.text_box.move_left()
+    }
+
+    pub fn move_right(&mut self) {
+        self.text_box.move_right()
+    }
+
+    pub fn move_word_left(&mut self) {
+        self.text_box.move_word_left()
+    }
+
+    pub fn move_word_right(&mut self) {
+        self.text_box.move_word_right()
+    }
+
+    // Selection methods
+    pub fn select_all(&mut self) {
+        self.text_box.select_all()
+    }
+
+    pub fn collapse_selection(&mut self) {
+        self.text_box.collapse_selection()
+    }
+
+    pub fn extend_selection_to_point(&mut self, x: f32, y: f32, keep_granularity: bool) {
+        self.text_box.extend_selection_to_point(x, y, keep_granularity)
+    }
+
+    // Cursor blinking methods
+    pub fn cursor_reset(&mut self) {
+        self.text_box.cursor_reset()
+    }
+
+    pub fn disable_blink(&mut self) {
+        self.text_box.disable_blink()
+    }
+
+    pub fn cursor_blink(&mut self) {
+        self.text_box.cursor_blink()
+    }
+
+    pub fn next_blink_time(&self) -> Option<Instant> {
+        self.text_box.next_blink_time()
+    }
+
+    // IME methods
+    pub fn set_compose(&mut self, text: &str, cursor: Option<(usize, usize)>) {
+        self.text_box.set_compose(text, cursor)
+    }
+
+    pub fn clear_compose(&mut self) {
+        self.text_box.clear_compose()
+    }
+
+    // Utility methods
+    pub fn selection_geometry_with(&self, f: impl FnMut(Rect, usize)) {
+        self.text_box.selection_geometry_with(f)
+    }
+
+    pub fn refresh_layout(&mut self) {
+        self.text_box.refresh_layout()
+    }
+}
+
+
 impl TextBox<String> {
     pub fn cursor_reset(&mut self) {
         self.start_time = Some(Instant::now());
@@ -139,7 +406,11 @@ impl TextBox<String> {
     }
 
     #[must_use]
-    pub fn handle_event(&mut self, event: &WindowEvent, window: &Window, focus_already_grabbed: bool) -> TextEventResult {
+    fn handle_event_inner(&mut self, event: &WindowEvent, window: &Window, focus_already_grabbed: bool) -> TextEventResult {
+        if self.hidden {
+            return TextEventResult::new(false);
+        }
+        
         // Capture initial state for comparison
         let initial_selection = self.selection.selection;
         let initial_show_cursor = self.show_cursor;
