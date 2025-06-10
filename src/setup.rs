@@ -180,7 +180,6 @@ impl ContextlessTextRenderer {
             image: GrayImage::from_pixel(atlas_size, atlas_size, Luma([0])),
             packer: BucketedAtlasAllocator::new(size2(atlas_size as i32, atlas_size as i32)),
             quads: Vec::<Quad>::with_capacity(300),
-            decoration_quads: Vec::<Quad>::with_capacity(25),
             gpu: Some(GpuAtlasPage {
                 texture: mask_texture,
                 bind_group: mask_bind_group,
@@ -223,7 +222,6 @@ impl ContextlessTextRenderer {
             image: RgbaImage::from_pixel(atlas_size, atlas_size, Rgba([0, 0, 0, 0])),
             packer: BucketedAtlasAllocator::new(size2(atlas_size as i32, atlas_size as i32)),
             quads: Vec::<Quad>::with_capacity(300),
-            decoration_quads: Vec::<Quad>::with_capacity(25),
             gpu: Some(GpuAtlasPage {
                 texture: color_texture,
                 bind_group: color_bind_group,
@@ -281,6 +279,7 @@ impl ContextlessTextRenderer {
             layout_cx,
             mask_atlas_pages,
             color_atlas_pages,
+            decorations: Vec::with_capacity(50),
             pipeline,
             atlas_bind_group_layout,
             sampler,
@@ -304,9 +303,10 @@ impl ContextlessTextRenderer {
             )
         });
 
-        // Calculate total number of quads across all pages (including decorations)
-        let total_quads = self.mask_atlas_pages.iter().map(|p| p.quads.len() + p.decoration_quads.len()).sum::<usize>()
-                        + self.color_atlas_pages.iter().map(|p| p.quads.len() + p.decoration_quads.len()).sum::<usize>();
+        // Calculate total number of quads across all pages plus decorations
+        let total_quads = self.mask_atlas_pages.iter().map(|p| p.quads.len()).sum::<usize>()
+                        + self.color_atlas_pages.iter().map(|p| p.quads.len()).sum::<usize>()
+                        + self.decorations.len();
         
         let required_size = (total_quads * std::mem::size_of::<Quad>()) as u64;
         
@@ -320,21 +320,27 @@ impl ContextlessTextRenderer {
             self.vertex_buffer = create_vertex_buffer(device, new_size);
         }
 
-        // Collect all quads and write to shared buffer 
-        let mut all_quads = Vec::with_capacity(total_quads);
+        let mut buffer_offset = 0u64;
         
         for page in &self.mask_atlas_pages {
-            all_quads.extend_from_slice(&page.quads);
-            all_quads.extend_from_slice(&page.decoration_quads);
-        }
-        for page in &self.color_atlas_pages {
-            all_quads.extend_from_slice(&page.quads);
-            all_quads.extend_from_slice(&page.decoration_quads);
+            if !page.quads.is_empty() {
+                let bytes: &[u8] = bytemuck::cast_slice(&page.quads);
+                queue.write_buffer(&self.vertex_buffer, buffer_offset, bytes);
+                buffer_offset += bytes.len() as u64;
+            }
         }
         
-        if !all_quads.is_empty() {
-            let bytes: &[u8] = bytemuck::cast_slice(&all_quads);
-            queue.write_buffer(&self.vertex_buffer, 0, &bytes);
+        for page in &self.color_atlas_pages {
+            if !page.quads.is_empty() {
+                let bytes: &[u8] = bytemuck::cast_slice(&page.quads);
+                queue.write_buffer(&self.vertex_buffer, buffer_offset, bytes);
+                buffer_offset += bytes.len() as u64;
+            }
+        }
+        
+        if !self.decorations.is_empty() {
+            let bytes: &[u8] = bytemuck::cast_slice(&self.decorations);
+            queue.write_buffer(&self.vertex_buffer, buffer_offset, bytes);
         }
 
         // Handle mask atlas pages

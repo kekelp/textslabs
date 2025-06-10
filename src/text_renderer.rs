@@ -16,6 +16,7 @@ pub struct ContextlessTextRenderer {
     pub(crate) last_frame_evicted: u64,
     
     pub(crate) color_atlas_pages: Vec<AtlasPage<RgbaImage>>,
+    pub(crate) decorations: Vec<Quad>,
     
     pub atlas_bind_group_layout: BindGroupLayout,
     
@@ -40,7 +41,6 @@ pub(crate) struct CachedScaler {
 
 pub(crate) struct AtlasPage<ImageType> {
     pub quads: Vec<Quad>,
-    pub decoration_quads: Vec<Quad>,
     pub(crate) packer: BucketedAtlasAllocator,
     pub(crate) image: ImageType,
     pub gpu: Option<GpuAtlasPage>,
@@ -116,7 +116,7 @@ impl ContextlessTextRenderer {
             depth: 0.0,
             flags: 2, // todo make names for these
         };
-        self.mask_atlas_pages[0].decoration_quads.push(quad);
+        self.decorations.push(quad);
     }
 }
 
@@ -430,21 +430,25 @@ impl ContextlessTextRenderer {
         let mut instance_offset = 0u32;
 
         for page in &self.mask_atlas_pages {
-            let total_quads = page.quads.len() + page.decoration_quads.len();
-            if total_quads > 0 {
+            if !page.quads.is_empty() {
                 pass.set_bind_group(0, &page.gpu.as_ref().unwrap().bind_group, &[]);
-                pass.draw(0..4, instance_offset..(instance_offset + total_quads as u32));
-                instance_offset += total_quads as u32;
+                pass.draw(0..4, instance_offset..(instance_offset + page.quads.len() as u32));
+                instance_offset += page.quads.len() as u32;
             }
         }
 
         for page in &self.color_atlas_pages {
-            let total_quads = page.quads.len() + page.decoration_quads.len();
-            if total_quads > 0 {
+            if !page.quads.is_empty() {
                 pass.set_bind_group(0, &page.gpu.as_ref().unwrap().bind_group, &[]);
-                pass.draw(0..4, instance_offset..(instance_offset + total_quads as u32));
-                instance_offset += total_quads as u32;
+                pass.draw(0..4, instance_offset..(instance_offset + page.quads.len() as u32));
+                instance_offset += page.quads.len() as u32;
             }
+        }
+
+        // Draw decorations (they use the mask atlas bind group - first page)
+        if !self.decorations.is_empty() {
+            pass.set_bind_group(0, &self.mask_atlas_pages[0].gpu.as_ref().unwrap().bind_group, &[]);
+            pass.draw(0..4, instance_offset..(instance_offset + self.decorations.len() as u32));
         }
     }
 
@@ -458,21 +462,15 @@ impl ContextlessTextRenderer {
 
         for page in &mut self.mask_atlas_pages {
             page.quads.clear();
-            page.decoration_quads.clear();
         }
         for page in &mut self.color_atlas_pages {
             page.quads.clear();
-            page.decoration_quads.clear();
         }
+        self.decorations.clear();
     }
 
     pub fn clear_decorations(&mut self) {
-        for page in &mut self.mask_atlas_pages {
-            page.decoration_quads.clear();
-        }
-        for page in &mut self.color_atlas_pages {
-            page.decoration_quads.clear();
-        }
+        self.decorations.clear();
     }
 
 
@@ -776,7 +774,6 @@ impl ContextlessTextRenderer {
                     image: GrayImage::from_pixel(atlas_size, atlas_size, Luma([0])),
                     packer: BucketedAtlasAllocator::new(size2(atlas_size as i32, atlas_size as i32)),
                     quads: Vec::<Quad>::with_capacity(300),
-                    decoration_quads: Vec::<Quad>::with_capacity(50),
                     gpu: None, // will be created later
                 });
                 return self.mask_atlas_pages.len() - 1;
@@ -786,7 +783,6 @@ impl ContextlessTextRenderer {
                     image: RgbaImage::from_pixel(atlas_size, atlas_size, Rgba([0, 0, 0, 0])),
                     packer: BucketedAtlasAllocator::new(size2(atlas_size as i32, atlas_size as i32)),
                     quads: Vec::<Quad>::with_capacity(300),
-                    decoration_quads: Vec::<Quad>::with_capacity(50),
                     gpu: None, // will be created later
                 });
                 return self.color_atlas_pages.len() - 1;
