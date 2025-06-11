@@ -62,8 +62,11 @@ impl State {
         });
 
         let mut text_edits = vec![
-            TextEdit::new("Text edit box".to_string(), (10.0, 15.0), (100.0, 50.0), 0.0),
+            TextEdit::new_single_line("Single line input".to_string(), (10.0, 15.0), (200.0, 30.0), 0.0),
             TextEdit::new("Editable text 無限での座を含む全ての".to_string(), (100.0, 200.0), (400.0, 200.0), 0.0),
+            TextEdit::new("Multi-line\ntext edit\nbox".to_string(), (10.0, 60.0), (200.0, 100.0), 0.0),
+            TextEdit::new_single_line("".to_string(), (250.0, 15.0), (250.0, 30.0), 0.0),  // Empty single line box
+            TextEdit::new_single_line("Type here (Enter won't work)".to_string(), (10.0, 170.0), (400.0, 30.0), 0.0),  // Demo box with instructions
         ];
         
         text_edits[1].set_shared_style(&big_text_style);

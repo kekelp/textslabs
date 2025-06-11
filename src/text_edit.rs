@@ -115,6 +115,7 @@ pub struct TextEdit {
     pub(crate) start_time: Option<Instant>,
     pub(crate) blink_period: Duration,
     pub(crate) history: TextEditHistory,
+    pub(crate) single_line: bool,
 }
 
 impl TextEdit {
@@ -126,7 +127,14 @@ impl TextEdit {
             start_time: Default::default(),
             blink_period: Default::default(),
             history: TextEditHistory::new(),
+            single_line: false,
         }
+    }
+
+    pub fn new_single_line(text: String, pos: (f64, f64), size: (f32, f32), depth: f32) -> Self {
+        let mut edit = Self::new(text, pos, size, depth);
+        edit.set_single_line(true);
+        edit
     }
 
     #[must_use]
@@ -302,6 +310,33 @@ impl TextEdit {
         self.text_box.set_unique_style(style)
     }
 
+    pub fn set_single_line(&mut self, single_line: bool) {
+        if self.single_line != single_line {
+            self.single_line = single_line;
+            // Force relayout when switching modes
+            self.text_box.needs_relayout = true;
+            
+            // If switching to single line mode, remove any existing newlines
+            if single_line {
+                self.remove_newlines();
+            }
+        }
+    }
+
+    pub fn is_single_line(&self) -> bool {
+        self.single_line
+    }
+
+    fn remove_newlines(&mut self) {
+        let text_with_spaces = self.text_box.text.replace('\n', " ").replace('\r', " ");
+        if text_with_spaces != self.text_box.text {
+            self.text_box.text = text_with_spaces;
+            self.text_box.needs_relayout = true;
+            // Reset selection to end of text
+            self.move_to_text_end();
+        }
+    }
+
     pub fn set_ime_cursor_area(&self, window: &Window) {
         let area = self.ime_cursor_area();
         // Note: on X11 `set_ime_cursor_area` may cause the exclusion area to be obscured
@@ -417,7 +452,46 @@ impl TextEdit {
     }
 
     pub fn refresh_layout(&mut self) {
-        self.text_box.refresh_layout()
+        if self.single_line {
+            self.refresh_layout_single_line()
+        } else {
+            self.text_box.refresh_layout()
+        }
+    }
+
+    fn refresh_layout_single_line(&mut self) {
+        use crate::text_box::with_text_cx;
+        
+        self.text_box.style.with_text_style(|style, version| {
+            let shared_style_changed = if let Some(version) = version {
+                self.text_box.shared_style_version != version
+            } else { false };
+
+            if self.text_box.needs_relayout || shared_style_changed {
+                with_text_cx(|layout_cx, font_cx| {
+                    let mut builder = layout_cx.tree_builder(font_cx, 1.0, style);
+        
+                    builder.push_text(&self.text_box.text.as_ref());
+        
+                    let (mut layout, _) = builder.build();
+        
+                    // In single line mode, don't break lines - use None for max_advance
+                    layout.break_all_lines(None);
+                    layout.align(
+                        Some(self.text_box.max_advance),
+                        self.text_box.alignment,
+                        AlignmentOptions::default(),
+                    );
+        
+                    self.text_box.layout = layout;
+                    self.text_box.needs_relayout = false;
+                });
+                
+                if let Some(version) = version {
+                    self.text_box.shared_style_version = version;
+                }
+            }
+        });
     }
 }
 
@@ -535,12 +609,22 @@ impl TextEdit {
                     }
                     Key::Named(NamedKey::ArrowUp) => {
                         if !shift {
-                            self.text_box.move_up();
+                            if self.single_line {
+                                // In single line mode, up arrow moves to beginning of text
+                                self.text_box.move_to_text_start();
+                            } else {
+                                self.text_box.move_up();
+                            }
                         }
                     }
                     Key::Named(NamedKey::ArrowDown) => {
                         if !shift {
-                            self.text_box.move_down();
+                            if self.single_line {
+                                // In single line mode, down arrow moves to end of text
+                                self.text_box.move_to_text_end();
+                            } else {
+                                self.text_box.move_down();
+                            }
                         }
                     }
                     Key::Named(NamedKey::Home) => {
@@ -579,10 +663,11 @@ impl TextEdit {
                     }
                     Key::Named(NamedKey::Enter) => {
                         // todo: make shift-enter, ctrl-enter configurable
-                        if ! action_mod {
+                        if ! action_mod && !self.single_line {
                             self.insert_or_replace_selection("\n");
                             result.set_text_changed();
                         }
+                        // In single line mode, Enter key is ignored (no newline insertion)
                     }
                     Key::Named(NamedKey::Space) => {
                         if ! action_mod {
@@ -694,7 +779,13 @@ impl TextEdit {
     pub(crate) fn insert_or_replace_selection(&mut self, s: &str) {
         assert!(!self.is_composing());
 
-        self.replace_selection_and_record(s);
+        // In single line mode, convert newlines to spaces (standard HTML input behavior)
+        if self.single_line && (s.contains('\n') || s.contains('\r')) {
+            let filtered_text = s.replace('\n', " ").replace('\r', " ");
+            self.replace_selection_and_record(&filtered_text);
+        } else {
+            self.replace_selection_and_record(s);
+        }
     }
 
     /// Delete the selection.
