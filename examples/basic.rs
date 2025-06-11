@@ -54,15 +54,16 @@ impl State {
             .unwrap();
         surface.configure(&device, &surface_config);
 
+        let white = [255,0,0,255];
         let big_text_style: SharedStyle = SharedStyle::new(TextStyle {
             font_size: 64.0,
-            brush: ColorBrush([255,0,0,255]),
+            brush: ColorBrush(white),
             ..Default::default()
         });
 
         let mut text_edits = vec![
-            TextEdit::new("Text box".to_string(), (10.0, 15.0), (100.0, 50.0), 0.0),
-            TextEdit::new("Saddy (rare) ".to_string(), (100.0, 200.0), (400.0, 200.0), 0.0),
+            TextEdit::new("Text edit box".to_string(), (10.0, 15.0), (100.0, 50.0), 0.0),
+            TextEdit::new("Editable text 無限での座を含む全ての".to_string(), (100.0, 200.0), (400.0, 200.0), 0.0),
         ];
         
         text_edits[1].set_shared_style(&big_text_style);
@@ -70,27 +71,23 @@ impl State {
         let mut text_boxes = vec![
             TextBox::new("Words words words ".to_string(), (20.0, 20.0), (100.0, 50.0), 0.0),
             TextBox::new(
-                "Amogus (non selectable)".to_string(),
-                (10.0, 110.0),
-                (100.0, 50.0),
+                "Clipped text".to_string(),
+                (10.0, 230.0),
+                (300.0, 50.0),
                 0.0
             ),
         ];
-        text_boxes[1].set_selectable(false);
         text_boxes[0].set_shared_style(&big_text_style);
         text_boxes[1].set_unique_style(TextStyle {
             font_size: 24.0,
             ..Default::default()
         });
 
-
-        // Add a clip rectangle to the second text box to demonstrate clipping
-        // This will clip the text box to a smaller rectangle, cutting off part of the text
         text_boxes[1].set_clip_rect(Some(parley::Rect {
-            x0: 0.0,   // Start from left edge of text box
-            y0: 0.0,   // Start from top edge of text box 
-            x1: 200.0, // Clip width to 200 pixels (original is 400)
-            y1: 20.0, // Clip height to 100 pixels (original is 200)
+            x0: 0.0,
+            y0: 0.0,
+            x1: 200.0,
+            y1: 20.0,
         }));
 
         big_text_style.with_borrow_mut(|style| style.font_size = 32.0);

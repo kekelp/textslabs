@@ -1,5 +1,5 @@
 use std::{
-    cell::RefCell, ops::Range, sync::{Arc, RwLock}, time::{Duration, Instant}
+    cell::RefCell, sync::{Arc, RwLock}, time::Instant
 };
 
 use parley::*;

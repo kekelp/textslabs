@@ -4,7 +4,7 @@ use std::{
 
 use parley::*;
 use winit::{
-    dpi::{PhysicalPosition, PhysicalSize}, event::{Ime, Touch, WindowEvent}, keyboard::{Key, NamedKey}, platform::modifier_supplement::KeyEventExtModifierSupplement, window::Window
+    event::{Ime, Touch, WindowEvent}, keyboard::{Key, NamedKey}, platform::modifier_supplement::KeyEventExtModifierSupplement, window::Window
 };
 
 const INSET: f32 = 2.0;
@@ -1025,15 +1025,6 @@ pub struct TextRestore<'a> {
 }
 
 impl TextEditHistory {
-    pub(crate) fn empty() -> TextEditHistory {
-        Self {
-            undo_text: String::new(),
-            redo_text: String::new(),
-            history: Vec::new(),
-            current_position: 0,
-            can_grow: GrowHint::CannotGrow,
-        }
-    }
     pub(crate) fn new() -> TextEditHistory {
         Self {
             undo_text: String::with_capacity(64),
