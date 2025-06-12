@@ -11,6 +11,25 @@ const INSET: f32 = 2.0;
 
 use crate::*;
 
+/// Defines how newlines are entered in a text edit box
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NewlineMode {
+    /// Enter key inserts newlines (default for multi-line)
+    Enter,
+    /// Shift+Enter inserts newlines, Enter is ignored
+    ShiftEnter,
+    /// Ctrl+Enter inserts newlines, Enter is ignored (or Cmd+Enter on macOS)
+    CtrlEnter,
+    /// No newlines allowed (used automatically for single-line mode)
+    None,
+}
+
+impl Default for NewlineMode {
+    fn default() -> Self {
+        NewlineMode::Enter
+    }
+}
+
 /// Result of handling a window event on a text box.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TextEventResult {
@@ -116,6 +135,7 @@ pub struct TextEdit {
     pub(crate) blink_period: Duration,
     pub(crate) history: TextEditHistory,
     pub(crate) single_line: bool,
+    pub(crate) newline_mode: NewlineMode,
 }
 
 impl TextEdit {
@@ -128,12 +148,19 @@ impl TextEdit {
             blink_period: Default::default(),
             history: TextEditHistory::new(),
             single_line: false,
+            newline_mode: NewlineMode::default(),
         }
     }
 
     pub fn new_single_line(text: String, pos: (f64, f64), size: (f32, f32), depth: f32) -> Self {
         let mut edit = Self::new(text, pos, size, depth);
         edit.set_single_line(true);
+        edit
+    }
+
+    pub fn new_with_newline_mode(text: String, pos: (f64, f64), size: (f32, f32), depth: f32, newline_mode: NewlineMode) -> Self {
+        let mut edit = Self::new(text, pos, size, depth);
+        edit.set_newline_mode(newline_mode);
         edit
     }
 
@@ -316,15 +343,30 @@ impl TextEdit {
             // Force relayout when switching modes
             self.text_box.needs_relayout = true;
             
-            // If switching to single line mode, remove any existing newlines
+            // If switching to single line mode, remove any existing newlines and set newline mode to None
             if single_line {
+                self.newline_mode = NewlineMode::None;
                 self.remove_newlines();
+            } else {
+                // When switching back to multi-line, restore default newline mode
+                self.newline_mode = NewlineMode::Enter;
             }
         }
     }
 
     pub fn is_single_line(&self) -> bool {
         self.single_line
+    }
+
+    pub fn set_newline_mode(&mut self, mode: NewlineMode) {
+        // Don't allow changing newline mode in single line mode (it's always None)
+        if !self.single_line {
+            self.newline_mode = mode;
+        }
+    }
+
+    pub fn newline_mode(&self) -> NewlineMode {
+        self.newline_mode
     }
 
     fn remove_newlines(&mut self) {
@@ -662,12 +704,17 @@ impl TextEdit {
                         result.set_text_changed();
                     }
                     Key::Named(NamedKey::Enter) => {
-                        // todo: make shift-enter, ctrl-enter configurable
-                        if ! action_mod && !self.single_line {
+                        let should_insert_newline = match self.newline_mode {
+                            NewlineMode::Enter => !action_mod && !shift,
+                            NewlineMode::ShiftEnter => shift && !action_mod,
+                            NewlineMode::CtrlEnter => action_mod && !shift,
+                            NewlineMode::None => false,
+                        };
+                        
+                        if should_insert_newline {
                             self.insert_or_replace_selection("\n");
                             result.set_text_changed();
                         }
-                        // In single line mode, Enter key is ignored (no newline insertion)
                     }
                     Key::Named(NamedKey::Space) => {
                         if ! action_mod {

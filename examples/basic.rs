@@ -1,5 +1,6 @@
 use parley::TextStyle;
 use parley2::*;
+use parley2::NewlineMode;
 use std::sync::Arc;
 use std::time::SystemTime;
 use wgpu::*;
@@ -65,8 +66,9 @@ impl State {
             TextEdit::new_single_line("Single line input".to_string(), (10.0, 15.0), (200.0, 30.0), 0.0),
             TextEdit::new("Editable text 無限での座を含む全ての".to_string(), (100.0, 200.0), (400.0, 200.0), 0.0),
             TextEdit::new("Multi-line\ntext edit\nbox".to_string(), (10.0, 60.0), (200.0, 100.0), 0.0),
+            TextEdit::new_with_newline_mode("Shift+Enter for newlines".to_string(), (250.0, 60.0), (200.0, 100.0), 0.0, NewlineMode::ShiftEnter),
+            TextEdit::new_with_newline_mode("Ctrl+Enter for newlines".to_string(), (470.0, 60.0), (200.0, 100.0), 0.0, NewlineMode::CtrlEnter),
             TextEdit::new_single_line("".to_string(), (250.0, 15.0), (250.0, 30.0), 0.0),  // Empty single line box
-            TextEdit::new_single_line("Type here (Enter won't work)".to_string(), (10.0, 170.0), (400.0, 30.0), 0.0),  // Demo box with instructions
         ];
         
         text_edits[1].set_shared_style(&big_text_style);
