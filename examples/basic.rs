@@ -99,7 +99,7 @@ impl State {
 
         let mut static_text_boxes = vec![
             TextBox::new("&'static str", (400.0, 500.0), (100.0, 50.0), 0.0),
-            TextBox::new("Static words ", (200.0, 400.0), (100.0, 50.0), 0.0),
+            TextBox::new("Long static words, Long static words, Long static words, Long static words, ... ", (200.0, 400.0), (400.0, 150.0), 0.0),
         ];
         static_text_boxes[1].set_shared_style(&big_text_style);
 

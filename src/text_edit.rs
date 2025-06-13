@@ -443,7 +443,6 @@ impl TextEdit {
         self.text_box.move_word_right()
     }
 
-    // Selection methods
     pub fn select_all(&mut self) {
         self.text_box.select_all()
     }
@@ -452,8 +451,8 @@ impl TextEdit {
         self.text_box.collapse_selection()
     }
 
-    pub fn extend_selection_to_point(&mut self, x: f32, y: f32, keep_granularity: bool) {
-        self.text_box.extend_selection_to_point(x, y, keep_granularity)
+    pub fn extend_selection_to_point(&mut self, x: f32, y: f32) {
+        self.text_box.extend_selection_to_point(x, y)
     }
 
     // Cursor blinking methods
@@ -511,7 +510,7 @@ impl TextEdit {
 
             if self.text_box.needs_relayout || shared_style_changed {
                 with_text_cx(|layout_cx, font_cx| {
-                    let mut builder = layout_cx.tree_builder(font_cx, 1.0, style);
+                    let mut builder = layout_cx.tree_builder(font_cx, 1.0, true, style);
         
                     builder.push_text(&self.text_box.text.as_ref());
         
@@ -749,7 +748,6 @@ impl TextEdit {
                         self.text_box.extend_selection_to_point(
                             location.x as f32 - INSET,
                             location.y as f32 - INSET,
-                            true,
                         );
                     }
                     Ended => (),
@@ -1332,5 +1330,41 @@ impl TextEditHistory {
             range_to_clear: redo.inserted_range,
             text_to_restore: &self.redo_text[old_text],
         })
+    }
+}
+
+trait SelectionExt1 {
+    pub fn extend_to_cluster_at_point<B: Brush>(&self, layout: &Layout<B>, x: f32, y: f32) -> Self;
+}
+
+impl SelectionExt1 for Selection {
+    /// Returns a new selection with the focus extended to the given point, without keeping the granularity of the original selection
+    #[must_use]
+    fn extend_to_cluster_at_point<B: Brush>(&self, layout: &Layout<B>, x: f32, y: f32) -> Self {
+        let is_cluster = self.is_collapsed();
+        let target = Self::new(self.anchor(), Cursor::from_point(layout, x, y));
+        match self. {
+            AnchorBase::Cluster => target,
+            AnchorBase::Word(start, end) => {
+                let [anchor, focus] =
+                cursor_min_max(layout, [target.anchor, target.focus, start, end]);
+                Self {
+                    anchor,
+                    focus,
+                    anchor_base: AnchorBase::Cluster,
+                    h_pos: None,
+                }
+            }
+            AnchorBase::Line(start, end) => {
+                let [anchor, focus] =
+                cursor_min_max(layout, [target.anchor, target.focus, start, end]);
+                Self {
+                    anchor,
+                    focus,
+                    anchor_base: AnchorBase::Cluster,
+                    h_pos: None,
+                }
+            }
+        }
     }
 }

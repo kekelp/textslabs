@@ -197,30 +197,14 @@ fn rich_layout() -> Layout<ColorBrush> {
     let mut layout_cx = LayoutContext::new();
 
     let text_brush = ColorBrush([0, 0, 0, 255]);
-    let mut builder = layout_cx.ranged_builder(&mut font_cx, &RICH_TEXT, display_scale);
+    let mut builder = layout_cx.ranged_builder(&mut font_cx, &RICH_TEXT, display_scale, true);
 
     builder.push_default(StyleProperty::Brush(text_brush));
     builder.push_default(FontStack::from("system-ui"));
-    builder.push_default(StyleProperty::LineHeight(1.2));
+    builder.push_default(StyleProperty::LineHeight(LineHeight::MetricsRelative(1.2)));
     builder.push_default(StyleProperty::FontSize(24.0));
     builder.push(StyleProperty::FontWeight(parley::FontWeight::new(800.0)), 0..31);
     builder.push(StyleProperty::FontWeight(parley::FontWeight::new(600.0)), 32..105);
-
-    // builder.push(StyleProperty::Underline(true), 141..150);
-    // builder.push(StyleProperty::Strikethrough(true), 155..168);
-
-    // builder.push_inline_box(InlineBox {
-    //     id: 0,
-    //     index: 40,
-    //     width: 50.0,
-    //     height: 50.0,
-    // });
-    // builder.push_inline_box(InlineBox {
-    //     id: 1,
-    //     index: 50,
-    //     width: 50.0,
-    //     height: 30.0,
-    // });
 
     let mut layout: Layout<ColorBrush> = builder.build(&RICH_TEXT);
 
@@ -247,10 +231,10 @@ fn layout(text: &str) -> Layout<ColorBrush> {
     let mut layout_cx = LayoutContext::new();
 
     let text_brush = ColorBrush([0, 0, 0, 255]);
-    let mut builder = layout_cx.ranged_builder(&mut font_cx, &text, display_scale);
+    let mut builder = layout_cx.ranged_builder(&mut font_cx, &text, display_scale, true);
     builder.push_default(StyleProperty::Brush(text_brush));
     builder.push_default(FontStack::from("system-ui"));
-    builder.push_default(StyleProperty::LineHeight(1.2));
+    builder.push_default(StyleProperty::LineHeight(LineHeight::MetricsRelative(1.2)));
     builder.push_default(StyleProperty::FontSize(24.0));
 
     let mut layout: Layout<ColorBrush> = builder.build(&text);

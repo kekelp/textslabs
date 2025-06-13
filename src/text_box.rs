@@ -200,7 +200,7 @@ impl<T: AsRef<str>> TextBox<T> {
             if self.needs_relayout || shared_style_changed {
                 // todo: deduplicate
                 with_text_cx(|layout_cx, font_cx| {
-                    let mut builder = layout_cx.tree_builder(font_cx, 1.0, style);
+                    let mut builder = layout_cx.tree_builder(font_cx, 1.0, true, style);
         
                     builder.push_text(&self.text.as_ref());
         
@@ -225,9 +225,7 @@ impl<T: AsRef<str>> TextBox<T> {
 
             // todo: deduplicate
             with_text_cx(|layout_cx, font_cx| {
-                let mut builder =
-                    layout_cx
-                        .tree_builder(font_cx, 1.0, style);
+                let mut builder = layout_cx.tree_builder(font_cx, 1.0, true, style);
     
                 builder.push_text(&self.text.as_ref());
     
@@ -778,11 +776,9 @@ impl<T: AsRef<str>> TextBox<T> {
     }
 
     /// Move the selection focus point to the cluster boundary closest to point.
-    pub(crate) fn extend_selection_to_point(&mut self, x: f32, y: f32, keep_granularity: bool) {
+    pub(crate) fn extend_selection_to_point(&mut self, x: f32, y: f32) {
         self.refresh_layout();
-
-        self.selection
-            .extend_selection_to_point(&self.layout, x, y, keep_granularity);
+        self.selection.extend_selection_to_point(&self.layout, x, y);
     }
 
 }
@@ -797,7 +793,7 @@ pub(crate) trait Ext1 {
 impl Ext1 for Layout<ColorBrush> {
     fn hit_bounding_box(&self, cursor_pos: (f64, f64)) -> bool {
         let hit = cursor_pos.0 > -X_TOLERANCE
-            && cursor_pos.0 < self.max_content_width() as f64 + X_TOLERANCE
+            && cursor_pos.0 < self.full_width() as f64 + X_TOLERANCE
             && cursor_pos.1 > 0.0
             && cursor_pos.1 < self.height() as f64;
 
@@ -829,7 +825,6 @@ impl SelectionState {
                         &layout,
                         cursor_pos.0,
                         cursor_pos.1,
-                        true,
                     );
                 }
             }
@@ -952,12 +947,9 @@ impl SelectionState {
         layout: &Layout<ColorBrush>,
         x: f32,
         y: f32,
-        keep_granularity: bool,
     ) {
-        // FIXME: This is usually the wrong way to handle selection extension for mouse moves, but not a regression.
         self.set_selection(
-            self.selection
-                .extend_to_point(layout, x, y, keep_granularity),
+            self.selection.extend_to_point(layout, x, y),
         );
     }
 
@@ -965,19 +957,21 @@ impl SelectionState {
     ///
     /// Used for shift-click behavior.
     pub(crate) fn extend_selection_with_anchor(&mut self, layout: &Layout<ColorBrush>, x: f32, y: f32) {
+        // restore prev anchor
         if let Some(prev_selection) = self.prev_anchor {
             self.set_selection_with_old_anchor(prev_selection);
-        } else {
-            self.prev_anchor = Some(self.selection);
         }
-        // FIXME: This is usually the wrong way to handle selection extension for mouse moves, but not a regression.
-        self.set_selection_with_old_anchor(self.selection.extend_to_point(layout, x, y, false));
+        // extend
+        let cursor = Cursor::from_point(layout, x, y);
+        self.set_selection_with_old_anchor(
+            self.selection.extend(cursor),
+        );
     }
 
     /// Update the selection, and nudge the `Generation` if something other than `h_pos` changed.
     pub(crate) fn set_selection(&mut self, new_sel: Selection) {
         self.set_selection_inner(new_sel);
-        self.prev_anchor = None;
+        self.prev_anchor = Some(self.selection);
     }
 
     /// Update the selection without resetting the previous anchor.
