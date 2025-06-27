@@ -1332,39 +1332,3 @@ impl TextEditHistory {
         })
     }
 }
-
-trait SelectionExt1 {
-    pub fn extend_to_cluster_at_point<B: Brush>(&self, layout: &Layout<B>, x: f32, y: f32) -> Self;
-}
-
-impl SelectionExt1 for Selection {
-    /// Returns a new selection with the focus extended to the given point, without keeping the granularity of the original selection
-    #[must_use]
-    fn extend_to_cluster_at_point<B: Brush>(&self, layout: &Layout<B>, x: f32, y: f32) -> Self {
-        let is_cluster = self.is_collapsed();
-        let target = Self::new(self.anchor(), Cursor::from_point(layout, x, y));
-        match self. {
-            AnchorBase::Cluster => target,
-            AnchorBase::Word(start, end) => {
-                let [anchor, focus] =
-                cursor_min_max(layout, [target.anchor, target.focus, start, end]);
-                Self {
-                    anchor,
-                    focus,
-                    anchor_base: AnchorBase::Cluster,
-                    h_pos: None,
-                }
-            }
-            AnchorBase::Line(start, end) => {
-                let [anchor, focus] =
-                cursor_min_max(layout, [target.anchor, target.focus, start, end]);
-                Self {
-                    anchor,
-                    focus,
-                    anchor_base: AnchorBase::Cluster,
-                    h_pos: None,
-                }
-            }
-        }
-    }
-}
