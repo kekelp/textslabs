@@ -290,12 +290,17 @@ impl ContextlessTextRenderer {
             last_frame_evicted: 0,
             cached_scaler: None,
             vertex_buffer,
+            needs_gpu_sync: true,
         }
     }
 }
 
 impl ContextlessTextRenderer {
     pub fn gpu_load(&mut self, device: &Device, queue: &Queue) {
+        if !self.needs_gpu_sync {
+            return;
+        }
+
         queue.write_buffer(&self.params_buffer, 0, unsafe {
             std::slice::from_raw_parts(
                 &self.params as *const Params as *const u8,
@@ -464,5 +469,7 @@ impl ContextlessTextRenderer {
                 },
             );
         }
+
+        self.needs_gpu_sync = false;
     }
 }

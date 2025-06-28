@@ -31,6 +31,7 @@ pub struct ContextlessTextRenderer {
     pub(crate) cached_scaler: Option<CachedScaler>,
     
     pub(crate) vertex_buffer: Buffer,
+    pub(crate) needs_gpu_sync: bool,
 }
 
 pub(crate) struct CachedScaler {
@@ -331,6 +332,7 @@ impl TextRenderer {
 
     pub fn prepare_layout(&mut self, layout: &Layout<ColorBrush>, left: f32, top: f32) {
         self.text_renderer.prepare_layout(layout, &mut self.scale_cx, left, top, None);
+        self.text_renderer.needs_gpu_sync = true;
     }
 
     pub fn prepare_text_box<T: AsRef<str>>(&mut self, text_box: &mut TextBox<T>) {
@@ -349,6 +351,7 @@ impl TextRenderer {
 
         // Prepare text layout
         self.text_renderer.prepare_layout(text_box.layout(), &mut self.scale_cx, left, top, clip_rect);
+        self.text_renderer.needs_gpu_sync = true;
     }
 
     pub fn prepare_text_edit(&mut self, text_edit: &mut TextEdit) {
@@ -367,6 +370,7 @@ impl TextRenderer {
 
         // Prepare text layout
         self.text_renderer.prepare_layout(text_edit.layout(), &mut self.scale_cx, left, top, clip_rect);
+        self.text_renderer.needs_gpu_sync = true;
     }
 
     pub fn prepare_text_box_decorations<T: AsRef<str>>(&mut self, text_box: &TextBox<T>, editable: bool) {
@@ -387,6 +391,7 @@ impl TextRenderer {
             let cursor_rect = text_box.selection().focus().geometry(&text_box.layout, size);
             self.text_renderer.add_selection_rect(cursor_rect, left, top, cursor_color, clip_rect);
         }
+        self.text_renderer.needs_gpu_sync = true;
     }
 
     pub fn gpu_load(&mut self, device: &Device, queue: &Queue) {
@@ -489,10 +494,12 @@ impl ContextlessTextRenderer {
             page.quads.clear();
         }
         self.decorations.clear();
+        self.needs_gpu_sync = true;
     }
 
     pub fn clear_decorations(&mut self) {
         self.decorations.clear();
+        self.needs_gpu_sync = true;
     }
 
 
