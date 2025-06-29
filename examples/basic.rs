@@ -64,7 +64,6 @@ impl State {
         ];
         
         let text_boxes = vec![
-            text.add_text_box("Words words words ".to_string(), (20.0, 20.0), (100.0, 50.0), 0.0),
             text.add_text_box("Clipped text".to_string(), (10.0, 230.0), (300.0, 50.0), 0.0),
         ];
         
@@ -73,16 +72,17 @@ impl State {
             text.add_static_text_box("Long static words, Long static words, Long static words, Long static words, ... ", (200.0, 400.0), (400.0, 150.0), 0.0),
         ];
         
+        text.get_text_edit(&text_edits[0]).unwrap().set_style(&big_text_style);
         text.get_text_edit(&text_edits[1]).unwrap().set_style(&big_text_style);
-        text.get_text_box(&text_boxes[1]).unwrap().set_style(&big_text_style);
+        text.get_text_box(&text_boxes[0]).unwrap().set_style(&big_text_style);
         
         let small_text_style = text.add_style(TextStyle {
             font_size: 24.0,
             ..Default::default()
         });
 
-        text.get_text_box(&text_boxes[1]).unwrap().set_style(&small_text_style);
-        text.get_text_box(&text_boxes[1]).unwrap().set_clip_rect(Some(parley::Rect {
+        text.get_text_box(&text_boxes[0]).unwrap().set_style(&small_text_style);
+        text.get_text_box(&text_boxes[0]).unwrap().set_clip_rect(Some(parley::Rect {
             x0: 0.0,
             y0: 0.0,
             x1: 200.0,

@@ -43,11 +43,17 @@ impl StyleHandle {
 }
 
 #[derive(Debug, Clone)]
+pub struct LastClickInfo {
+    pub(crate) time: Instant,
+    pub(crate) pos: (f64, f64),
+    pub(crate) focused: Option<AnyBox>,
+}
+
+#[derive(Debug, Clone)]
 pub struct MouseState {
     pub(crate) pointer_down: bool,
     pub(crate) cursor_pos: (f64, f64),
-    pub(crate) last_click_time: Option<Instant>,
-    pub(crate) last_click_pos: Option<(f64, f64)>,
+    pub(crate) last_click_info: Option<LastClickInfo>,
     pub(crate) click_count: u32,
 }
 
@@ -56,8 +62,7 @@ impl MouseState {
         Self {
             pointer_down: false,
             cursor_pos: (0.0, 0.0),
-            last_click_time: None,
-            last_click_pos: None,
+            last_click_info: None,
             click_count: 0,
         }
     }
@@ -65,8 +70,7 @@ impl MouseState {
     pub fn reset(&mut self) {
         self.pointer_down = false;
         self.cursor_pos = (0.0, 0.0);
-        self.last_click_time = None;
-        self.last_click_pos = None;
+        self.last_click_info = None;
         self.click_count = 0;
     }
 }
@@ -104,26 +108,6 @@ impl TextInputState {
 
             WindowEvent::MouseInput { state, .. } => {
                 self.mouse.pointer_down = state.is_pressed();
-
-                let now = Instant::now();
-                let current_pos = self.mouse.cursor_pos;
-                
-                if let (Some(last_time), Some(last_pos)) = (self.mouse.last_click_time.take(), self.mouse.last_click_pos) {
-                    let dx = current_pos.0 - last_pos.0;
-                    let dy = current_pos.1 - last_pos.1;
-                    let distance_squared = dx * dx + dy * dy;
-                    
-                    if now.duration_since(last_time).as_secs_f64() < MULTICLICK_DELAY 
-                        && distance_squared <= MULTICLICK_TOLERANCE_SQUARED {
-                        self.mouse.click_count = (self.mouse.click_count + 1) % 4;
-                    } else {
-                        self.mouse.click_count = 1;
-                    }
-                } else {
-                    self.mouse.click_count = 1;
-                }
-                self.mouse.last_click_time = Some(now);
-                self.mouse.last_click_pos = Some(current_pos);
             },
             _ => {}
         }
@@ -272,6 +256,7 @@ impl Text {
         if let WindowEvent::MouseInput { state, button, .. } = event {
             if state.is_pressed() && *button == MouseButton::Left {
                 self.refocus();
+                self.handle_click_counting();
             }
         }
 
@@ -318,6 +303,35 @@ impl Text {
         }
 
         self.focused = new_focus;
+    }
+
+    fn handle_click_counting(&mut self) {
+        let now = Instant::now();
+        let current_pos = self.input_state.mouse.cursor_pos;
+        
+        if let Some(last_info) = self.input_state.mouse.last_click_info.take() {
+            if now.duration_since(last_info.time).as_secs_f64() < MULTICLICK_DELAY 
+                && last_info.focused == self.focused {
+                let dx = current_pos.0 - last_info.pos.0;
+                let dy = current_pos.1 - last_info.pos.1;
+                let distance_squared = dx * dx + dy * dy;
+                if distance_squared <= MULTICLICK_TOLERANCE_SQUARED {
+                    self.input_state.mouse.click_count = (self.input_state.mouse.click_count + 1) % 4;
+                } else {
+                    self.input_state.mouse.click_count = 1;
+                }
+            } else {
+                self.input_state.mouse.click_count = 1;
+            }
+        } else {
+            self.input_state.mouse.click_count = 1;
+        }
+        
+        self.input_state.mouse.last_click_info = Some(LastClickInfo {
+            time: now,
+            pos: current_pos,
+            focused: self.focused,
+        });
     }
     
     fn remove_focus(&mut self, old_focus: AnyBox) {
