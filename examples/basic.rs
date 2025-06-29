@@ -1,6 +1,6 @@
 use parley::TextStyle;
-use parley2::*;
-use parley2::NewlineMode;
+use parley3::*;
+use parley3::NewlineMode;
 use std::sync::Arc;
 use std::time::SystemTime;
 use wgpu::*;

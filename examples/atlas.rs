@@ -1,4 +1,4 @@
-use parley2::*;
+use parley3::*;
 use std::sync::Arc;
 use parley::*;
 use wgpu::*;

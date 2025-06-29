@@ -29,14 +29,18 @@ pub use setup::*;
 mod text_renderer;
 pub use text_renderer::*;
 
+mod text;
+pub use text::*;
+
 mod text_box;
 pub use text_box::*;
 
 mod text_edit;
 pub use text_edit::*;
 
-pub use parley::{TextStyle, FontWeight, FontStyle, LineHeight, FontStack};
+pub use parley::{FontWeight, FontStyle, LineHeight, FontStack, TextStyle as ParleyTextStyle};
 
+pub type TextStyle2 = ParleyTextStyle<'static, ColorBrush>;
 
 use bytemuck::{Pod, Zeroable};
 use etagere::euclid::{Size2D, UnknownUnit};

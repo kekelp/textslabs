@@ -333,7 +333,7 @@ impl TextEdit {
         self.text_box.set_shared_style(style)
     }
 
-    pub fn set_unique_style(&mut self, style: TextStyle<'static, ColorBrush>) {
+    pub fn set_unique_style(&mut self, style: TextStyle2) {
         self.text_box.set_unique_style(style)
     }
 
