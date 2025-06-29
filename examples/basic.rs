@@ -56,7 +56,7 @@ impl State {
 
         let text_edit_handles = vec![
             text.add_single_line_edit("Single line input".to_string(), (10.0, 15.0), (200.0, 30.0), 0.0),
-            text.add_text_edit("Editable text 無限での座を含む全ての".to_string(), (100.0, 200.0), (400.0, 200.0), 0.0),
+            text.add_text_edit("Editable text 無限での座を含む全ての".to_string(), (300.0, 200.0), (400.0, 200.0), 0.0),
             text.add_text_edit("Multi-line\ntext edit\nbox".to_string(), (10.0, 60.0), (200.0, 100.0), 0.0),
             text.add_text_edit_with_newline_mode("Shift+Enter for newlines".to_string(), (250.0, 60.0), (200.0, 100.0), 0.0, NewlineMode::ShiftEnter),
             text.add_text_edit_with_newline_mode("Ctrl+Enter for newlines".to_string(), (470.0, 60.0), (200.0, 100.0), 0.0, NewlineMode::CtrlEnter),

@@ -4,6 +4,7 @@ use std::time::Instant;
 use winit::{event::{Modifiers, MouseButton, WindowEvent}, window::Window};
 
 const MULTICLICK_DELAY: f64 = 0.4;
+const MULTICLICK_TOLERANCE_SQUARED: f64 = 26.0;
 
 pub struct Text {
     pub(crate) text_boxes: Slab<TextBox<String>>,
@@ -39,6 +40,7 @@ pub struct MouseState {
     pub(crate) pointer_down: bool,
     pub(crate) cursor_pos: (f64, f64),
     pub(crate) last_click_time: Option<Instant>,
+    pub(crate) last_click_pos: Option<(f64, f64)>,
     pub(crate) click_count: u32,
 }
 
@@ -48,6 +50,7 @@ impl MouseState {
             pointer_down: false,
             cursor_pos: (0.0, 0.0),
             last_click_time: None,
+            last_click_pos: None,
             click_count: 0,
         }
     }
@@ -56,6 +59,7 @@ impl MouseState {
         self.pointer_down = false;
         self.cursor_pos = (0.0, 0.0);
         self.last_click_time = None;
+        self.last_click_pos = None;
         self.click_count = 0;
     }
 }
@@ -95,8 +99,15 @@ impl TextInputState {
                 self.mouse.pointer_down = state.is_pressed();
 
                 let now = Instant::now();
-                if let Some(last) = self.mouse.last_click_time.take() {
-                    if now.duration_since(last).as_secs_f64() < MULTICLICK_DELAY {
+                let current_pos = self.mouse.cursor_pos;
+                
+                if let (Some(last_time), Some(last_pos)) = (self.mouse.last_click_time.take(), self.mouse.last_click_pos) {
+                    let dx = current_pos.0 - last_pos.0;
+                    let dy = current_pos.1 - last_pos.1;
+                    let distance_squared = dx * dx + dy * dy;
+                    
+                    if now.duration_since(last_time).as_secs_f64() < MULTICLICK_DELAY 
+                        && distance_squared <= MULTICLICK_TOLERANCE_SQUARED {
                         self.mouse.click_count = (self.mouse.click_count + 1) % 4;
                     } else {
                         self.mouse.click_count = 1;
@@ -105,6 +116,7 @@ impl TextInputState {
                     self.mouse.click_count = 1;
                 }
                 self.mouse.last_click_time = Some(now);
+                self.mouse.last_click_pos = Some(current_pos);
             },
             _ => {}
         }
