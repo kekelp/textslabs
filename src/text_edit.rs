@@ -488,12 +488,8 @@ impl TextEdit {
     fn refresh_layout_single_line(&mut self) {
         use crate::text_box::with_text_cx;
         
-        with_text_style(|style, version| {
-            let shared_style_changed = if let Some(version) = version {
-                self.text_box.shared_style_version != version
-            } else { false };
-
-            if self.text_box.needs_relayout || shared_style_changed {
+        with_text_style(|style, style_changed| {
+            if self.text_box.needs_relayout || style_changed {
                 with_text_cx(|layout_cx, font_cx| {
                     let mut builder = layout_cx.tree_builder(font_cx, 1.0, true, style);
         
@@ -512,10 +508,6 @@ impl TextEdit {
                     self.text_box.layout = layout;
                     self.text_box.needs_relayout = false;
                 });
-                
-                if let Some(version) = version {
-                    self.text_box.shared_style_version = version;
-                }
             }
         });
     }

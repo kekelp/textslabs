@@ -218,7 +218,7 @@ impl<T: AsRef<str>> TextBox<T> {
     }
 
     pub(crate) fn update_layout(&mut self) {
-        with_text_style(|style, _version| {
+        with_text_style(|style, _style_changed| {
 
             // todo: deduplicate
             with_text_cx(|layout_cx, font_cx| {

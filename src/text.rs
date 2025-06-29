@@ -35,6 +35,7 @@ pub struct StaticTextBoxHandle {
     pub(crate) i: u32,
 }
 
+// todo: make this off by default 
 #[cfg(all(feature = "must_remove_boxes", debug_assertions))]
 impl Drop for TextEditHandle {
     fn drop(&mut self) {
@@ -257,6 +258,8 @@ impl Text {
 
     pub fn get_style_mut(&mut self, handle: &StyleHandle) -> &mut TextStyle2 {
         self.styles[handle.i as usize].1 = self.new_style_id();
+        // a bit heavy handed, but it's fine
+        self.text_dirty = true;
         &mut self.styles[handle.i as usize].0
     }
 
@@ -287,33 +290,28 @@ impl Text {
             text_renderer.clear_decorations_only();
         }
 
-        // Only prepare text if it's dirty
         if self.text_dirty {
             for (_i, text_edit) in self.text_edits.iter_mut() {
-                let style_handle = text_edit.text_box.style.sneak_clone();
-                let style = self.styles.get(style_handle.i as usize).unwrap_or(&self.styles[DEFAULT_STYLE_HANDLE.i as usize]).clone();
-                set_text_style(style, || {
+                let (style, style_changed) = do_styles(&mut text_edit.text_box, &self.styles);
+                set_text_style((style, style_changed), || {                
                     text_renderer.prepare_text_edit(text_edit);
-                })
+                });
             }
             for (_i, text_box) in self.text_boxes.iter_mut() {
-                let style_handle = text_box.style.sneak_clone();
-                let style = self.styles.get(style_handle.i as usize).unwrap_or(&self.styles[DEFAULT_STYLE_HANDLE.i as usize]).clone();
-                set_text_style(style, || {
+                let (style, style_changed) = do_styles(text_box, &self.styles);
+                set_text_style((style, style_changed), || {  
                     text_renderer.prepare_text_box(text_box);
                 })
             }
             for (_i, text_box) in self.static_text_boxes.iter_mut() {
-                let style_handle = text_box.style.sneak_clone();
-                let style = self.styles.get(style_handle.i as usize).unwrap_or(&self.styles[DEFAULT_STYLE_HANDLE.i as usize]).clone();
-                set_text_style(style, || {
+                let (style, style_changed) = do_styles(text_box, &self.styles);
+                set_text_style((style, style_changed), || {  
                     text_renderer.prepare_text_box(text_box);
                 })
             }
             self.text_dirty = false;
         }
 
-        // Only prepare decorations if they're dirty
         if self.decorations_dirty || self.text_dirty {
             if let Some(focused) = self.focused {
                 match focused {
@@ -435,11 +433,8 @@ impl Text {
     fn handle_focused_event(&mut self, focused: AnyBox, event: &WindowEvent, window: &Window) {
         match focused {
             AnyBox::TextEdit(i) => {
-                let style_handle = self.text_edits[i as usize].text_box.style.sneak_clone();
-                let last_style_id = self.text_edits[i as usize].text_box.style_id;
-                let (style, id) = self.styles.get(style_handle.i as usize).unwrap_or(&self.styles[DEFAULT_STYLE_HANDLE.i as usize]).clone();
-                let changed = last_style_id != id;
-                let result = set_text_style((style, changed), || {
+                let (style, style_changed) = do_styles(&mut self.text_edits[i as usize].text_box, &self.styles);
+                let result = set_text_style((style, style_changed), || {
                     self.text_edits[i as usize].handle_event(event, window, &self.input_state)
                 });
                 if result.text_changed {
@@ -450,9 +445,8 @@ impl Text {
                 }
             },
             AnyBox::TextBox(i) => {
-                let style_handle = self.text_boxes[i as usize].style.sneak_clone();
-                let style = self.styles.get(style_handle.i as usize).unwrap_or(&self.styles[DEFAULT_STYLE_HANDLE.i as usize]).clone();
-                let result = set_text_style(style, || {
+                let (style, style_changed) = do_styles(&mut self.text_boxes[i as usize], &self.styles);
+                let result = set_text_style((style, style_changed), || {
                     self.text_boxes[i as usize].handle_event(event, window, &self.input_state)
                 });
                 if result.text_changed {
@@ -463,9 +457,8 @@ impl Text {
                 }
             },
             AnyBox::StaticTextBox(i) => {
-                let style_handle = self.static_text_boxes[i as usize].style.sneak_clone();
-                let style = self.styles.get(style_handle.i as usize).unwrap_or(&self.styles[DEFAULT_STYLE_HANDLE.i as usize]).clone();
-                let result = set_text_style(style, || {
+                let (style, style_changed) = do_styles(&mut self.static_text_boxes[i as usize], &self.styles);
+                let result = set_text_style((style, style_changed), || {
                     self.static_text_boxes[i as usize].handle_event(event, window, &self.input_state)
                 });
                 if result.text_changed {
@@ -502,4 +495,14 @@ pub fn set_text_style<R>(style: (TextStyle2, bool), f: impl FnOnce() -> R) -> R 
         *current_style = None;
     });
     result
+}
+
+fn do_styles<T: AsRef<str>>(text_box: &mut TextBox<T>, styles: &Slab<(TextStyle2, u64)>) -> (TextStyle2, bool) {
+    let style_handle = text_box.style.sneak_clone();
+    let last_style_id = text_box.style_id;
+    // todo: ABA problem here.
+    let (style, id) = styles.get(style_handle.i as usize).unwrap_or(&styles[DEFAULT_STYLE_HANDLE.i as usize]).clone();
+    let changed = last_style_id != id;
+    text_box.style_id = id;
+    (style, changed)
 }
