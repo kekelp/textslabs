@@ -33,8 +33,6 @@ impl Default for NewlineMode {
 /// Result of handling a window event on a text box.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TextEventResult {
-    /// Whether focus was grabbed by this text box
-    pub focus_grabbed: bool,
     /// Whether the text content changed
     pub text_changed: bool,
     /// Whether visual decorations (selection, cursor position, etc.) changed
@@ -42,9 +40,8 @@ pub struct TextEventResult {
 }
 
 impl TextEventResult {
-    pub(crate) fn new(focus_grabbed: bool) -> Self {
+    pub(crate) fn new() -> Self {
         Self {
-            focus_grabbed,
             text_changed: false,
             decorations_changed: false,
         }
@@ -530,14 +527,14 @@ impl TextEdit {
     #[must_use]
     pub(crate) fn handle_event_editable(&mut self, event: &WindowEvent, window: &Window, input_state: &TextInputState) -> TextEventResult {
         if self.text_box.hidden {
-            return TextEventResult::new(false);
+            return TextEventResult::new();
         }
         
         // Capture initial state for comparison
         let initial_selection = self.text_box.selection.selection;
         let initial_show_cursor = self.show_cursor;
         
-        let mut result = TextEventResult::new(false);
+        let mut result = TextEventResult::new();
 
         self.text_box.refresh_layout();
 

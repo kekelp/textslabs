@@ -248,12 +248,12 @@ impl<T: AsRef<str>> TextBox<T> {
 
     pub fn handle_event(&mut self, event: &WindowEvent, _window: &Window, input_state: &TextInputState) -> TextEventResult {
         if self.hidden {
-            return TextEventResult::new(false);
+            return TextEventResult::new();
         }
         
         let initial_selection = self.selection.selection;
         
-        let mut result = TextEventResult::new(false);
+        let mut result = TextEventResult::new();
 
         self.handle_event_no_edit_inner(event, input_state);
 
