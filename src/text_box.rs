@@ -9,7 +9,6 @@ use winit::{
 use arboard::Clipboard;
 
 use parley::{Affinity, Alignment, AlignmentOptions, Selection, TextStyle};
-use winit::event::Modifiers;
 
 use crate::*;
 
@@ -60,7 +59,6 @@ pub struct TextBox<T: AsRef<str>> {
     pub(crate) width: Option<f32>,
     pub(crate) height: f32, 
     pub(crate) alignment: Alignment,
-    pub(crate) modifiers: Modifiers,
     pub(crate) scale: f32,
     pub(crate) clip_rect: Option<parley::Rect>,
     
@@ -133,20 +131,10 @@ impl Clone for SharedStyle {
 pub struct SelectionState {
     pub(crate) selection: Selection,
     pub(crate) prev_anchor: Option<Selection>,
-    pub(crate) pointer_down: bool,
-    pub(crate) focused: bool,
-    pub(crate) last_click_time: Option<Instant>,
-    pub(crate) click_count: u32,
-    pub(crate) cursor_pos: (f32, f32),
 }
 impl SelectionState {
     pub(crate) fn new() -> Self {
         Self {
-            pointer_down: false,
-            focused: false,
-            last_click_time: None,
-            click_count: 0,
-            cursor_pos: (0.0, 0.0),
             selection: Default::default(),
             prev_anchor: Default::default(),
         }
@@ -170,7 +158,6 @@ impl<T: AsRef<str>> TextBox<T> {
             style: Style::default(),
             width: Some(size.0), 
             alignment: Default::default(),
-            modifiers: Default::default(),
             scale: Default::default(),
             clip_rect: None,
             hidden: false,
@@ -182,11 +169,17 @@ impl<T: AsRef<str>> TextBox<T> {
         &self.layout
     }
 
+    #[must_use]
     pub(crate) fn hit_full_rect(&self, cursor_pos: (f64, f64)) -> bool {
-        let hit = cursor_pos.0 > -X_TOLERANCE
-            && cursor_pos.0 < self.max_advance as f64 + X_TOLERANCE
-            && cursor_pos.1 > 0.0
-            && cursor_pos.1 < self.height as f64;
+        let offset = (
+            cursor_pos.0 as f64 - self.left,
+            cursor_pos.1 as f64 - self.top,
+        );
+
+        let hit = offset.0 > -X_TOLERANCE
+            && offset.0 < self.max_advance as f64 + X_TOLERANCE
+            && offset.1 > 0.0
+            && offset.1 < self.height as f64;
 
         return hit;
     }
@@ -245,7 +238,7 @@ impl<T: AsRef<str>> TextBox<T> {
         });
     }
 
-    pub fn handle_event(&mut self, event: &WindowEvent, _window: &Window, focus_already_grabbed: bool) -> TextEventResult {
+    pub fn handle_event(&mut self, event: &WindowEvent, _window: &Window, input_state: &TextInputState) -> TextEventResult {
         if self.hidden {
             return TextEventResult::new(false);
         }
@@ -253,18 +246,8 @@ impl<T: AsRef<str>> TextBox<T> {
         let initial_selection = self.selection.selection;
         
         let mut result = TextEventResult::new(false);
-        
-        self.update_mouse_state(event);
-        
-        if focus_already_grabbed {
-            self.reset_selection();
-            result.focus_grabbed = false;
-        } else {
-            let focus_grabbed = self.update_focus(event, focus_already_grabbed, false);
-            result.focus_grabbed = focus_grabbed;
-        }
 
-        self.handle_event_no_edit_inner(event);
+        self.handle_event_no_edit_inner(event, input_state);
 
         if selection_decorations_changed(initial_selection, self.selection.selection, false, false, false) {
             result.set_decorations_changed();
@@ -273,11 +256,8 @@ impl<T: AsRef<str>> TextBox<T> {
         return result;
     }
 
-    pub(crate) fn handle_event_no_edit_inner(&mut self, event: &winit::event::WindowEvent) {
+    pub(crate) fn handle_event_no_edit_inner(&mut self, event: &winit::event::WindowEvent, input_state: &TextInputState) {
         if self.hidden {
-            return;
-        }
-        if !self.selection.focused {
             return;
         }
         if !self.selectable {
@@ -289,7 +269,7 @@ impl<T: AsRef<str>> TextBox<T> {
         
         self.selection.handle_event(
             event,
-            &self.modifiers,
+            input_state,
             &self.layout,
             self.left as f32,
             self.top as f32,
@@ -299,7 +279,7 @@ impl<T: AsRef<str>> TextBox<T> {
             WindowEvent::KeyboardInput { event, .. } => {
                 if !event.state.is_pressed() {}
                 #[allow(unused)]
-                let mods_state = self.modifiers.state();
+                let mods_state = input_state.modifiers.state();
                 let shift = mods_state.shift_key();
                 let action_mod = if cfg!(target_os = "macos") {
                     mods_state.super_key()
@@ -338,83 +318,80 @@ impl<T: AsRef<str>> TextBox<T> {
         }
     }
 
-    pub(crate) fn update_mouse_state(&mut self, event: &WindowEvent) {
-        match event {
-            WindowEvent::ModifiersChanged(modifiers) => {
-                self.modifiers = *modifiers;
-            }
-            WindowEvent::MouseInput { state, button, .. } => {
-                if *button == winit::event::MouseButton::Left && state.is_pressed() {
-                    let offset = (
-                        self.selection.cursor_pos.0 as f64 - self.left,
-                        self.selection.cursor_pos.1 as f64 - self.top,
-                    );
-                    // todo: don't do this multiple times o algo
-                    if self.hit_full_rect(offset) {
-                        self.selection.pointer_down = true;
-                    }
-                }
-            }
-            WindowEvent::CursorMoved { position, .. } => {
-                let cursor_pos = (position.x as f32, position.y as f32);
-                self.selection.cursor_pos = cursor_pos;
-            }
-            _ => {}
-        }
-    }
+    // pub(crate) fn update_mouse_state(&mut self, event: &WindowEvent, input_state: &TextInputState) {
+    //     match event {
+    //         WindowEvent::MouseInput { state, button, .. } => {
+    //             if *button == winit::event::MouseButton::Left && state.is_pressed() {
+    //                 let offset = (
+    //                     input_state.mouse.cursor_pos.0 as f64 - self.left,
+    //                     input_state.mouse.cursor_pos.1 as f64 - self.top,
+    //                 );
+    //                 // todo: don't do this multiple times o algo
+
+    //             }
+    //         }
+    //         WindowEvent::CursorMoved { position, .. } => {
+    //             let cursor_pos = (position.x as f32, position.y as f32);
+    //             input_state.mouse.cursor_pos = cursor_pos;
+    //         }
+    //         _ => {}
+    //     }
+    // }
 
     pub(crate) fn reset_selection(&mut self) {
         self.set_selection(self.selection.selection.collapse());
-        self.selection.focused = false;
     }
 
-    pub(crate) fn update_focus(
-        &mut self,
-        event: &WindowEvent,
-        focus_already_grabbed: bool,
-        editable: bool,
-    ) -> bool {
+    // pub(crate) fn update_focus(
+    //     &mut self,
+    //     event: &WindowEvent,
+    //     input_state: &TextInputState,
+    //     widget_id: u32,
+    //     focus_already_grabbed: bool,
+    //     editable: bool,
+    //     is_static: bool,
+    // ) -> bool {
 
-        if !self.selectable || focus_already_grabbed {
-            self.reset_selection();
-            return false;
-        }
+    //     if !self.selectable || focus_already_grabbed {
+    //         self.reset_selection();
+    //         return false;
+    //     }
 
-        // real focus handling
+    //     // real focus handling
 
-        self.refresh_layout();
+    //     self.refresh_layout();
 
-        match event {
-            WindowEvent::MouseInput { state, button, .. } => {
-                if *button == winit::event::MouseButton::Left && state.is_pressed() {
-                    let offset = (
-                        self.selection.cursor_pos.0 as f64 - self.left,
-                        self.selection.cursor_pos.1 as f64 - self.top,
-                    );
+    //     match event {
+    //         WindowEvent::MouseInput { state, button, .. } => {
+    //             if *button == winit::event::MouseButton::Left && state.is_pressed() {
+    //                 let offset = (
+    //                     input_state.mouse.cursor_pos.0 as f64 - self.left,
+    //                     input_state.mouse.cursor_pos.1 as f64 - self.top,
+    //                 );
 
-                    let hit = if editable {
-                        self.hit_full_rect(offset)
-                    } else {
-                        self.layout.hit_bounding_box(offset)
-                    };
+    //                 let hit = if editable {
+    //                     self.hit_full_rect(offset)
+    //                 } else {
+    //                     self.layout.hit_bounding_box(offset)
+    //                 };
 
-                    if hit {
-                        self.selection.focused = true;
-                        return true;
-                    } else {
-                        self.reset_selection();
-                        return false;
-                    }
-                }
-            }
-            _ => {}
-        }
-        return false;
-    }
-
-    pub fn focused(&self) -> bool {
-        self.selection.focused
-    }
+    //                 if hit {
+    //                     if is_static {
+    //                         input_state.set_focus(crate::FocusedWidget::StaticTextBox(widget_id));
+    //                     } else {
+    //                         input_state.set_focus(crate::FocusedWidget::TextBox(widget_id));
+    //                     }
+    //                     return true;
+    //                 } else {
+    //                     self.reset_selection();
+    //                     return false;
+    //                 }
+    //             }
+    //         }
+    //         _ => {}
+    //     }
+    //     return false;
+    // }
 
     pub fn set_shared_style(&mut self, style: &SharedStyle) {
         self.style = Style::Shared(style.clone());
@@ -801,13 +778,11 @@ impl Ext1 for Layout<ColorBrush> {
     }
 }
 
-const MULTICLICK_DELAY: f64 = 0.4;
-
 impl SelectionState {
     pub(crate) fn handle_event(
         &mut self,
         event: &winit::event::WindowEvent,
-        modifiers: &Modifiers,
+        input_state: &TextInputState,
         layout: &Layout<ColorBrush>,
         left: f32,
         top: f32,
@@ -816,7 +791,7 @@ impl SelectionState {
             WindowEvent::CursorMoved { position, .. } => {
                 let cursor_pos = (position.x as f32, position.y as f32);
                 // macOS seems to generate a spurious move after selecting word?
-                if self.pointer_down {
+                if input_state.mouse.pointer_down {
                     let cursor_pos = (
                         cursor_pos.0 - left as f32,
                         cursor_pos.1 - top as f32,
@@ -829,28 +804,16 @@ impl SelectionState {
                 }
             }
             WindowEvent::MouseInput { state, button, .. } => {
-                let shift = modifiers.state().shift_key();
+                let shift = input_state.modifiers.state().shift_key();
                 if *button == winit::event::MouseButton::Left {
-                    self.pointer_down = state.is_pressed();
 
                     let cursor_pos = (
-                        self.cursor_pos.0 as f32 - left,
-                        self.cursor_pos.1 as f32 - top,
+                        input_state.mouse.cursor_pos.0 as f32 - left,
+                        input_state.mouse.cursor_pos.1 as f32 - top,
                     );
 
-                    if self.pointer_down {
-                        let now = Instant::now();
-                        if let Some(last) = self.last_click_time.take() {
-                            if now.duration_since(last).as_secs_f64() < MULTICLICK_DELAY {
-                                self.click_count = (self.click_count + 1) % 4;
-                            } else {
-                                self.click_count = 1;
-                            }
-                        } else {
-                            self.click_count = 1;
-                        }
-                        self.last_click_time = Some(now);
-                        let click_count = self.click_count;
+                    if state.is_pressed() {
+                        let click_count = input_state.mouse.click_count;
                         match click_count {
                             2 => self.select_word_at_point(layout, cursor_pos.0, cursor_pos.1),
                             3 => self.select_line_at_point(layout, cursor_pos.0, cursor_pos.1),
@@ -873,8 +836,7 @@ impl SelectionState {
                 if !event.state.is_pressed() {
                     return;
                 }
-                #[allow(unused)]
-                let mods_state = modifiers.state();
+                let mods_state = input_state.modifiers.state();
                 let shift = mods_state.shift_key();
                 let action_mod = if cfg!(target_os = "macos") {
                     mods_state.super_key()

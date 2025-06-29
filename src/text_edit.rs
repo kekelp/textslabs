@@ -89,9 +89,6 @@ impl PartialEq<&'_ str> for SplitString<'_> {
         a_1 == a && b_1 == b
     }
 }
-// We intentionally choose not to:
-// impl PartialEq<Self> for SplitString<'_> {}
-// for simplicity, as the impl wouldn't be useful and is non-trivial
 
 impl Display for SplitString<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -165,11 +162,10 @@ impl TextEdit {
     }
 
     #[must_use]
-    pub fn handle_event(&mut self, event: &WindowEvent, window: &Window, focus_already_grabbed: bool) -> TextEventResult {
-        self.handle_event_editable(event, window, focus_already_grabbed)
+    pub fn handle_event(&mut self, event: &WindowEvent, window: &Window, input_state: &TextInputState) -> TextEventResult {
+        self.handle_event_editable(event, window, input_state)
     }
 
-    // Getter methods
     pub fn text(&self) -> SplitString<'_> {
         if let Some(preedit_range) = &self.compose {
             SplitString([
@@ -191,10 +187,6 @@ impl TextEdit {
 
     pub fn pos(&self) -> (f64, f64) {
         self.text_box.pos()
-    }
-
-    pub fn focused(&self) -> bool {
-        self.text_box.focused()
     }
 
     pub fn selectable(&self) -> bool {
@@ -540,7 +532,7 @@ impl TextEdit {
 impl TextEdit {
 
     #[must_use]
-    pub(crate) fn handle_event_editable(&mut self, event: &WindowEvent, window: &Window, focus_already_grabbed: bool) -> TextEventResult {
+    pub(crate) fn handle_event_editable(&mut self, event: &WindowEvent, window: &Window, input_state: &TextInputState) -> TextEventResult {
         if self.text_box.hidden {
             return TextEventResult::new(false);
         }
@@ -551,31 +543,9 @@ impl TextEdit {
         
         let mut result = TextEventResult::new(false);
 
-        self.text_box.update_mouse_state(event);
-        
-        if focus_already_grabbed {
-            self.text_box.reset_selection();
-            result.focus_grabbed = false;
-        } else {
-            let focus_grabbed = self.text_box.update_focus(event, focus_already_grabbed, true);
-            result.focus_grabbed = focus_grabbed;
-        }
-        
-        if !self.focused() {
-            self.show_cursor = false;
-        }
-        
-        if !self.text_box.selectable {
-            self.text_box.reset_selection();
-            return result;
-        }
-        if !self.text_box.focused() {
-            return result;
-        }
-
         self.text_box.refresh_layout();
 
-        self.text_box.handle_event_no_edit_inner(event);
+        self.text_box.handle_event_no_edit_inner(event, input_state);
 
         match event {
             WindowEvent::KeyboardInput { event, .. } if !self.is_composing() => {
@@ -584,7 +554,7 @@ impl TextEdit {
                 }
                 self.cursor_reset();
                 #[allow(unused)]
-                let mods_state = self.text_box.modifiers.state();
+                let mods_state = input_state.modifiers.state();
                 let shift = mods_state.shift_key();
                 let action_mod = if cfg!(target_os = "macos") {
                     mods_state.super_key()

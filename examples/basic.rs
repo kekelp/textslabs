@@ -2,7 +2,6 @@ use parley::TextStyle;
 use parley3::*;
 use parley3::NewlineMode;
 use std::{sync::Arc, time::Duration};
-use std::time::SystemTime;
 use wgpu::*;
 use winit::{
     dpi::LogicalSize,
@@ -10,13 +9,6 @@ use winit::{
     event_loop::EventLoop,
     window::Window,
 };
-
-fn timestamp() -> u128 {
-    SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .unwrap()
-        .as_millis()
-}
 
 fn main() {
     let event_loop = EventLoop::new().unwrap();
@@ -34,10 +26,6 @@ struct State {
 
     text_renderer: TextRenderer,
     text: Text,
-    text_edit_handles: Vec<TextEditHandle>,
-    text_box_handles: Vec<TextBoxHandle>,
-    static_text_box_handles: Vec<TextBoxHandle>,
-    big_text_style_handle: StyleHandle,
 }
 
 impl State {
@@ -113,10 +101,6 @@ impl State {
             window,
             text_renderer,
             text,
-            text_edit_handles,
-            text_box_handles,
-            static_text_box_handles,
-            big_text_style_handle,
         }
     }
 
@@ -125,14 +109,7 @@ impl State {
         event_loop: &winit::event_loop::ActiveEventLoop,
         event: WindowEvent,
     ) {
-        let result = self.text.handle_events(&event, &self.window);
-        
-        if result.text_changed {
-            println!("[{}] Text changed", timestamp());
-        }
-        if result.decorations_changed {
-            println!("[{}] Decorations changed", timestamp());
-        }
+        self.text.handle_events(&event, &self.window);
 
         match event {
             WindowEvent::Resized(size) => {

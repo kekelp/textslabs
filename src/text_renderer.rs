@@ -365,9 +365,6 @@ impl TextRenderer {
         let (left, top) = (left as f32, top as f32);
         let clip_rect = text_edit.clip_rect();
 
-        // Prepare decorations (selection and cursor)
-        self.prepare_text_box_decorations(&text_edit.text_box, true);
-
         // Prepare text layout
         self.text_renderer.prepare_layout(text_edit.layout(), &mut self.scale_cx, left, top, clip_rect);
         self.text_renderer.needs_gpu_sync = true;
@@ -385,7 +382,7 @@ impl TextRenderer {
             self.text_renderer.add_selection_rect(rect, left, top, selection_color, clip_rect);
         });
         
-        let show_cursor = editable && text_box.focused() && text_box.selection.selection.is_collapsed(); 
+        let show_cursor = editable && text_box.selection.selection.is_collapsed(); 
         if show_cursor {
             let size = 3.0;
             let cursor_rect = text_box.selection().focus().geometry(&text_box.layout, size);

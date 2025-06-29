@@ -1,12 +1,19 @@
 use crate::*;
 use slab::Slab;
-use winit::{event::WindowEvent, window::Window};
+use std::time::Instant;
+use winit::{event::{Modifiers, MouseButton, WindowEvent}, window::Window};
+
+const MULTICLICK_DELAY: f64 = 0.4;
 
 pub struct Text {
     pub(crate) text_boxes: Slab<TextBox<String>>,
     pub(crate) static_text_boxes: Slab<TextBox<&'static str>>,
     pub(crate) text_edits: Slab<TextEdit>,
     pub(crate) styles: Slab<SharedStyle>,
+    pub(crate) input_state: TextInputState,
+
+    pub(crate) focused: Option<AnyBox>,
+    pub(crate) mouse_hit_stack: Vec<(AnyBox, f32)>,
 }
 
 pub struct TextEditHandle {
@@ -27,6 +34,83 @@ pub struct StyleHandle {
     pub(crate) i: u32,
 }
 
+#[derive(Debug, Clone)]
+pub struct MouseState {
+    pub(crate) pointer_down: bool,
+    pub(crate) cursor_pos: (f64, f64),
+    pub(crate) last_click_time: Option<Instant>,
+    pub(crate) click_count: u32,
+}
+
+impl MouseState {
+    pub fn new() -> Self {
+        Self {
+            pointer_down: false,
+            cursor_pos: (0.0, 0.0),
+            last_click_time: None,
+            click_count: 0,
+        }
+    }
+
+    pub fn reset(&mut self) {
+        self.pointer_down = false;
+        self.cursor_pos = (0.0, 0.0);
+        self.last_click_time = None;
+        self.click_count = 0;
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum AnyBox {
+    TextEdit(u32),
+    TextBox(u32),
+    StaticTextBox(u32),
+}
+
+#[derive(Debug, Clone)]
+pub struct TextInputState {
+    pub(crate) mouse: MouseState,
+    pub(crate) modifiers: Modifiers,
+}
+
+impl TextInputState {
+    pub fn new() -> Self {
+        Self {
+            mouse: MouseState::new(),
+            modifiers: Modifiers::default(),
+        }
+    }
+
+    pub fn handle_event(&mut self, event: &WindowEvent) {
+        match event {
+            WindowEvent::ModifiersChanged(modifiers) => {
+                self.modifiers = *modifiers;
+            }
+            WindowEvent::CursorMoved { position, .. } => {
+                let cursor_pos = (position.x, position.y);
+                self.mouse.cursor_pos = cursor_pos;
+            },
+
+            WindowEvent::MouseInput { state, .. } => {
+                self.mouse.pointer_down = state.is_pressed();
+
+                let now = Instant::now();
+                if let Some(last) = self.mouse.last_click_time.take() {
+                    if now.duration_since(last).as_secs_f64() < MULTICLICK_DELAY {
+                        self.mouse.click_count = (self.mouse.click_count + 1) % 4;
+                    } else {
+                        self.mouse.click_count = 1;
+                    }
+                } else {
+                    self.mouse.click_count = 1;
+                }
+                self.mouse.last_click_time = Some(now);
+            },
+            _ => {}
+        }
+    }
+}
+
 impl Text {
     pub fn new() -> Self {
         Self {
@@ -34,6 +118,9 @@ impl Text {
             static_text_boxes: Slab::new(),
             text_edits: Slab::new(),
             styles: Slab::new(),
+            input_state: TextInputState::new(),
+            focused: None,
+            mouse_hit_stack: Vec::with_capacity(6),
         }
     }
 
@@ -162,62 +249,113 @@ impl Text {
     }
 
     pub fn prepare_all(&mut self, text_renderer: &mut TextRenderer) {
-        for (_, text_edit) in self.text_edits.iter_mut() {
+        for (_i, text_edit) in self.text_edits.iter_mut() {
             text_renderer.prepare_text_edit(text_edit);
         }
-        for (_, text_box) in self.text_boxes.iter_mut() {
+        for (_i, text_box) in self.text_boxes.iter_mut() {
             text_renderer.prepare_text_box(text_box);
         }
-        for (_, text_box) in self.static_text_boxes.iter_mut() {
+        for (_i, text_box) in self.static_text_boxes.iter_mut() {
             text_renderer.prepare_text_box(text_box);
+        }
+
+        if let Some(focused) = self.focused {
+
+            match focused {
+                AnyBox::TextEdit(i) => {
+                    text_renderer.prepare_text_box_decorations(&self.text_edits[i as usize].text_box, true);
+                },
+                AnyBox::TextBox(i) => {
+                    text_renderer.prepare_text_box_decorations(&self.text_boxes[i as usize], false);
+                },
+                AnyBox::StaticTextBox(i) => {
+                    text_renderer.prepare_text_box_decorations(&self.static_text_boxes[i as usize], false);
+                },
+            }
         }
     }
 
-    pub fn handle_events(&mut self, event: &WindowEvent, window: &Window) -> TextEventResult {
-        let mut combined_result = TextEventResult::new(false);
-        let mut focus_already_grabbed = false;
+    pub fn handle_events(&mut self, event: &WindowEvent, window: &Window) {
 
-        for (_, text_edit) in self.text_edits.iter_mut() {
-            let result = text_edit.handle_event(event, window, focus_already_grabbed);
-            if result.focus_grabbed {
-                focus_already_grabbed = true;
-                combined_result.focus_grabbed = true;
-            }
-            if result.text_changed {
-                combined_result.text_changed = true;
-            }
-            if result.decorations_changed {
-                combined_result.decorations_changed = true;
+        self.input_state.handle_event(event);
+
+        if let WindowEvent::MouseInput { state, button, .. } = event {
+            if state.is_pressed() && *button == MouseButton::Left {
+                self.refocus();
             }
         }
 
-        for (_, text_box) in self.text_boxes.iter_mut() {
-            let result = text_box.handle_event(event, window, focus_already_grabbed);
-            if result.focus_grabbed {
-                focus_already_grabbed = true;
-                combined_result.focus_grabbed = true;
+
+        if let Some(focused) = self.focused {    
+            self.handle_focused_event(focused, event, window);
+        }
+    }
+
+    fn refocus(&mut self) {
+        self.mouse_hit_stack.clear();
+
+        let cursor_pos = self.input_state.mouse.cursor_pos;
+
+        for (i, text_edit) in self.text_edits.iter_mut() {
+            if text_edit.text_box.hit_full_rect(cursor_pos) {
+                self.mouse_hit_stack.push((AnyBox::TextEdit(i as u32), text_edit.depth()));
             }
-            if result.text_changed {
-                combined_result.text_changed = true;
+        }
+        for (i, text_box) in self.text_boxes.iter_mut() {
+            if text_box.hit_full_rect(cursor_pos) {
+                self.mouse_hit_stack.push((AnyBox::TextBox(i as u32), text_box.depth()));
             }
-            if result.decorations_changed {
-                combined_result.decorations_changed = true;
+        }
+        for (i, text_box) in self.static_text_boxes.iter_mut() {
+            if text_box.hit_full_rect(cursor_pos) {
+                self.mouse_hit_stack.push((AnyBox::StaticTextBox(i as u32), text_box.depth()));
             }
         }
 
-        for (_, text_box) in self.static_text_boxes.iter_mut() {
-            let result = text_box.handle_event(event, window, focus_already_grabbed);
-            if result.focus_grabbed {
-                focus_already_grabbed = true;
-                combined_result.focus_grabbed = true;
-            }
-            if result.text_changed {
-                combined_result.text_changed = true;
-            }
-            if result.decorations_changed {
-                combined_result.decorations_changed = true;
+        let mut new_focus = None;
+        let mut top_z = f32::MAX;
+        for (id, z) in self.mouse_hit_stack.iter().rev() {
+            if *z < top_z {
+                top_z = *z;
+                new_focus = Some(id.clone());
             }
         }
-        combined_result
+
+        if new_focus != self.focused {
+            if let Some(old_focus) = self.focused {
+                self.remove_focus(old_focus)
+            }
+        }
+
+        self.focused = new_focus;
+    }
+    
+    fn remove_focus(&mut self, old_focus: AnyBox) {
+        match old_focus {
+            AnyBox::TextEdit(i) => {
+                self.text_edits[i as usize].text_box.reset_selection();
+                self.text_edits[i as usize].show_cursor = false;
+            },
+            AnyBox::TextBox(i) => {
+                self.text_boxes[i as usize].reset_selection();
+            },
+            AnyBox::StaticTextBox(i) => {
+                self.static_text_boxes[i as usize].reset_selection();
+            },
+        }
+    }
+    
+    fn handle_focused_event(&mut self, focused: AnyBox, event: &WindowEvent, window: &Window) {
+        match focused {
+            AnyBox::TextEdit(i) => {
+                self.text_edits[i as usize].handle_event(event, window, &self.input_state);
+            },
+            AnyBox::TextBox(i) => {
+                self.text_boxes[i as usize].handle_event(event, window, &self.input_state);
+            },
+            AnyBox::StaticTextBox(i) => {
+                self.static_text_boxes[i as usize].handle_event(event, window, &self.input_state);
+            },
+        }
     }
 }
