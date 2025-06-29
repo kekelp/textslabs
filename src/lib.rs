@@ -6,8 +6,6 @@
 //! 
 //! If all that is available is a low level flexible library such as Parley, all these projects will have to do a large amount of repeated work, needlessly raising the barrier of entry to GUI programming.
 //! 
-//! # Example
-//! 
 //! 
 //! # Limitations
 //! 
@@ -15,7 +13,7 @@
 //! 
 //! - Accessibility is supported in Parley itself but not in Parley2, because of my personal lack of familiarity with the subject.
 //! 
-//! - Parley2 currently uses the built-in Swash CPU rasterizer and a basic homemade atlas renderer to actually show the text on screen. The performance is acceptable but it is not as good as it could be. There is also a questionable bit of unsafe code to circumvent some performance problems in Swash. This should be fixed soon by switching to the new Vello Hybrid renderer.
+//! - Parley2 currently uses the built-in Swash CPU rasterizer and a basic homemade atlas renderer to actually show the text on screen. The performance is acceptable but it is not as good as it could be. There is also a questionable bit of unsafe code to circumvent some performance problems in Swash. This might eventually be fixed by switching to the new "Vello Hybrid" renderer.
 //! 
 //! - Parley itself has some limitations:
 //!     - font selection on Linux is incomplete

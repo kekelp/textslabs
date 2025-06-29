@@ -3,6 +3,10 @@ name = "parley2"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+default = ["must_remove_boxes"]
+must_remove_boxes = []
+
 [profile.dev]
 opt-level = 1
 [profile.dev.package."*"]

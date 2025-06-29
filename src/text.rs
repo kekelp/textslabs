@@ -33,6 +33,54 @@ pub struct StaticTextBoxHandle {
     pub(crate) i: u32,
 }
 
+#[cfg(all(feature = "must_remove_boxes", debug_assertions))]
+impl Drop for TextEditHandle {
+    fn drop(&mut self) {
+        panic!(
+            "TextEditHandle was dropped without being consumed! \
+            This means that the corresponding text edit wasn't removed. To avoid leaking it, you should call Text::remove_text_edit(handle). \
+            If you're intentionally leaking this text edit, you can use \
+            std::mem::forget(handle) to skip the handle's drop() call and avoid this panic. \
+            You can also disable this check by disabling the \"must_remove_boxes\" feature in Cargo.toml: \
+            'default-features = false' or \
+            'features = [\"other_features_you_need\"]' (excluding \"must_remove_boxes\"). \n\
+            This check is disabled in release builds."
+        );
+    }
+}
+
+#[cfg(all(feature = "must_remove_boxes", debug_assertions))]
+impl Drop for TextBoxHandle {
+    fn drop(&mut self) {
+        panic!(
+            "TextBoxHandle was dropped without being consumed! \
+            This means that the corresponding text box wasn't removed. To avoid leaking it, you should call Text::remove_text_box(handle). \
+            If you're intentionally leaking this text box, you can use \
+            std::mem::forget(handle) to skip the handle's drop() call and avoid this panic. \
+            You can also disable this check by disabling the \"must_remove_boxes\" feature in Cargo.toml: \
+            'default-features = false' or \
+            'features = [\"other_features_you_need\"]' (excluding \"must_remove_boxes\"). \n\
+            This check is disabled in release builds."
+        );
+    }
+}
+
+#[cfg(all(feature = "must_remove_boxes", debug_assertions))]
+impl Drop for StaticTextBoxHandle {
+    fn drop(&mut self) {
+        panic!(
+            "StaticTextBoxHandle was dropped without being consumed! \
+            This means that the corresponding text box wasn't removed. To avoid leaking it, you should call Text::remove_static_text_box(handle). \
+            If you're intentionally leaking this static text box, you can use \
+            std::mem::forget(handle) to skip the handle's drop() call and avoid this panic. \
+            You can also disable this check by disabling the \"must_remove_boxes\" feature in Cargo.toml: \
+            'default-features = false' or \
+            'features = [\"other_features_you_need\"]' (excluding \"must_remove_boxes\"). \n\
+            This check is disabled in release builds."
+        );
+    }
+}
+
 pub struct StyleHandle {
     pub(crate) i: u32,
 }
