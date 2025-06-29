@@ -16,6 +16,9 @@ pub struct Text {
 
     pub(crate) focused: Option<AnyBox>,
     pub(crate) mouse_hit_stack: Vec<(AnyBox, f32)>,
+    
+    pub(crate) text_dirty: bool,
+    pub(crate) decorations_dirty: bool,
 }
 
 pub struct TextEditHandle {
@@ -128,36 +131,43 @@ impl Text {
             input_state: TextInputState::new(),
             focused: None,
             mouse_hit_stack: Vec::with_capacity(6),
+            text_dirty: true,
+            decorations_dirty: true,
         }
     }
 
     pub fn add_text_box(&mut self, text: String, pos: (f64, f64), size: (f32, f32), depth: f32) -> TextBoxHandle {
         let text_box = TextBox::new(text, pos, size, depth);
         let i = self.text_boxes.insert(text_box) as u32;
+        self.text_dirty = true;
         TextBoxHandle { i }
     }
 
     pub fn add_static_text_box(&mut self, text: &'static str, pos: (f64, f64), size: (f32, f32), depth: f32) -> StaticTextBoxHandle {
         let text_box = TextBox::new(text, pos, size, depth);
         let i = self.static_text_boxes.insert(text_box) as u32;
+        self.text_dirty = true;
         StaticTextBoxHandle { i }
     }
 
     pub fn add_text_edit(&mut self, text: String, pos: (f64, f64), size: (f32, f32), depth: f32) -> TextEditHandle {
         let text_edit = TextEdit::new(text, pos, size, depth);
         let i = self.text_edits.insert(text_edit) as u32;
+        self.text_dirty = true;
         TextEditHandle { i }
     }
 
     pub fn add_single_line_edit(&mut self, text: String, pos: (f64, f64), size: (f32, f32), depth: f32) -> TextEditHandle {
         let text_edit = TextEdit::new_single_line(text, pos, size, depth);
         let i = self.text_edits.insert(text_edit) as u32;
+        self.text_dirty = true;
         TextEditHandle { i }
     }
 
     pub fn add_text_edit_with_newline_mode(&mut self, text: String, pos: (f64, f64), size: (f32, f32), depth: f32, newline_mode: NewlineMode) -> TextEditHandle {
         let text_edit = TextEdit::new_with_newline_mode(text, pos, size, depth, newline_mode);
         let i = self.text_edits.insert(text_edit) as u32;
+        self.text_dirty = true;
         TextEditHandle { i }
     }
 
@@ -206,41 +216,55 @@ impl Text {
     }
 
     pub fn prepare_all(&mut self, text_renderer: &mut TextRenderer) {
-        for (_i, text_edit) in self.text_edits.iter_mut() {
-            let style_handle = text_edit.text_box.style.sneak_clone();
-            let style = self.styles.get(style_handle.i as usize).unwrap_or(&self.styles[DEFAULT_STYLE_HANDLE.i as usize]).clone();
-            set_text_style(style, || {
-                text_renderer.prepare_text_edit(text_edit);
-            })
-        }
-        for (_i, text_box) in self.text_boxes.iter_mut() {
-            let style_handle = text_box.style.sneak_clone();
-            let style = self.styles.get(style_handle.i as usize).unwrap_or(&self.styles[DEFAULT_STYLE_HANDLE.i as usize]).clone();
-            set_text_style(style, || {
-                text_renderer.prepare_text_box(text_box);
-            })
-        }
-        for (_i, text_box) in self.static_text_boxes.iter_mut() {
-            let style_handle = text_box.style.sneak_clone();
-            let style = self.styles.get(style_handle.i as usize).unwrap_or(&self.styles[DEFAULT_STYLE_HANDLE.i as usize]).clone();
-            set_text_style(style, || {
-                text_renderer.prepare_text_box(text_box);
-            })
+
+        if self.text_dirty {
+            text_renderer.clear();
+        } else if self.decorations_dirty {
+            text_renderer.clear_decorations_only();
         }
 
-        if let Some(focused) = self.focused {
-
-            match focused {
-                AnyBox::TextEdit(i) => {
-                    text_renderer.prepare_text_box_decorations(&self.text_edits[i as usize].text_box, true);
-                },
-                AnyBox::TextBox(i) => {
-                    text_renderer.prepare_text_box_decorations(&self.text_boxes[i as usize], false);
-                },
-                AnyBox::StaticTextBox(i) => {
-                    text_renderer.prepare_text_box_decorations(&self.static_text_boxes[i as usize], false);
-                },
+        // Only prepare text if it's dirty
+        if self.text_dirty {
+            for (_i, text_edit) in self.text_edits.iter_mut() {
+                let style_handle = text_edit.text_box.style.sneak_clone();
+                let style = self.styles.get(style_handle.i as usize).unwrap_or(&self.styles[DEFAULT_STYLE_HANDLE.i as usize]).clone();
+                set_text_style(style, || {
+                    text_renderer.prepare_text_edit(text_edit);
+                })
             }
+            for (_i, text_box) in self.text_boxes.iter_mut() {
+                let style_handle = text_box.style.sneak_clone();
+                let style = self.styles.get(style_handle.i as usize).unwrap_or(&self.styles[DEFAULT_STYLE_HANDLE.i as usize]).clone();
+                set_text_style(style, || {
+                    text_renderer.prepare_text_box(text_box);
+                })
+            }
+            for (_i, text_box) in self.static_text_boxes.iter_mut() {
+                let style_handle = text_box.style.sneak_clone();
+                let style = self.styles.get(style_handle.i as usize).unwrap_or(&self.styles[DEFAULT_STYLE_HANDLE.i as usize]).clone();
+                set_text_style(style, || {
+                    text_renderer.prepare_text_box(text_box);
+                })
+            }
+            self.text_dirty = false;
+        }
+
+        // Only prepare decorations if they're dirty
+        if self.decorations_dirty || self.text_dirty {
+            if let Some(focused) = self.focused {
+                match focused {
+                    AnyBox::TextEdit(i) => {
+                        text_renderer.prepare_text_box_decorations(&self.text_edits[i as usize].text_box, true);
+                    },
+                    AnyBox::TextBox(i) => {
+                        text_renderer.prepare_text_box_decorations(&self.text_boxes[i as usize], false);
+                    },
+                    AnyBox::StaticTextBox(i) => {
+                        text_renderer.prepare_text_box_decorations(&self.static_text_boxes[i as usize], false);
+                    },
+                }
+            }
+            self.decorations_dirty = false;
         }
     }
 
@@ -349,23 +373,41 @@ impl Text {
             AnyBox::TextEdit(i) => {
                 let style_handle = self.text_edits[i as usize].text_box.style.sneak_clone();
                 let style = self.styles.get(style_handle.i as usize).unwrap_or(&self.styles[DEFAULT_STYLE_HANDLE.i as usize]).clone();
-                set_text_style(style, || {
-                    self.text_edits[i as usize].handle_event(event, window, &self.input_state);
-                })
+                let result = set_text_style(style, || {
+                    self.text_edits[i as usize].handle_event(event, window, &self.input_state)
+                });
+                if result.text_changed {
+                    self.text_dirty = true;
+                }
+                if result.decorations_changed {
+                    self.decorations_dirty = true;
+                }
             },
             AnyBox::TextBox(i) => {
                 let style_handle = self.text_boxes[i as usize].style.sneak_clone();
                 let style = self.styles.get(style_handle.i as usize).unwrap_or(&self.styles[DEFAULT_STYLE_HANDLE.i as usize]).clone();
-                set_text_style(style, || {
-                    self.text_boxes[i as usize].handle_event(event, window, &self.input_state);
-                })
+                let result = set_text_style(style, || {
+                    self.text_boxes[i as usize].handle_event(event, window, &self.input_state)
+                });
+                if result.text_changed {
+                    self.text_dirty = true;
+                }
+                if result.decorations_changed {
+                    self.decorations_dirty = true;
+                }
             },
             AnyBox::StaticTextBox(i) => {
                 let style_handle = self.static_text_boxes[i as usize].style.sneak_clone();
                 let style = self.styles.get(style_handle.i as usize).unwrap_or(&self.styles[DEFAULT_STYLE_HANDLE.i as usize]).clone();
-                set_text_style(style, || {
-                    self.static_text_boxes[i as usize].handle_event(event, window, &self.input_state);
-                })
+                let result = set_text_style(style, || {
+                    self.static_text_boxes[i as usize].handle_event(event, window, &self.input_state)
+                });
+                if result.text_changed {
+                    self.text_dirty = true;
+                }
+                if result.decorations_changed {
+                    self.decorations_dirty = true;
+                }
             },
         }
     }

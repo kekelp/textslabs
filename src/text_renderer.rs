@@ -324,9 +324,10 @@ impl TextRenderer {
 
     pub fn clear(&mut self) {
         self.text_renderer.clear();
+        self.text_renderer.clear_decorations();
     }
 
-    pub fn clear_decorations(&mut self) {
+    pub fn clear_decorations_only(&mut self) {
         self.text_renderer.clear_decorations();
     }
 

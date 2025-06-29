@@ -125,7 +125,6 @@ impl State {
                 let frame = self.surface.get_current_texture().unwrap();
                 let view = frame.texture.create_view(&TextureViewDescriptor::default());
 
-                self.text_renderer.clear();
                 self.text.prepare_all(&mut self.text_renderer);
                 self.text_renderer.gpu_load(&self.device, &self.queue);
 
