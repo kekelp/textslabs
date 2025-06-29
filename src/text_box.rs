@@ -318,80 +318,9 @@ impl<T: AsRef<str>> TextBox<T> {
         }
     }
 
-    // pub(crate) fn update_mouse_state(&mut self, event: &WindowEvent, input_state: &TextInputState) {
-    //     match event {
-    //         WindowEvent::MouseInput { state, button, .. } => {
-    //             if *button == winit::event::MouseButton::Left && state.is_pressed() {
-    //                 let offset = (
-    //                     input_state.mouse.cursor_pos.0 as f64 - self.left,
-    //                     input_state.mouse.cursor_pos.1 as f64 - self.top,
-    //                 );
-    //                 // todo: don't do this multiple times o algo
-
-    //             }
-    //         }
-    //         WindowEvent::CursorMoved { position, .. } => {
-    //             let cursor_pos = (position.x as f32, position.y as f32);
-    //             input_state.mouse.cursor_pos = cursor_pos;
-    //         }
-    //         _ => {}
-    //     }
-    // }
-
     pub(crate) fn reset_selection(&mut self) {
         self.set_selection(self.selection.selection.collapse());
     }
-
-    // pub(crate) fn update_focus(
-    //     &mut self,
-    //     event: &WindowEvent,
-    //     input_state: &TextInputState,
-    //     widget_id: u32,
-    //     focus_already_grabbed: bool,
-    //     editable: bool,
-    //     is_static: bool,
-    // ) -> bool {
-
-    //     if !self.selectable || focus_already_grabbed {
-    //         self.reset_selection();
-    //         return false;
-    //     }
-
-    //     // real focus handling
-
-    //     self.refresh_layout();
-
-    //     match event {
-    //         WindowEvent::MouseInput { state, button, .. } => {
-    //             if *button == winit::event::MouseButton::Left && state.is_pressed() {
-    //                 let offset = (
-    //                     input_state.mouse.cursor_pos.0 as f64 - self.left,
-    //                     input_state.mouse.cursor_pos.1 as f64 - self.top,
-    //                 );
-
-    //                 let hit = if editable {
-    //                     self.hit_full_rect(offset)
-    //                 } else {
-    //                     self.layout.hit_bounding_box(offset)
-    //                 };
-
-    //                 if hit {
-    //                     if is_static {
-    //                         input_state.set_focus(crate::FocusedWidget::StaticTextBox(widget_id));
-    //                     } else {
-    //                         input_state.set_focus(crate::FocusedWidget::TextBox(widget_id));
-    //                     }
-    //                     return true;
-    //                 } else {
-    //                     self.reset_selection();
-    //                     return false;
-    //                 }
-    //             }
-    //         }
-    //         _ => {}
-    //     }
-    //     return false;
-    // }
 
     pub fn set_shared_style(&mut self, style: &SharedStyle) {
         self.style = Style::Shared(style.clone());
