@@ -1,7 +1,7 @@
 use parley::TextStyle;
 use parley3::*;
 use parley3::NewlineMode;
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 use std::time::SystemTime;
 use wgpu::*;
 use winit::{
@@ -33,9 +33,11 @@ struct State {
     window: Arc<Window>,
 
     text_renderer: TextRenderer,
-    text_boxes: Vec<TextBox<String>>,
-    text_edits: Vec<TextEdit>,
-    static_text_boxes: Vec<TextBox<&'static str>>,
+    text: Text,
+    text_edit_handles: Vec<TextEditHandle>,
+    text_box_handles: Vec<TextBoxHandle>,
+    static_text_box_handles: Vec<TextBoxHandle>,
+    big_text_style_handle: StyleHandle,
 }
 
 impl State {
@@ -56,52 +58,49 @@ impl State {
         surface.configure(&device, &surface_config);
 
         let white = [255,0,0,255];
-        let big_text_style: SharedStyle = SharedStyle::new(TextStyle {
+        let mut text = Text::new();
+        
+        let big_text_style_handle = text.add_shared_style(TextStyle {
             font_size: 64.0,
             brush: ColorBrush(white),
             ..Default::default()
         });
 
-        let mut text_edits = vec![
-            TextEdit::new_single_line("Single line input".to_string(), (10.0, 15.0), (200.0, 30.0), 0.0),
-            TextEdit::new("Editable text 無限での座を含む全ての".to_string(), (100.0, 200.0), (400.0, 200.0), 0.0),
-            TextEdit::new("Multi-line\ntext edit\nbox".to_string(), (10.0, 60.0), (200.0, 100.0), 0.0),
-            TextEdit::new_with_newline_mode("Shift+Enter for newlines".to_string(), (250.0, 60.0), (200.0, 100.0), 0.0, NewlineMode::ShiftEnter),
-            TextEdit::new_with_newline_mode("Ctrl+Enter for newlines".to_string(), (470.0, 60.0), (200.0, 100.0), 0.0, NewlineMode::CtrlEnter),
-            TextEdit::new_single_line("".to_string(), (250.0, 15.0), (250.0, 30.0), 0.0),  // Empty single line box
+        let text_edit_handles = vec![
+            text.add_single_line_edit("Single line input".to_string(), (10.0, 15.0), (200.0, 30.0), 0.0),
+            text.add_text_edit("Editable text 無限での座を含む全ての".to_string(), (100.0, 200.0), (400.0, 200.0), 0.0),
+            text.add_text_edit("Multi-line\ntext edit\nbox".to_string(), (10.0, 60.0), (200.0, 100.0), 0.0),
+            text.add_text_edit_with_newline_mode("Shift+Enter for newlines".to_string(), (250.0, 60.0), (200.0, 100.0), 0.0, NewlineMode::ShiftEnter),
+            text.add_text_edit_with_newline_mode("Ctrl+Enter for newlines".to_string(), (470.0, 60.0), (200.0, 100.0), 0.0, NewlineMode::CtrlEnter),
+            text.add_single_line_edit("".to_string(), (250.0, 15.0), (250.0, 30.0), 0.0),
         ];
         
-        text_edits[1].set_shared_style(&big_text_style);
-
-        let mut text_boxes = vec![
-            TextBox::new("Words words words ".to_string(), (20.0, 20.0), (100.0, 50.0), 0.0),
-            TextBox::new(
-                "Clipped text".to_string(),
-                (10.0, 230.0),
-                (300.0, 50.0),
-                0.0
-            ),
+        let text_box_handles = vec![
+            text.add_text_box("Words words words ".to_string(), (20.0, 20.0), (100.0, 50.0), 0.0),
+            text.add_text_box("Clipped text".to_string(), (10.0, 230.0), (300.0, 50.0), 0.0),
         ];
-        text_boxes[0].set_shared_style(&big_text_style);
-        text_boxes[1].set_unique_style(TextStyle {
+        
+        let static_text_box_handles = vec![
+            text.add_static_text_box("&'static str", (400.0, 500.0), (100.0, 50.0), 0.0),
+            text.add_static_text_box("Long static words, Long static words, Long static words, Long static words, ... ", (200.0, 400.0), (400.0, 150.0), 0.0),
+        ];
+        
+        text.apply_shared_style_to_text_edit(&text_edit_handles[1], &big_text_style_handle);
+        text.apply_shared_style_to_text_box(&text_box_handles[0], &big_text_style_handle);
+        
+        text.get_text_box(&text_box_handles[1]).unwrap().set_unique_style(TextStyle {
             font_size: 24.0,
             ..Default::default()
         });
-
-        text_boxes[1].set_clip_rect(Some(parley::Rect {
+        text.get_text_box(&text_box_handles[1]).unwrap().set_clip_rect(Some(parley::Rect {
             x0: 0.0,
             y0: 0.0,
             x1: 200.0,
             y1: 20.0,
         }));
 
-        big_text_style.with_borrow_mut(|style| style.font_size = 32.0);
-
-        let mut static_text_boxes = vec![
-            TextBox::new("&'static str", (400.0, 500.0), (100.0, 50.0), 0.0),
-            TextBox::new("Long static words, Long static words, Long static words, Long static words, ... ", (200.0, 400.0), (400.0, 150.0), 0.0),
-        ];
-        static_text_boxes[1].set_shared_style(&big_text_style);
+        text.modify_shared_style(&big_text_style_handle, |style| style.font_size = 32.0);
+        text.apply_shared_style_to_text_box(&static_text_box_handles[1], &big_text_style_handle);
 
 
         let text_renderer = TextRenderer::new(&device, &queue, surface_config.format);
@@ -113,9 +112,11 @@ impl State {
             surface_config,
             window,
             text_renderer,
-            text_boxes,
-            text_edits,
-            static_text_boxes,
+            text,
+            text_edit_handles,
+            text_box_handles,
+            static_text_box_handles,
+            big_text_style_handle,
         }
     }
 
@@ -124,47 +125,13 @@ impl State {
         event_loop: &winit::event_loop::ActiveEventLoop,
         event: WindowEvent,
     ) {
-        let mut already_grabbed = false;
-        for text_edit in &mut self.text_edits {
-            let result = text_edit.handle_event(&event, &self.window, already_grabbed);
-            if result.focus_grabbed {
-                already_grabbed = true;
-            }
-
-            if result.text_changed {
-                println!("[{}] Editor Text changed", timestamp());
-            }
-            if result.decorations_changed {
-                println!("[{}] Editor Decorations changed", timestamp());
-            }
-        }
-
-        for text_box in &mut self.text_boxes {
-            let result = text_box.handle_event(&event, &self.window, already_grabbed);
-            if result.focus_grabbed {
-                already_grabbed = true;
-            }
-
-            if result.text_changed {
-                println!("[{}] Text changed", timestamp());
-            }
-            if result.decorations_changed {
-                println!("[{}] Decorations changed", timestamp());
-            }
-        }
+        let result = self.text.handle_events(&event, &self.window);
         
-        for text_box in &mut self.static_text_boxes {
-            let result = text_box.handle_event(&event, &self.window, already_grabbed);
-            if result.focus_grabbed {
-                already_grabbed = true;
-            }
-            
-            if result.text_changed {
-                println!("[{}] Static text changed", timestamp());
-            }
-            if result.decorations_changed {
-                println!("[{}] Static decorations changed", timestamp());
-            }
+        if result.text_changed {
+            println!("[{}] Text changed", timestamp());
+        }
+        if result.decorations_changed {
+            println!("[{}] Decorations changed", timestamp());
         }
 
         match event {
@@ -180,15 +147,7 @@ impl State {
                 let view = frame.texture.create_view(&TextureViewDescriptor::default());
 
                 self.text_renderer.clear();
-                for text_edit in &mut self.text_edits {
-                    self.text_renderer.prepare_text_edit(text_edit);
-                }
-                for text_box in &mut self.text_boxes {
-                    self.text_renderer.prepare_text_box(text_box);
-                }
-                for text_box in &mut self.static_text_boxes {
-                    self.text_renderer.prepare_text_box(text_box);
-                }
+                self.text.prepare_all(&mut self.text_renderer);
                 self.text_renderer.gpu_load(&self.device, &self.queue);
 
                 let mut encoder = self.device.create_command_encoder(&CommandEncoderDescriptor { label: None });
@@ -211,6 +170,7 @@ impl State {
                 self.queue.submit(Some(encoder.finish()));
                 frame.present();
 
+                std::thread::sleep(Duration::from_millis(1));
                 self.window.request_redraw();
             }
             WindowEvent::CloseRequested => event_loop.exit(),
