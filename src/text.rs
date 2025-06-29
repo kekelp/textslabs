@@ -18,19 +18,16 @@ pub struct Text {
     pub(crate) mouse_hit_stack: Vec<(AnyBox, f32)>,
 }
 
-// todo: make three different types
 pub struct TextEditHandle {
     pub(crate) i: u32,
 }
 
 pub struct TextBoxHandle {
     pub(crate) i: u32,
-    pub(crate) kind: TextBoxKind,
 }
 
-pub(crate) enum TextBoxKind {
-    StringBox,
-    StaticBox,
+pub struct StaticTextBoxHandle {
+    pub(crate) i: u32,
 }
 
 pub struct StyleHandle {
@@ -137,13 +134,13 @@ impl Text {
     pub fn add_text_box(&mut self, text: String, pos: (f64, f64), size: (f32, f32), depth: f32) -> TextBoxHandle {
         let text_box = TextBox::new(text, pos, size, depth);
         let i = self.text_boxes.insert(text_box) as u32;
-        TextBoxHandle { i, kind: TextBoxKind::StringBox }
+        TextBoxHandle { i }
     }
 
-    pub fn add_static_text_box(&mut self, text: &'static str, pos: (f64, f64), size: (f32, f32), depth: f32) -> TextBoxHandle {
+    pub fn add_static_text_box(&mut self, text: &'static str, pos: (f64, f64), size: (f32, f32), depth: f32) -> StaticTextBoxHandle {
         let text_box = TextBox::new(text, pos, size, depth);
         let i = self.static_text_boxes.insert(text_box) as u32;
-        TextBoxHandle { i, kind: TextBoxKind::StaticBox }
+        StaticTextBoxHandle { i }
     }
 
     pub fn add_text_edit(&mut self, text: String, pos: (f64, f64), size: (f32, f32), depth: f32) -> TextEditHandle {
@@ -165,17 +162,11 @@ impl Text {
     }
 
     pub fn get_text_box(&mut self, handle: &TextBoxHandle) -> Option<&mut TextBox<String>> {
-        match handle.kind {
-            TextBoxKind::StringBox => self.text_boxes.get_mut(handle.i as usize),
-            TextBoxKind::StaticBox => None,
-        }
+        self.text_boxes.get_mut(handle.i as usize)
     }
 
-    pub fn get_static_text_box(&mut self, handle: &TextBoxHandle) -> Option<&mut TextBox<&'static str>> {
-        match handle.kind {
-            TextBoxKind::StringBox => None,
-            TextBoxKind::StaticBox => self.static_text_boxes.get_mut(handle.i as usize),
-        }
+    pub fn get_static_text_box(&mut self, handle: &StaticTextBoxHandle) -> Option<&mut TextBox<&'static str>> {
+        self.static_text_boxes.get_mut(handle.i as usize)
     }
 
     pub fn get_text_edit(&mut self, handle: &TextEditHandle) -> Option<&mut TextEdit> {
@@ -196,10 +187,11 @@ impl Text {
     }
 
     pub fn remove_text_box(&mut self, handle: TextBoxHandle) -> bool {
-        match handle.kind {
-            TextBoxKind::StringBox => self.text_boxes.try_remove(handle.i as usize).is_some(),
-            TextBoxKind::StaticBox => self.static_text_boxes.try_remove(handle.i as usize).is_some(),
-        }
+        self.text_boxes.try_remove(handle.i as usize).is_some()
+    }
+
+    pub fn remove_static_text_box(&mut self, handle: StaticTextBoxHandle) -> bool {
+        self.static_text_boxes.try_remove(handle.i as usize).is_some()
     }
 
     pub fn remove_text_edit(&mut self, handle: TextEditHandle) -> bool {
