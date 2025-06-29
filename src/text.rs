@@ -11,7 +11,9 @@ pub struct Text {
     pub(crate) static_text_boxes: Slab<TextBox<&'static str>>,
     pub(crate) text_edits: Slab<TextEdit>,
 
-    pub(crate) styles: Slab<TextStyle2>,
+    pub(crate) styles: Slab<(TextStyle2, u64)>,
+    pub(crate) style_version_id_counter: u64,
+
     pub(crate) input_state: TextInputState,
 
     pub(crate) focused: Option<AnyBox>,
@@ -167,21 +169,27 @@ pub const DEFAULT_STYLE_HANDLE: StyleHandle = StyleHandle { i: DEFAULT_STYLE_I a
 
 impl Text {
     pub fn new() -> Self {
-        let mut styles = Slab::new();
-        let i = styles.insert(original_default_style());
+        let mut styles = Slab::with_capacity(10);
+        let i = styles.insert((original_default_style(), 0));
         debug_assert!(i == DEFAULT_STYLE_I);
 
         Self {
-            text_boxes: Slab::new(),
-            static_text_boxes: Slab::new(),
-            text_edits: Slab::new(),
+            text_boxes: Slab::with_capacity(10),
+            static_text_boxes: Slab::with_capacity(10),
+            text_edits: Slab::with_capacity(10),
             styles,
+            style_version_id_counter: 0,
             input_state: TextInputState::new(),
             focused: None,
             mouse_hit_stack: Vec::with_capacity(6),
             text_dirty: true,
             decorations_dirty: true,
         }
+    }
+
+    pub(crate) fn new_style_id(&mut self) -> u64 {
+        self.style_version_id_counter += 1;
+        self.style_version_id_counter
     }
 
     #[must_use]
@@ -238,16 +246,18 @@ impl Text {
 
     #[must_use]
     pub fn add_style(&mut self, style: TextStyle2) -> StyleHandle {
-        let i = self.styles.insert(style) as u32;
+        let new_id = self.new_style_id();
+        let i = self.styles.insert((style, new_id)) as u32;
         StyleHandle { i }
     }
 
     pub fn get_style(&self, handle: &StyleHandle) -> &TextStyle2 {
-        &self.styles[handle.i as usize]
+        &self.styles[handle.i as usize].0
     }
 
     pub fn get_style_mut(&mut self, handle: &StyleHandle) -> &mut TextStyle2 {
-        &mut self.styles[handle.i as usize]
+        self.styles[handle.i as usize].1 = self.new_style_id();
+        &mut self.styles[handle.i as usize].0
     }
 
     pub fn remove_text_box(&mut self, handle: TextBoxHandle) {
@@ -426,8 +436,10 @@ impl Text {
         match focused {
             AnyBox::TextEdit(i) => {
                 let style_handle = self.text_edits[i as usize].text_box.style.sneak_clone();
-                let style = self.styles.get(style_handle.i as usize).unwrap_or(&self.styles[DEFAULT_STYLE_HANDLE.i as usize]).clone();
-                let result = set_text_style(style, || {
+                let last_style_id = self.text_edits[i as usize].text_box.style_id;
+                let (style, id) = self.styles.get(style_handle.i as usize).unwrap_or(&self.styles[DEFAULT_STYLE_HANDLE.i as usize]).clone();
+                let changed = last_style_id != id;
+                let result = set_text_style((style, changed), || {
                     self.text_edits[i as usize].handle_event(event, window, &self.input_state)
                 });
                 if result.text_changed {
@@ -469,21 +481,21 @@ impl Text {
 
 
 thread_local! {
-    static CURRENT_TEXT_STYLE: RefCell<Option<(TextStyle2, Option<u32>)>> = RefCell::new(None);
+    static CURRENT_TEXT_STYLE: RefCell<Option<(TextStyle2, bool)>> = RefCell::new(None);
 }
 
-pub fn with_text_style<R>(f: impl FnOnce(&TextStyle2, Option<u32>) -> R) -> R {
+pub fn with_text_style<R>(f: impl FnOnce(&TextStyle2, bool) -> R) -> R {
     CURRENT_TEXT_STYLE.with_borrow(|style| {
         match style.as_ref() {
-            Some((s, version)) => f(s, *version),
+            Some((s, changed)) => f(s, *changed),
             None => panic!("No text style set! Use set_text_style() to set one."),
         }
     })
 }
 
-pub fn set_text_style<R>(style: TextStyle2, f: impl FnOnce() -> R) -> R {
+pub fn set_text_style<R>(style: (TextStyle2, bool), f: impl FnOnce() -> R) -> R {
     CURRENT_TEXT_STYLE.with_borrow_mut(|current_style| {
-        *current_style = Some((style, Some(1)));
+        *current_style = Some((style.0, style.1));
     });
     let result = f();
     CURRENT_TEXT_STYLE.with_borrow_mut(|current_style| {

@@ -4,10 +4,10 @@ use std::{sync::Arc, time::Duration};
 use wgpu::*;
 use winit::{
     dpi::LogicalSize,
-    event::{WindowEvent, ElementState, MouseScrollDelta},
+    event::{WindowEvent, ElementState},
     event_loop::EventLoop,
     window::Window,
-    keyboard::{PhysicalKey, KeyCode, ModifiersState},
+    keyboard::ModifiersState,
 };
 
 fn main() {
@@ -17,6 +17,7 @@ fn main() {
         .unwrap();
 }
 
+#[allow(dead_code)]
 struct State {
     device: wgpu::Device,
     queue: wgpu::Queue,

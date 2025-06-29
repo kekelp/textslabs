@@ -48,7 +48,7 @@ pub fn with_clipboard<R>(f: impl FnOnce(&mut Clipboard) -> R) -> R {
 pub struct TextBox<T: AsRef<str>> {
     pub(crate) text: T,
     pub(crate) style: StyleHandle,
-    pub(crate) shared_style_version: u32,
+    pub(crate) style_id: u64,
     pub(crate) layout: Layout<ColorBrush>,
     pub(crate) needs_relayout: bool,
     pub(crate) left: f64,
@@ -153,7 +153,7 @@ impl<T: AsRef<str>> TextBox<T> {
     pub fn new(text: T, pos: (f64, f64), size: (f32, f32), depth: f32) -> Self {
         Self {
             text,
-            shared_style_version: 0,
+            style_id: 0,
             layout: Layout::new(),
             selectable: true,
             needs_relayout: true,
@@ -193,12 +193,8 @@ impl<T: AsRef<str>> TextBox<T> {
     }
 
     pub(crate) fn refresh_layout(&mut self) {
-        with_text_style(|style, version| {
-            let shared_style_changed = if let Some(version) = version {
-                self.shared_style_version != version
-            } else { false };
-
-            if self.needs_relayout || shared_style_changed {
+        with_text_style(|style, style_changed| {
+            if self.needs_relayout || style_changed {
                 // todo: deduplicate
                 with_text_cx(|layout_cx, font_cx| {
                     let mut builder = layout_cx.tree_builder(font_cx, 1.0, true, style);
