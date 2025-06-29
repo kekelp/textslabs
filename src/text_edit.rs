@@ -491,7 +491,7 @@ impl TextEdit {
     fn refresh_layout_single_line(&mut self) {
         use crate::text_box::with_text_cx;
         
-        self.text_box.style.with_text_style(|style, version| {
+        with_text_style(|style, version| {
             let shared_style_changed = if let Some(version) = version {
                 self.text_box.shared_style_version != version
             } else { false };

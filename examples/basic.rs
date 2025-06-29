@@ -48,13 +48,13 @@ impl State {
         let white = [255,0,0,255];
         let mut text = Text::new();
         
-        let big_text_style_handle = text.add_style(TextStyle {
+        let big_text_style = text.add_style(TextStyle {
             font_size: 64.0,
             brush: ColorBrush(white),
             ..Default::default()
         });
 
-        let text_edit_handles = vec![
+        let text_edits = vec![
             text.add_single_line_edit("Single line input".to_string(), (10.0, 15.0), (200.0, 30.0), 0.0),
             text.add_text_edit("Editable text 無限での座を含む全ての".to_string(), (300.0, 200.0), (400.0, 200.0), 0.0),
             text.add_text_edit("Multi-line\ntext edit\nbox".to_string(), (10.0, 60.0), (200.0, 100.0), 0.0),
@@ -63,32 +63,35 @@ impl State {
             text.add_single_line_edit("".to_string(), (250.0, 15.0), (250.0, 30.0), 0.0),
         ];
         
-        let text_box_handles = vec![
+        let text_boxes = vec![
             text.add_text_box("Words words words ".to_string(), (20.0, 20.0), (100.0, 50.0), 0.0),
             text.add_text_box("Clipped text".to_string(), (10.0, 230.0), (300.0, 50.0), 0.0),
         ];
         
-        let static_text_box_handles = vec![
+        let static_text_boxes = vec![
             text.add_static_text_box("&'static str", (400.0, 500.0), (100.0, 50.0), 0.0),
             text.add_static_text_box("Long static words, Long static words, Long static words, Long static words, ... ", (200.0, 400.0), (400.0, 150.0), 0.0),
         ];
         
-        text.apply_shared_style_to_text_edit(&text_edit_handles[1], &big_text_style_handle);
-        text.apply_shared_style_to_text_box(&text_box_handles[0], &big_text_style_handle);
+        text.get_text_edit(&text_edits[1]).unwrap().set_style(&big_text_style);
+        text.get_text_box(&text_boxes[1]).unwrap().set_style(&big_text_style);
         
-        text.get_text_box(&text_box_handles[1]).unwrap().set_unique_style(TextStyle {
+        let small_text_style = text.add_style(TextStyle {
             font_size: 24.0,
             ..Default::default()
         });
-        text.get_text_box(&text_box_handles[1]).unwrap().set_clip_rect(Some(parley::Rect {
+
+        text.get_text_box(&text_boxes[1]).unwrap().set_style(&small_text_style);
+        text.get_text_box(&text_boxes[1]).unwrap().set_clip_rect(Some(parley::Rect {
             x0: 0.0,
             y0: 0.0,
             x1: 200.0,
             y1: 20.0,
         }));
 
-        text.modify_shared_style(&big_text_style_handle, |style| style.font_size = 32.0);
-        text.apply_shared_style_to_text_box(&static_text_box_handles[1], &big_text_style_handle);
+        text.get_style_mut(&big_text_style).unwrap().font_size = 32.0;
+
+        text.get_static_text_box(&static_text_boxes[1]).unwrap().set_style(&big_text_style);
 
 
         let text_renderer = TextRenderer::new(&device, &queue, surface_config.format);

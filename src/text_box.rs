@@ -193,7 +193,7 @@ impl<T: AsRef<str>> TextBox<T> {
     }
 
     pub(crate) fn refresh_layout(&mut self) {
-        self.style.with_text_style(|style, version| {
+        with_text_style(|style, version| {
             let shared_style_changed = if let Some(version) = version {
                 self.shared_style_version != version
             } else { false };
@@ -222,7 +222,7 @@ impl<T: AsRef<str>> TextBox<T> {
     }
 
     pub(crate) fn update_layout(&mut self) {
-        self.style.with_text_style(|style, _version| {
+        with_text_style(|style, _version| {
 
             // todo: deduplicate
             with_text_cx(|layout_cx, font_cx| {

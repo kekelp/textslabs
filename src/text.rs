@@ -1,6 +1,6 @@
 use crate::*;
 use slab::Slab;
-use std::time::Instant;
+use std::{cell::RefCell, time::Instant};
 use winit::{event::{Modifiers, MouseButton, WindowEvent}, window::Window};
 
 const MULTICLICK_DELAY: f64 = 0.4;
@@ -18,6 +18,7 @@ pub struct Text {
     pub(crate) mouse_hit_stack: Vec<(AnyBox, f32)>,
 }
 
+// todo: make three different types
 pub struct TextEditHandle {
     pub(crate) i: u32,
 }
@@ -34,6 +35,11 @@ pub(crate) enum TextBoxKind {
 
 pub struct StyleHandle {
     pub(crate) i: u32,
+}
+impl StyleHandle {
+    pub(crate) fn sneak_clone(&self) -> Self {
+        Self { i: self.i }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -222,13 +228,25 @@ impl Text {
 
     pub fn prepare_all(&mut self, text_renderer: &mut TextRenderer) {
         for (_i, text_edit) in self.text_edits.iter_mut() {
-            text_renderer.prepare_text_edit(text_edit);
+            let style_handle = text_edit.text_box.style.sneak_clone();
+            let style = self.styles.get(style_handle.i as usize).unwrap_or(&self.styles[DEFAULT_STYLE_HANDLE.i as usize]).clone();
+            set_text_style(style, || {
+                text_renderer.prepare_text_edit(text_edit);
+            })
         }
         for (_i, text_box) in self.text_boxes.iter_mut() {
-            text_renderer.prepare_text_box(text_box);
+            let style_handle = text_box.style.sneak_clone();
+            let style = self.styles.get(style_handle.i as usize).unwrap_or(&self.styles[DEFAULT_STYLE_HANDLE.i as usize]).clone();
+            set_text_style(style, || {
+                text_renderer.prepare_text_box(text_box);
+            })
         }
         for (_i, text_box) in self.static_text_boxes.iter_mut() {
-            text_renderer.prepare_text_box(text_box);
+            let style_handle = text_box.style.sneak_clone();
+            let style = self.styles.get(style_handle.i as usize).unwrap_or(&self.styles[DEFAULT_STYLE_HANDLE.i as usize]).clone();
+            set_text_style(style, || {
+                text_renderer.prepare_text_box(text_box);
+            })
         }
 
         if let Some(focused) = self.focused {
@@ -320,14 +338,51 @@ impl Text {
     fn handle_focused_event(&mut self, focused: AnyBox, event: &WindowEvent, window: &Window) {
         match focused {
             AnyBox::TextEdit(i) => {
-                self.text_edits[i as usize].handle_event(event, window, &self.input_state);
+                let style_handle = self.text_edits[i as usize].text_box.style.sneak_clone();
+                let style = self.get_style(&style_handle).unwrap_or(&self.styles[DEFAULT_STYLE_HANDLE.i as usize]).clone();
+                set_text_style(style, || {
+                    self.text_edits[i as usize].handle_event(event, window, &self.input_state);
+                })
             },
             AnyBox::TextBox(i) => {
-                self.text_boxes[i as usize].handle_event(event, window, &self.input_state);
+                let style_handle = self.text_boxes[i as usize].style.sneak_clone();
+                let style = self.get_style(&style_handle).unwrap_or(&self.styles[DEFAULT_STYLE_HANDLE.i as usize]).clone();
+                set_text_style(style, || {
+                    self.text_boxes[i as usize].handle_event(event, window, &self.input_state);
+                })
             },
             AnyBox::StaticTextBox(i) => {
-                self.static_text_boxes[i as usize].handle_event(event, window, &self.input_state);
+                let style_handle = self.static_text_boxes[i as usize].style.sneak_clone();
+                let style = self.get_style(&style_handle).unwrap_or(&self.styles[DEFAULT_STYLE_HANDLE.i as usize]).clone();
+                set_text_style(style, || {
+                    self.static_text_boxes[i as usize].handle_event(event, window, &self.input_state);
+                })
             },
         }
     }
+}
+
+
+thread_local! {
+    static CURRENT_TEXT_STYLE: RefCell<Option<(TextStyle2, Option<u32>)>> = RefCell::new(None);
+}
+
+pub fn with_text_style<R>(f: impl FnOnce(&TextStyle2, Option<u32>) -> R) -> R {
+    CURRENT_TEXT_STYLE.with_borrow(|style| {
+        match style.as_ref() {
+            Some((s, version)) => f(s, *version),
+            None => panic!("No text style set! Use set_text_style() to set one."),
+        }
+    })
+}
+
+pub fn set_text_style<R>(style: TextStyle2, f: impl FnOnce() -> R) -> R {
+    CURRENT_TEXT_STYLE.with_borrow_mut(|current_style| {
+        *current_style = Some((style, Some(1)));
+    });
+    let result = f();
+    CURRENT_TEXT_STYLE.with_borrow_mut(|current_style| {
+        *current_style = None;
+    });
+    result
 }
