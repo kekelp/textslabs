@@ -35,7 +35,8 @@ pub use text_box::*;
 mod text_edit;
 pub use text_edit::*;
 
-pub use parley::TextStyle;
+pub use parley::{TextStyle, FontWeight, FontStyle, LineHeight, FontStack};
+
 
 use bytemuck::{Pod, Zeroable};
 use etagere::euclid::{Size2D, UnknownUnit};
