@@ -184,6 +184,7 @@ impl Text {
         }
     }
 
+    #[must_use]
     pub fn add_text_box(&mut self, text: String, pos: (f64, f64), size: (f32, f32), depth: f32) -> TextBoxHandle {
         let text_box = TextBox::new(text, pos, size, depth);
         let i = self.text_boxes.insert(text_box) as u32;
@@ -191,6 +192,7 @@ impl Text {
         TextBoxHandle { i }
     }
 
+    #[must_use]
     pub fn add_static_text_box(&mut self, text: &'static str, pos: (f64, f64), size: (f32, f32), depth: f32) -> StaticTextBoxHandle {
         let text_box = TextBox::new(text, pos, size, depth);
         let i = self.static_text_boxes.insert(text_box) as u32;
@@ -198,6 +200,7 @@ impl Text {
         StaticTextBoxHandle { i }
     }
 
+    #[must_use]
     pub fn add_text_edit(&mut self, text: String, pos: (f64, f64), size: (f32, f32), depth: f32) -> TextEditHandle {
         let text_edit = TextEdit::new(text, pos, size, depth);
         let i = self.text_edits.insert(text_edit) as u32;
@@ -205,6 +208,7 @@ impl Text {
         TextEditHandle { i }
     }
 
+    #[must_use]
     pub fn add_single_line_edit(&mut self, text: String, pos: (f64, f64), size: (f32, f32), depth: f32) -> TextEditHandle {
         let text_edit = TextEdit::new_single_line(text, pos, size, depth);
         let i = self.text_edits.insert(text_edit) as u32;
@@ -212,6 +216,7 @@ impl Text {
         TextEditHandle { i }
     }
 
+    #[must_use]
     pub fn add_text_edit_with_newline_mode(&mut self, text: String, pos: (f64, f64), size: (f32, f32), depth: f32, newline_mode: NewlineMode) -> TextEditHandle {
         let text_edit = TextEdit::new_with_newline_mode(text, pos, size, depth, newline_mode);
         let i = self.text_edits.insert(text_edit) as u32;
@@ -231,6 +236,7 @@ impl Text {
         &mut self.text_edits[handle.i as usize]
     }
 
+    #[must_use]
     pub fn add_style(&mut self, style: TextStyle2) -> StyleHandle {
         let i = self.styles.insert(style) as u32;
         StyleHandle { i }

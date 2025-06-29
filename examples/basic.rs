@@ -4,9 +4,10 @@ use std::{sync::Arc, time::Duration};
 use wgpu::*;
 use winit::{
     dpi::LogicalSize,
-    event::WindowEvent,
+    event::{WindowEvent, ElementState, MouseScrollDelta},
     event_loop::EventLoop,
     window::Window,
+    keyboard::{PhysicalKey, KeyCode, ModifiersState},
 };
 
 fn main() {
@@ -25,6 +26,14 @@ struct State {
 
     text_renderer: TextRenderer,
     text: Text,
+
+    text_boxes: Vec<TextBoxHandle>,
+    text_edits: Vec<TextEditHandle>,
+    static_text_boxes: Vec<StaticTextBoxHandle>,
+
+    small_text_style: StyleHandle,
+    big_text_style: StyleHandle,
+    modifiers: ModifiersState,
 }
 
 impl State {
@@ -103,6 +112,15 @@ impl State {
             window,
             text_renderer,
             text,
+
+            text_boxes,
+            text_edits,
+            static_text_boxes,
+
+            small_text_style,
+            big_text_style,
+
+            modifiers: ModifiersState::default(),
         }
     }
 
@@ -150,6 +168,27 @@ impl State {
 
                 std::thread::sleep(Duration::from_millis(1));
                 self.window.request_redraw();
+            }
+            WindowEvent::ModifiersChanged(modifiers) => {
+                self.modifiers = modifiers.state();
+            }
+            WindowEvent::KeyboardInput { event, .. } => {
+                if event.state == ElementState::Pressed && self.modifiers.control_key() {
+                    if let Some(s) = event.text {
+                        match s.as_str() {
+                            "+" => {
+                                self.text.get_style_mut(&self.big_text_style).font_size += 2.0;
+                            }
+                            "-" => {
+                                let current_size = self.text.get_style(&self.big_text_style).font_size;
+                                if current_size > 4.0 {
+                                    self.text.get_style_mut(&self.big_text_style).font_size -= 2.0;
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                }
             }
             WindowEvent::CloseRequested => event_loop.exit(),
             _ => {}
