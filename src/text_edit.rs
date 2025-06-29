@@ -321,12 +321,8 @@ impl TextEdit {
         self.text_box.set_clip_rect(clip_rect)
     }
 
-    pub fn set_shared_style(&mut self, style: &SharedStyle) {
-        self.text_box.set_shared_style(style)
-    }
-
-    pub fn set_unique_style(&mut self, style: TextStyle2) {
-        self.text_box.set_unique_style(style)
+    pub fn set_style(&mut self, style: &StyleHandle) {
+        self.text_box.style = StyleHandle { i: style.i };
     }
 
     pub fn set_single_line(&mut self, single_line: bool) {

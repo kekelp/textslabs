@@ -48,7 +48,7 @@ impl State {
         let white = [255,0,0,255];
         let mut text = Text::new();
         
-        let big_text_style_handle = text.add_shared_style(TextStyle {
+        let big_text_style_handle = text.add_style(TextStyle {
             font_size: 64.0,
             brush: ColorBrush(white),
             ..Default::default()

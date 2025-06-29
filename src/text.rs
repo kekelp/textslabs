@@ -10,7 +10,8 @@ pub struct Text {
     pub(crate) text_boxes: Slab<TextBox<String>>,
     pub(crate) static_text_boxes: Slab<TextBox<&'static str>>,
     pub(crate) text_edits: Slab<TextEdit>,
-    pub(crate) styles: Slab<SharedStyle>,
+
+    pub(crate) styles: Slab<TextStyle2>,
     pub(crate) input_state: TextInputState,
 
     pub(crate) focused: Option<AnyBox>,
@@ -123,13 +124,20 @@ impl TextInputState {
     }
 }
 
+pub(crate) const DEFAULT_STYLE_I: usize = 0;
+pub const DEFAULT_STYLE_HANDLE: StyleHandle = StyleHandle { i: DEFAULT_STYLE_I as u32 };
+
 impl Text {
     pub fn new() -> Self {
+        let mut styles = Slab::new();
+        let i = styles.insert(original_default_style());
+        debug_assert!(i == DEFAULT_STYLE_I);
+
         Self {
             text_boxes: Slab::new(),
             static_text_boxes: Slab::new(),
             text_edits: Slab::new(),
-            styles: Slab::new(),
+            styles,
             input_state: TextInputState::new(),
             focused: None,
             mouse_hit_stack: Vec::with_capacity(6),
@@ -184,65 +192,17 @@ impl Text {
         self.text_edits.get_mut(handle.i as usize)
     }
 
-    pub fn add_shared_style(&mut self, style: TextStyle2) -> StyleHandle {
-        let shared_style = SharedStyle::new(style);
-        let i = self.styles.insert(shared_style) as u32;
+    pub fn add_style(&mut self, style: TextStyle2) -> StyleHandle {
+        let i = self.styles.insert(style) as u32;
         StyleHandle { i }
     }
 
-    pub fn get_shared_style(&self, handle: &StyleHandle) -> Option<&SharedStyle> {
+    pub fn get_style(&self, handle: &StyleHandle) -> Option<&TextStyle2> {
         self.styles.get(handle.i as usize)
     }
 
-    pub fn apply_shared_style_to_text_edit(&mut self, text_edit_handle: &TextEditHandle, style_handle: &StyleHandle) -> bool {
-        if let (Some(text_edit), Some(style)) = (
-            self.text_edits.get_mut(text_edit_handle.i as usize),
-            self.styles.get(style_handle.i as usize)
-        ) {
-            text_edit.set_shared_style(style);
-            true
-        } else {
-            false
-        }
-    }
-
-    pub fn apply_shared_style_to_text_box(&mut self, text_box_handle: &TextBoxHandle, style_handle: &StyleHandle) -> bool {
-        match text_box_handle.kind {
-            TextBoxKind::StringBox => {
-                if let (Some(text_box), Some(style)) = (
-                    self.text_boxes.get_mut(text_box_handle.i as usize),
-                    self.styles.get(style_handle.i as usize)
-                ) {
-                    text_box.set_shared_style(style);
-                    true
-                } else {
-                    false
-                }
-            }
-            TextBoxKind::StaticBox => {
-                if let (Some(text_box), Some(style)) = (
-                    self.static_text_boxes.get_mut(text_box_handle.i as usize),
-                    self.styles.get(style_handle.i as usize)
-                ) {
-                    text_box.set_shared_style(style);
-                    true
-                } else {
-                    false
-                }
-            }
-        }
-    }
-
-    pub fn modify_shared_style<F>(&mut self, handle: &StyleHandle, f: F) -> bool 
-    where 
-        F: FnOnce(&mut TextStyle2)
-    {
-        if let Some(style) = self.styles.get(handle.i as usize) {
-            style.with_borrow_mut(f);
-            true
-        } else {
-            false
-        }
+    pub fn get_style_mut(&mut self, handle: &StyleHandle) -> Option<&mut TextStyle2> {
+        self.styles.get_mut(handle.i as usize)
     }
 
     pub fn remove_text_box(&mut self, handle: TextBoxHandle) -> bool {

@@ -47,7 +47,7 @@ pub fn with_clipboard<R>(f: impl FnOnce(&mut Clipboard) -> R) -> R {
 
 pub struct TextBox<T: AsRef<str>> {
     pub(crate) text: T,
-    pub(crate) style: Style,
+    pub(crate) style: StyleHandle,
     pub(crate) shared_style_version: u32,
     pub(crate) layout: Layout<ColorBrush>,
     pub(crate) needs_relayout: bool,
@@ -66,6 +66,14 @@ pub struct TextBox<T: AsRef<str>> {
 
     pub(crate) hidden: bool,
 
+}
+
+pub(crate) fn original_default_style() -> TextStyle2 { 
+    TextStyle2 { 
+        brush: ColorBrush([255,255,255,255]),
+        font_size: 24.0,
+        ..Default::default()
+    } 
 }
 
 lazy_static::lazy_static! {
@@ -155,7 +163,7 @@ impl<T: AsRef<str>> TextBox<T> {
             height: size.1,
             depth,
             selection: SelectionState::new(),
-            style: Style::default(),
+            style: DEFAULT_STYLE_HANDLE,
             width: Some(size.0), 
             alignment: Default::default(),
             scale: Default::default(),
@@ -322,12 +330,8 @@ impl<T: AsRef<str>> TextBox<T> {
         self.set_selection(self.selection.selection.collapse());
     }
 
-    pub fn set_shared_style(&mut self, style: &SharedStyle) {
-        self.style = Style::Shared(style.clone());
-    }
-
-    pub fn set_unique_style(&mut self, style: TextStyle<'static, ColorBrush>) {
-        self.style = Style::Unique(style);
+    pub fn set_style(&mut self, style: &StyleHandle) {
+        self.style = StyleHandle { i: style.i };
     }
 
     pub fn set_selectable(&mut self, value: bool) {
