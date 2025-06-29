@@ -161,16 +161,16 @@ impl Text {
         TextEditHandle { i }
     }
 
-    pub fn get_text_box(&mut self, handle: &TextBoxHandle) -> Option<&mut TextBox<String>> {
-        self.text_boxes.get_mut(handle.i as usize)
+    pub fn get_text_box(&mut self, handle: &TextBoxHandle) -> &mut TextBox<String> {
+        &mut self.text_boxes[handle.i as usize]
     }
 
-    pub fn get_static_text_box(&mut self, handle: &StaticTextBoxHandle) -> Option<&mut TextBox<&'static str>> {
-        self.static_text_boxes.get_mut(handle.i as usize)
+    pub fn get_static_text_box(&mut self, handle: &StaticTextBoxHandle) -> &mut TextBox<&'static str> {
+        &mut self.static_text_boxes[handle.i as usize]
     }
 
-    pub fn get_text_edit(&mut self, handle: &TextEditHandle) -> Option<&mut TextEdit> {
-        self.text_edits.get_mut(handle.i as usize)
+    pub fn get_text_edit(&mut self, handle: &TextEditHandle) -> &mut TextEdit {
+        &mut self.text_edits[handle.i as usize]
     }
 
     pub fn add_style(&mut self, style: TextStyle2) -> StyleHandle {
@@ -178,28 +178,31 @@ impl Text {
         StyleHandle { i }
     }
 
-    pub fn get_style(&self, handle: &StyleHandle) -> Option<&TextStyle2> {
-        self.styles.get(handle.i as usize)
+    pub fn get_style(&self, handle: &StyleHandle) -> &TextStyle2 {
+        &self.styles[handle.i as usize]
     }
 
-    pub fn get_style_mut(&mut self, handle: &StyleHandle) -> Option<&mut TextStyle2> {
-        self.styles.get_mut(handle.i as usize)
+    pub fn get_style_mut(&mut self, handle: &StyleHandle) -> &mut TextStyle2 {
+        &mut self.styles[handle.i as usize]
     }
 
-    pub fn remove_text_box(&mut self, handle: TextBoxHandle) -> bool {
-        self.text_boxes.try_remove(handle.i as usize).is_some()
+    pub fn remove_text_box(&mut self, handle: TextBoxHandle) {
+        self.text_boxes.remove(handle.i as usize);
     }
 
-    pub fn remove_static_text_box(&mut self, handle: StaticTextBoxHandle) -> bool {
-        self.static_text_boxes.try_remove(handle.i as usize).is_some()
+    pub fn remove_static_text_box(&mut self, handle: StaticTextBoxHandle) {
+        self.static_text_boxes.remove(handle.i as usize);
     }
 
-    pub fn remove_text_edit(&mut self, handle: TextEditHandle) -> bool {
-        self.text_edits.try_remove(handle.i as usize).is_some()
+    pub fn remove_text_edit(&mut self, handle: TextEditHandle) {
+        self.text_edits.remove(handle.i as usize);
     }
 
-    pub fn remove_shared_style(&mut self, handle: StyleHandle) -> bool {
-        self.styles.try_remove(handle.i as usize).is_some()
+    /// Remove a text style.
+    /// 
+    /// If any text boxes are set to this style, they will revert to the default style.
+    pub fn remove_style(&mut self, handle: StyleHandle) {
+        self.styles.remove(handle.i as usize);
     }
 
     pub fn prepare_all(&mut self, text_renderer: &mut TextRenderer) {
@@ -345,21 +348,21 @@ impl Text {
         match focused {
             AnyBox::TextEdit(i) => {
                 let style_handle = self.text_edits[i as usize].text_box.style.sneak_clone();
-                let style = self.get_style(&style_handle).unwrap_or(&self.styles[DEFAULT_STYLE_HANDLE.i as usize]).clone();
+                let style = self.styles.get(style_handle.i as usize).unwrap_or(&self.styles[DEFAULT_STYLE_HANDLE.i as usize]).clone();
                 set_text_style(style, || {
                     self.text_edits[i as usize].handle_event(event, window, &self.input_state);
                 })
             },
             AnyBox::TextBox(i) => {
                 let style_handle = self.text_boxes[i as usize].style.sneak_clone();
-                let style = self.get_style(&style_handle).unwrap_or(&self.styles[DEFAULT_STYLE_HANDLE.i as usize]).clone();
+                let style = self.styles.get(style_handle.i as usize).unwrap_or(&self.styles[DEFAULT_STYLE_HANDLE.i as usize]).clone();
                 set_text_style(style, || {
                     self.text_boxes[i as usize].handle_event(event, window, &self.input_state);
                 })
             },
             AnyBox::StaticTextBox(i) => {
                 let style_handle = self.static_text_boxes[i as usize].style.sneak_clone();
-                let style = self.get_style(&style_handle).unwrap_or(&self.styles[DEFAULT_STYLE_HANDLE.i as usize]).clone();
+                let style = self.styles.get(style_handle.i as usize).unwrap_or(&self.styles[DEFAULT_STYLE_HANDLE.i as usize]).clone();
                 set_text_style(style, || {
                     self.static_text_boxes[i as usize].handle_event(event, window, &self.input_state);
                 })
