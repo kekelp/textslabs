@@ -19,8 +19,8 @@ pub struct Text {
     pub(crate) focused: Option<AnyBox>,
     pub(crate) mouse_hit_stack: Vec<(AnyBox, f32)>,
     
-    pub(crate) text_dirty: bool,
-    pub(crate) decorations_dirty: bool,
+    pub(crate) text_changed: bool,
+    pub(crate) decorations_changed: bool,
 }
 
 pub struct TextEditHandle {
@@ -173,8 +173,8 @@ impl Text {
             input_state: TextInputState::new(),
             focused: None,
             mouse_hit_stack: Vec::with_capacity(6),
-            text_dirty: true,
-            decorations_dirty: true,
+            text_changed: true,
+            decorations_changed: true,
         }
     }
 
@@ -187,7 +187,7 @@ impl Text {
     pub fn add_text_box(&mut self, text: String, pos: (f64, f64), size: (f32, f32), depth: f32) -> TextBoxHandle {
         let text_box = TextBox::new(text, pos, size, depth);
         let i = self.text_boxes.insert(text_box) as u32;
-        self.text_dirty = true;
+        self.text_changed = true;
         TextBoxHandle { i }
     }
 
@@ -195,7 +195,7 @@ impl Text {
     pub fn add_static_text_box(&mut self, text: &'static str, pos: (f64, f64), size: (f32, f32), depth: f32) -> StaticTextBoxHandle {
         let text_box = TextBox::new(text, pos, size, depth);
         let i = self.static_text_boxes.insert(text_box) as u32;
-        self.text_dirty = true;
+        self.text_changed = true;
         StaticTextBoxHandle { i }
     }
 
@@ -203,7 +203,7 @@ impl Text {
     pub fn add_text_edit(&mut self, text: String, pos: (f64, f64), size: (f32, f32), depth: f32) -> TextEditHandle {
         let text_edit = TextEdit::new(text, pos, size, depth);
         let i = self.text_edits.insert(text_edit) as u32;
-        self.text_dirty = true;
+        self.text_changed = true;
         TextEditHandle { i }
     }
 
@@ -211,7 +211,7 @@ impl Text {
     pub fn add_single_line_edit(&mut self, text: String, pos: (f64, f64), size: (f32, f32), depth: f32) -> TextEditHandle {
         let text_edit = TextEdit::new_single_line(text, pos, size, depth);
         let i = self.text_edits.insert(text_edit) as u32;
-        self.text_dirty = true;
+        self.text_changed = true;
         TextEditHandle { i }
     }
 
@@ -219,7 +219,7 @@ impl Text {
     pub fn add_text_edit_with_newline_mode(&mut self, text: String, pos: (f64, f64), size: (f32, f32), depth: f32, newline_mode: NewlineMode) -> TextEditHandle {
         let text_edit = TextEdit::new_with_newline_mode(text, pos, size, depth, newline_mode);
         let i = self.text_edits.insert(text_edit) as u32;
-        self.text_dirty = true;
+        self.text_changed = true;
         TextEditHandle { i }
     }
 
@@ -249,7 +249,7 @@ impl Text {
     pub fn get_style_mut(&mut self, handle: &StyleHandle) -> &mut TextStyle2 {
         self.styles[handle.i as usize].1 = self.new_style_id();
         // a bit heavy handed, but it's fine
-        self.text_dirty = true;
+        self.text_changed = true;
         &mut self.styles[handle.i as usize].0
     }
 
@@ -277,13 +277,13 @@ impl Text {
 
     pub fn prepare_all(&mut self, text_renderer: &mut TextRenderer) {
 
-        if self.text_dirty {
+        if self.text_changed {
             text_renderer.clear();
-        } else if self.decorations_dirty {
+        } else if self.decorations_changed {
             text_renderer.clear_decorations_only();
         }
 
-        if self.text_dirty {
+        if self.text_changed {
             for (_i, text_edit) in self.text_edits.iter_mut() {
                 let (style, style_changed) = do_styles(&mut text_edit.text_box, &self.styles);
                 set_text_style((style, style_changed), || {                
@@ -302,10 +302,10 @@ impl Text {
                     text_renderer.prepare_text_box(text_box);
                 })
             }
-            self.text_dirty = false;
+            self.text_changed = false;
         }
 
-        if self.decorations_dirty || self.text_dirty {
+        if self.decorations_changed || self.text_changed {
             if let Some(focused) = self.focused {
                 match focused {
                     AnyBox::TextEdit(i) => {
@@ -319,7 +319,7 @@ impl Text {
                     },
                 }
             }
-            self.decorations_dirty = false;
+            self.decorations_changed = false;
         }
     }
 
@@ -431,10 +431,10 @@ impl Text {
                     self.text_edits[i as usize].handle_event(event, window, &self.input_state)
                 });
                 if result.text_changed {
-                    self.text_dirty = true;
+                    self.text_changed = true;
                 }
                 if result.decorations_changed {
-                    self.decorations_dirty = true;
+                    self.decorations_changed = true;
                 }
             },
             AnyBox::TextBox(i) => {
@@ -443,10 +443,10 @@ impl Text {
                     self.text_boxes[i as usize].handle_event(event, window, &self.input_state)
                 });
                 if result.text_changed {
-                    self.text_dirty = true;
+                    self.text_changed = true;
                 }
                 if result.decorations_changed {
-                    self.decorations_dirty = true;
+                    self.decorations_changed = true;
                 }
             },
             AnyBox::StaticTextBox(i) => {
@@ -455,10 +455,10 @@ impl Text {
                     self.static_text_boxes[i as usize].handle_event(event, window, &self.input_state)
                 });
                 if result.text_changed {
-                    self.text_dirty = true;
+                    self.text_changed = true;
                 }
                 if result.decorations_changed {
-                    self.decorations_dirty = true;
+                    self.decorations_changed = true;
                 }
             },
         }
