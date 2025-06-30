@@ -4,8 +4,7 @@
 //! 
 //! Most GUI programs or toolkits, games, etc. don't have any advanced requirements for text: they just want basic text boxes that "work the same way as everywhere else" (browsers, native operating system GUIs, etc.).
 //! 
-//! If all that is available is a low level flexible library such as Parley, all these projects will have to do a large amount of repeated work, needlessly raising the barrier of entry to GUI programming.
-//! 
+//! If all that is available is a relatively low level library such as Parley, all these projects will have to do a large amount of repeated work, needlessly raising the barrier of entry to GUI programming.
 //! 
 //! # Limitations
 //! 
@@ -19,6 +18,20 @@
 //!     - font selection on Linux is incomplete
 //!     - IME area positioning on Linux is wrong
 //!     - some advanced shaping cases are apparently non supported coorrectly
+//! 
+//! 
+//! # Usage
+//! 
+//! See the `basic` example in the repository to see how the library is used. 
+//! 
+//! This library has a handle-based interface: when adding a text box with [`Text::add_text_box`], a [`TextBoxHandle`] is returned.
+//! 
+//! Handles can't be `Clone`d or constructed manually, so each handle is effectively a unique reference to the corresponding text box. It can never be "dangling".
+//! 
+//! To remove the associated text box, you must remember to call [`Text::remove_text_box`]. This consumes the handle. For example, if every text box is associated to a "widget" in a GUI library, the widget struct will hold a [`TextHandle`]. Then, when the widget is removed, you must call [`Text::remove_text_box`] on its [`TextHandle`].
+//! 
+//! There is an optional "`drop_bombs`" feature that causes a panic whenever a text box handle is dropped instead of being consumed by the appropriate remove function. This can be useful for debugging.
+//! 
 //! 
 
 mod setup;

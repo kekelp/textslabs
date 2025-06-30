@@ -4,8 +4,8 @@ version = "0.1.0"
 edition = "2024"
 
 [features]
-default = ["must_remove_boxes"]
-must_remove_boxes = []
+default = []
+panic_on_handle_drop = []
 
 [profile.dev]
 opt-level = 1

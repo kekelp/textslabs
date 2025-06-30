@@ -35,8 +35,7 @@ pub struct StaticTextBoxHandle {
     pub(crate) i: u32,
 }
 
-// todo: make this off by default 
-#[cfg(all(feature = "must_remove_boxes", debug_assertions))]
+#[cfg(feature = "panic_on_handle_drop")]
 impl Drop for TextEditHandle {
     fn drop(&mut self) {
         panic!(
@@ -44,15 +43,12 @@ impl Drop for TextEditHandle {
             This means that the corresponding text edit wasn't removed. To avoid leaking it, you should call Text::remove_text_edit(handle). \
             If you're intentionally leaking this text edit, you can use \
             std::mem::forget(handle) to skip the handle's drop() call and avoid this panic. \
-            You can also disable this check by disabling the \"must_remove_boxes\" feature in Cargo.toml: \
-            'default-features = false' or \
-            'features = [\"other_features_you_need\"]' (excluding \"must_remove_boxes\"). \n\
-            This check is disabled in release builds."
+            You can also disable this check by disabling the \"panic_on_handle_drop\" feature in Cargo.toml."
         );
     }
 }
 
-#[cfg(all(feature = "must_remove_boxes", debug_assertions))]
+#[cfg(feature = "panic_on_handle_drop")]
 impl Drop for TextBoxHandle {
     fn drop(&mut self) {
         panic!(
@@ -60,15 +56,12 @@ impl Drop for TextBoxHandle {
             This means that the corresponding text box wasn't removed. To avoid leaking it, you should call Text::remove_text_box(handle). \
             If you're intentionally leaking this text box, you can use \
             std::mem::forget(handle) to skip the handle's drop() call and avoid this panic. \
-            You can also disable this check by disabling the \"must_remove_boxes\" feature in Cargo.toml: \
-            'default-features = false' or \
-            'features = [\"other_features_you_need\"]' (excluding \"must_remove_boxes\"). \n\
-            This check is disabled in release builds."
+            You can also disable this check by disabling the \"panic_on_handle_drop\" feature in Cargo.toml."
         );
     }
 }
 
-#[cfg(all(feature = "must_remove_boxes", debug_assertions))]
+#[cfg(feature = "panic_on_handle_drop")]
 impl Drop for StaticTextBoxHandle {
     fn drop(&mut self) {
         panic!(
@@ -76,10 +69,7 @@ impl Drop for StaticTextBoxHandle {
             This means that the corresponding text box wasn't removed. To avoid leaking it, you should call Text::remove_static_text_box(handle). \
             If you're intentionally leaking this static text box, you can use \
             std::mem::forget(handle) to skip the handle's drop() call and avoid this panic. \
-            You can also disable this check by disabling the \"must_remove_boxes\" feature in Cargo.toml: \
-            'default-features = false' or \
-            'features = [\"other_features_you_need\"]' (excluding \"must_remove_boxes\"). \n\
-            This check is disabled in release builds."
+            You can also disable this check by disabling the \"panic_on_handle_drop\" feature in Cargo.toml."
         );
     }
 }
@@ -265,14 +255,17 @@ impl Text {
 
     pub fn remove_text_box(&mut self, handle: TextBoxHandle) {
         self.text_boxes.remove(handle.i as usize);
+        std::mem::forget(handle);
     }
 
     pub fn remove_static_text_box(&mut self, handle: StaticTextBoxHandle) {
         self.static_text_boxes.remove(handle.i as usize);
+        std::mem::forget(handle);
     }
 
     pub fn remove_text_edit(&mut self, handle: TextEditHandle) {
         self.text_edits.remove(handle.i as usize);
+        std::mem::forget(handle);
     }
 
     /// Remove a text style.
