@@ -650,7 +650,7 @@ impl ContextlessTextRenderer {
 
     /// Render a glyph into the `self.tmp_swash_image` buffer
     // this is going to have to return the Content (color/mask) as well
-    fn render_glyph(&mut self, glyph: &GlyphWithContext, scaler: &mut Scaler) -> (Content, Placement) {
+    fn _render_glyph(&mut self, glyph: &GlyphWithContext, scaler: &mut Scaler) -> (Content, Placement) {
         self.tmp_image.clear();
         Render::new(SOURCES)
             .format(Format::Alpha)
@@ -722,8 +722,8 @@ impl ContextlessTextRenderer {
     }
 
     /// Rasterizes the glyph in a texture atlas and returns a Quad that can be used to render it, or None if the glyph was just empty (like a space).
-    fn prepare_glyph(&mut self, glyph: &GlyphWithContext, scaler: &mut Scaler) -> Option<(Quad, StoredGlyph)> {
-        let (content, placement) = self.render_glyph(&glyph, scaler);
+    fn _prepare_glyph(&mut self, glyph: &GlyphWithContext, scaler: &mut Scaler) -> Option<(Quad, StoredGlyph)> {
+        let (content, placement) = self._render_glyph(&glyph, scaler);
         let size = placement.size();
         
         // For some glyphs there's no image to store, like spaces.

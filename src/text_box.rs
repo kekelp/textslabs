@@ -76,66 +76,6 @@ pub(crate) fn original_default_style() -> TextStyle2 {
     } 
 }
 
-lazy_static::lazy_static! {
-    pub static ref DEFAULT_TEXT_STYLE: SharedStyle = SharedStyle::new(TextStyle { 
-        brush: ColorBrush([255,255,255,255]),
-        font_size: 24.0,
-        ..Default::default()
-    });
-}
-
-pub enum Style {
-    Shared(SharedStyle),
-    Unique(TextStyle<'static, ColorBrush>),
-}
-impl Default for Style {
-    fn default() -> Self {
-        Self::Shared(DEFAULT_TEXT_STYLE.clone())
-    }
-}
-impl Style {
-    pub(crate) fn with_text_style<F, R>(&mut self, f: F) -> R
-    where
-        F: FnOnce(&TextStyle<'static, ColorBrush>, Option<u32>) -> R,
-    {
-        match self {
-            Style::Shared(shared) => {
-                let inner = shared.0.read().unwrap();
-                f(&inner.style, Some(inner.version))
-            }
-            Style::Unique(style) => f(style, None),
-        }
-    }
-}
-
-// todo: this probably won't be needed actually
-// when using it in a declarative library, after you change a style, you just redeclare everything and pass the new style to everyone that needs it
-// (and they need to detect changes)
-pub struct SharedStyle(Arc<RwLock<InnerStyle>>);
-struct InnerStyle {
-    style: TextStyle<'static, ColorBrush>,
-    version: u32,
-}
-impl SharedStyle {
-    pub fn new(style: TextStyle<'static, ColorBrush>) -> Self {
-        Self(Arc::new(RwLock::new(InnerStyle { style, version: 0 })))
-    }
-
-    pub fn with_borrow_mut<R>(
-        &self,
-        f: impl FnOnce(&mut TextStyle<'static, ColorBrush>) -> R,
-    ) -> R {
-        let mut inner = self.0.write().unwrap();
-        inner.version += 1;
-        f(&mut inner.style)
-    }
-}
-impl Clone for SharedStyle {
-    fn clone(&self) -> Self {
-        SharedStyle(self.0.clone())
-    }
-}
-
 pub struct SelectionState {
     pub(crate) selection: Selection,
     pub(crate) prev_anchor: Option<Selection>,
