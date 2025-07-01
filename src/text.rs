@@ -21,6 +21,8 @@ pub struct Text {
     
     pub(crate) text_changed: bool,
     pub(crate) decorations_changed: bool,
+
+    pub(crate) current_frame: u64,
 }
 
 #[derive(Debug)]
@@ -178,6 +180,7 @@ impl Text {
             mouse_hit_stack: Vec::with_capacity(6),
             text_changed: true,
             decorations_changed: true,
+            current_frame: 1,
         }
     }
 
@@ -188,7 +191,8 @@ impl Text {
 
     #[must_use]
     pub fn add_text_box(&mut self, text: String, pos: (f64, f64), size: (f32, f32), depth: f32) -> TextBoxHandle {
-        let text_box = TextBox::new(text, pos, size, depth);
+        let mut text_box = TextBox::new(text, pos, size, depth);
+        text_box.last_frame_touched = self.current_frame;
         let i = self.text_boxes.insert(text_box) as u32;
         self.text_changed = true;
         TextBoxHandle { i }
@@ -196,7 +200,8 @@ impl Text {
 
     #[must_use]
     pub fn add_static_text_box(&mut self, text: &'static str, pos: (f64, f64), size: (f32, f32), depth: f32) -> StaticTextBoxHandle {
-        let text_box = TextBox::new(text, pos, size, depth);
+        let mut text_box = TextBox::new(text, pos, size, depth);
+        text_box.last_frame_touched = self.current_frame;
         let i = self.static_text_boxes.insert(text_box) as u32;
         self.text_changed = true;
         StaticTextBoxHandle { i }
@@ -204,7 +209,8 @@ impl Text {
 
     #[must_use]
     pub fn add_text_edit(&mut self, text: String, pos: (f64, f64), size: (f32, f32), depth: f32) -> TextEditHandle {
-        let text_edit = TextEdit::new(text, pos, size, depth);
+        let mut text_edit = TextEdit::new(text, pos, size, depth);
+        text_edit.text_box.last_frame_touched = self.current_frame;
         let i = self.text_edits.insert(text_edit) as u32;
         self.text_changed = true;
         TextEditHandle { i }
@@ -212,7 +218,8 @@ impl Text {
 
     #[must_use]
     pub fn add_single_line_edit(&mut self, text: String, pos: (f64, f64), size: (f32, f32), depth: f32) -> TextEditHandle {
-        let text_edit = TextEdit::new_single_line(text, pos, size, depth);
+        let mut text_edit = TextEdit::new_single_line(text, pos, size, depth);
+        text_edit.text_box.last_frame_touched = self.current_frame;
         let i = self.text_edits.insert(text_edit) as u32;
         self.text_changed = true;
         TextEditHandle { i }
@@ -220,7 +227,8 @@ impl Text {
 
     #[must_use]
     pub fn add_text_edit_with_newline_mode(&mut self, text: String, pos: (f64, f64), size: (f32, f32), depth: f32, newline_mode: NewlineMode) -> TextEditHandle {
-        let text_edit = TextEdit::new_with_newline_mode(text, pos, size, depth, newline_mode);
+        let mut text_edit = TextEdit::new_with_newline_mode(text, pos, size, depth, newline_mode);
+        text_edit.text_box.last_frame_touched = self.current_frame;
         let i = self.text_edits.insert(text_edit) as u32;
         self.text_changed = true;
         TextEditHandle { i }
@@ -307,6 +315,28 @@ impl Text {
         original_default_style()
     }
 
+    pub fn next_frame(&mut self) {
+        self.current_frame += 1;
+    }
+
+    pub fn refresh_text_box(&mut self, handle: &TextBoxHandle) {
+        if let Some(text_box) = self.text_boxes.get_mut(handle.i as usize) {
+            text_box.last_frame_touched = self.current_frame;
+        }
+    }
+
+    pub fn refresh_static_text_box(&mut self, handle: &StaticTextBoxHandle) {
+        if let Some(text_box) = self.static_text_boxes.get_mut(handle.i as usize) {
+            text_box.last_frame_touched = self.current_frame;
+        }
+    }
+
+    pub fn refresh_text_edit(&mut self, handle: &TextEditHandle) {
+        if let Some(text_edit) = self.text_edits.get_mut(handle.i as usize) {
+            text_edit.text_box.last_frame_touched = self.current_frame;
+        }
+    }
+
     pub fn remove_text_box(&mut self, handle: TextBoxHandle) {
         self.text_changed = true;
         if let Some(AnyBox::TextBox(i)) = self.focused {
@@ -357,7 +387,7 @@ impl Text {
 
         if self.text_changed {
             for (_i, text_edit) in self.text_edits.iter_mut() {
-                if ! text_edit.hidden() {
+                if !text_edit.hidden() && text_edit.text_box.last_frame_touched == self.current_frame {
                     let (style, style_changed) = do_styles(&mut text_edit.text_box, &self.styles);
                     set_text_style((style, style_changed), || {                
                         text_renderer.prepare_text_edit(text_edit);
@@ -365,7 +395,7 @@ impl Text {
                 }
             }
             for (_i, text_box) in self.text_boxes.iter_mut() {
-                if ! text_box.hidden() {
+                if !text_box.hidden() && text_box.last_frame_touched == self.current_frame {
                     let (style, style_changed) = do_styles(text_box, &self.styles);
                     set_text_style((style, style_changed), || {  
                         text_renderer.prepare_text_box(text_box);
@@ -373,7 +403,7 @@ impl Text {
                 }            
             }
             for (_i, text_box) in self.static_text_boxes.iter_mut() {
-                if ! text_box.hidden() {
+                if !text_box.hidden() && text_box.last_frame_touched == self.current_frame {
                     let (style, style_changed) = do_styles(text_box, &self.styles);
                     set_text_style((style, style_changed), || {  
                         text_renderer.prepare_text_box(text_box);
@@ -424,17 +454,17 @@ impl Text {
         let cursor_pos = self.input_state.mouse.cursor_pos;
 
         for (i, text_edit) in self.text_edits.iter_mut() {
-            if text_edit.text_box.hit_full_rect(cursor_pos) {
+            if !text_edit.text_box.hidden && text_edit.text_box.last_frame_touched == self.current_frame && text_edit.text_box.hit_full_rect(cursor_pos) {
                 self.mouse_hit_stack.push((AnyBox::TextEdit(i as u32), text_edit.depth()));
             }
         }
         for (i, text_box) in self.text_boxes.iter_mut() {
-            if text_box.hit_full_rect(cursor_pos) {
+            if !text_box.hidden && text_box.last_frame_touched == self.current_frame && text_box.hit_full_rect(cursor_pos) {
                 self.mouse_hit_stack.push((AnyBox::TextBox(i as u32), text_box.depth()));
             }
         }
         for (i, text_box) in self.static_text_boxes.iter_mut() {
-            if text_box.hit_full_rect(cursor_pos) {
+            if !text_box.hidden && text_box.last_frame_touched == self.current_frame && text_box.hit_full_rect(cursor_pos) {
                 self.mouse_hit_stack.push((AnyBox::StaticTextBox(i as u32), text_box.depth()));
             }
         }

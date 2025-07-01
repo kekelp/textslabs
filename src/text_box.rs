@@ -65,6 +65,7 @@ pub struct TextBox<T: AsRef<str>> {
     pub(crate) selectable: bool,
 
     pub(crate) hidden: bool,
+    pub(crate) last_frame_touched: u64,
 
 }
 
@@ -109,6 +110,7 @@ impl<T: AsRef<str>> TextBox<T> {
             scale: Default::default(),
             clip_rect: None,
             hidden: false,
+            last_frame_touched: 0,
         }
     }
 
