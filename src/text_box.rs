@@ -112,7 +112,7 @@ impl<T: AsRef<str>> TextBox<T> {
         }
     }
 
-    pub fn layout(&mut self) -> &Layout<ColorBrush> {
+    pub(crate) fn layout(&mut self) -> &Layout<ColorBrush> {
         self.refresh_layout();
         &self.layout
     }
@@ -292,8 +292,11 @@ impl<T: AsRef<str>> TextBox<T> {
     }
 
     pub fn set_hidden(&mut self, hidden: bool) {
+        dbg!("HHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHiding a bunch of stuff oh algo");
+        dbg!(self.hidden, hidden);
         if self.hidden != hidden {
             self.hidden = hidden;
+
             if hidden {
                 self.reset_selection();
             }
@@ -633,6 +636,7 @@ impl<T: AsRef<str>> TextBox<T> {
 
 pub use parley::Rect;
 
+// todo: use this instead of hit_full
 pub(crate) trait Ext1 {
     fn hit_bounding_box(&self, cursor_pos: (f64, f64)) -> bool;
 }

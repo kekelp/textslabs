@@ -81,17 +81,17 @@ impl State {
             text.add_static_text_box("Long static words, Long static words, Long static words, Long static words, ... ", (200.0, 400.0), (400.0, 150.0), 0.0),
         ];
         
-        text.get_text_edit(&text_edit_handles[0]).set_style(&big_text_style_handle);
-        text.get_text_edit(&text_edit_handles[1]).set_style(&big_text_style_handle);
-        text.get_text_box(&text_box_handles[0]).set_style(&big_text_style_handle);
+        text.get_text_edit_mut(&text_edit_handles[0]).set_style(&big_text_style_handle);
+        text.get_text_edit_mut(&text_edit_handles[1]).set_style(&big_text_style_handle);
+        text.get_text_box_mut(&text_box_handles[0]).set_style(&big_text_style_handle);
         
         let small_text_style_handle = text.add_style(TextStyle {
             font_size: 24.0,
             ..Default::default()
         });
 
-        text.get_text_box(&text_box_handles[0]).set_style(&small_text_style_handle);
-        text.get_text_box(&text_box_handles[0]).set_clip_rect(Some(parley::Rect {
+        text.get_text_box_mut(&text_box_handles[0]).set_style(&small_text_style_handle);
+        text.get_text_box_mut(&text_box_handles[0]).set_clip_rect(Some(parley::Rect {
             x0: 0.0,
             y0: 0.0,
             x1: 200.0,
@@ -100,7 +100,7 @@ impl State {
 
         text.get_style_mut(&big_text_style_handle).font_size = 32.0;
 
-        text.get_static_text_box(&static_text_box_handles[1]).set_style(&big_text_style_handle);
+        text.get_static_text_box_mut(&static_text_box_handles[1]).set_style(&big_text_style_handle);
 
 
         let text_renderer = TextRenderer::new(&device, &queue, surface_config.format);

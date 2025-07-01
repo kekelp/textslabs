@@ -23,14 +23,17 @@ pub struct Text {
     pub(crate) decorations_changed: bool,
 }
 
+#[derive(Debug)]
 pub struct TextEditHandle {
     pub(crate) i: u32,
 }
 
+#[derive(Debug)]
 pub struct TextBoxHandle {
     pub(crate) i: u32,
 }
 
+#[derive(Debug)]
 pub struct StaticTextBoxHandle {
     pub(crate) i: u32,
 }
@@ -223,16 +226,55 @@ impl Text {
         TextEditHandle { i }
     }
 
-    pub fn get_text_box(&mut self, handle: &TextBoxHandle) -> &mut TextBox<String> {
+    pub fn get_text_box_mut(&mut self, handle: &TextBoxHandle) -> &mut TextBox<String> {
+        self.text_changed = true;
         &mut self.text_boxes[handle.i as usize]
     }
 
-    pub fn get_static_text_box(&mut self, handle: &StaticTextBoxHandle) -> &mut TextBox<&'static str> {
+    pub fn get_text_box(&self, handle: &TextBoxHandle) -> &TextBox<String> {
+        &self.text_boxes[handle.i as usize]
+    }
+
+    pub fn get_static_text_box_mut(&mut self, handle: &StaticTextBoxHandle) -> &mut TextBox<&'static str> {
+        self.text_changed = true;
         &mut self.static_text_boxes[handle.i as usize]
     }
 
-    pub fn get_text_edit(&mut self, handle: &TextEditHandle) -> &mut TextEdit {
+    pub fn get_static_text_box(&self, handle: &StaticTextBoxHandle) -> &TextBox<&'static str> {
+        &self.static_text_boxes[handle.i as usize]
+    }
+
+    pub fn get_text_edit_mut(&mut self, handle: &TextEditHandle) -> &mut TextEdit {
+        self.text_changed = true;
         &mut self.text_edits[handle.i as usize]
+    }
+
+    pub fn get_text_edit(&self, handle: &TextEditHandle) -> &TextEdit {
+        &self.text_edits[handle.i as usize]
+    }
+
+    pub fn get_text_box_layout(&mut self, handle: &TextBoxHandle) -> &Layout<ColorBrush> {
+        let text_box = &mut self.text_boxes[handle.i as usize];
+        let (style, style_changed) = do_styles(text_box, &self.styles);
+        set_text_style((style, style_changed), || {
+            text_box.layout()
+        })
+    }
+
+    pub fn get_static_text_box_layout(&mut self, handle: &StaticTextBoxHandle) -> &Layout<ColorBrush> {
+        let static_text_box = &mut self.static_text_boxes[handle.i as usize];
+        let (style, style_changed) = do_styles(static_text_box, &self.styles);
+        set_text_style((style, style_changed), || {
+            static_text_box.layout()
+        })
+    }
+
+    pub fn get_text_edit_layout(&mut self, handle: &TextEditHandle) -> &Layout<ColorBrush> {
+        let text_edit = &mut self.text_edits[handle.i as usize];
+        let (style, style_changed) = do_styles(&mut text_edit.text_box, &self.styles);
+        set_text_style((style, style_changed), || {
+            text_edit.layout()
+        })
     }
 
     #[must_use]
@@ -253,17 +295,47 @@ impl Text {
         &mut self.styles[handle.i as usize].0
     }
 
+    pub fn get_default_style(&self) -> &TextStyle2 {
+        self.get_style(&DEFAULT_STYLE_HANDLE)
+    }
+
+    pub fn get_default_style_mut(&mut self) -> &mut TextStyle2 {
+        self.get_style_mut(&DEFAULT_STYLE_HANDLE)
+    }
+
+    pub fn original_default_style(&self) -> TextStyle2 {
+        original_default_style()
+    }
+
     pub fn remove_text_box(&mut self, handle: TextBoxHandle) {
+        self.text_changed = true;
+        if let Some(AnyBox::TextBox(i)) = self.focused {
+            if i == handle.i {
+                self.focused = None;
+            }
+        }
         self.text_boxes.remove(handle.i as usize);
         std::mem::forget(handle);
     }
 
     pub fn remove_static_text_box(&mut self, handle: StaticTextBoxHandle) {
+        self.text_changed = true;
+        if let Some(AnyBox::StaticTextBox(i)) = self.focused {
+            if i == handle.i {
+                self.focused = None;
+            }
+        }
         self.static_text_boxes.remove(handle.i as usize);
         std::mem::forget(handle);
     }
 
     pub fn remove_text_edit(&mut self, handle: TextEditHandle) {
+        self.text_changed = true;
+        if let Some(AnyBox::TextEdit(i)) = self.focused {
+            if i == handle.i {
+                self.focused = None;
+            }
+        }
         self.text_edits.remove(handle.i as usize);
         std::mem::forget(handle);
     }
@@ -285,22 +357,28 @@ impl Text {
 
         if self.text_changed {
             for (_i, text_edit) in self.text_edits.iter_mut() {
-                let (style, style_changed) = do_styles(&mut text_edit.text_box, &self.styles);
-                set_text_style((style, style_changed), || {                
-                    text_renderer.prepare_text_edit(text_edit);
-                });
+                if ! text_edit.hidden() {
+                    let (style, style_changed) = do_styles(&mut text_edit.text_box, &self.styles);
+                    set_text_style((style, style_changed), || {                
+                        text_renderer.prepare_text_edit(text_edit);
+                    });
+                }
             }
             for (_i, text_box) in self.text_boxes.iter_mut() {
-                let (style, style_changed) = do_styles(text_box, &self.styles);
-                set_text_style((style, style_changed), || {  
-                    text_renderer.prepare_text_box(text_box);
-                })
+                if ! text_box.hidden() {
+                    let (style, style_changed) = do_styles(text_box, &self.styles);
+                    set_text_style((style, style_changed), || {  
+                        text_renderer.prepare_text_box(text_box);
+                    })
+                }            
             }
             for (_i, text_box) in self.static_text_boxes.iter_mut() {
-                let (style, style_changed) = do_styles(text_box, &self.styles);
-                set_text_style((style, style_changed), || {  
-                    text_renderer.prepare_text_box(text_box);
-                })
+                if ! text_box.hidden() {
+                    let (style, style_changed) = do_styles(text_box, &self.styles);
+                    set_text_style((style, style_changed), || {  
+                        text_renderer.prepare_text_box(text_box);
+                    })
+                }            
             }
             self.text_changed = false;
         }
@@ -423,6 +501,8 @@ impl Text {
         }
     }
     
+    // todo: this can panic maybe
+    // either use slotmaps, or whenever a box is removed, check if it's focused, and clear focused
     fn handle_focused_event(&mut self, focused: AnyBox, event: &WindowEvent, window: &Window) {
         match focused {
             AnyBox::TextEdit(i) => {
