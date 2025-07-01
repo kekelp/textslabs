@@ -337,6 +337,53 @@ impl Text {
         }
     }
 
+
+    pub fn garbage_collect(&mut self) {
+        // Clear focus if the focused text box will be removed
+        if let Some(focused) = self.focused {
+            let should_clear_focus = match focused {
+                AnyBox::TextBox(i) => {
+                    if let Some(text_box) = self.text_boxes.get(i as usize) {
+                        text_box.last_frame_touched != self.current_frame && !text_box.can_hide
+                    } else {
+                        true // Text box doesn't exist
+                    }
+                }
+                AnyBox::StaticTextBox(i) => {
+                    if let Some(text_box) = self.static_text_boxes.get(i as usize) {
+                        text_box.last_frame_touched != self.current_frame && !text_box.can_hide
+                    } else {
+                        true // Text box doesn't exist
+                    }
+                }
+                AnyBox::TextEdit(i) => {
+                    if let Some(text_edit) = self.text_edits.get(i as usize) {
+                        text_edit.text_box.last_frame_touched != self.current_frame && !text_edit.text_box.can_hide
+                    } else {
+                        true // Text edit doesn't exist
+                    }
+                }
+            };
+            
+            if should_clear_focus {
+                self.focused = None;
+            }
+        }
+
+        // Remove text boxes that are outdated and allowed to be removed
+        self.text_boxes.retain(|_, text_box| {
+            text_box.last_frame_touched == self.current_frame || text_box.can_hide
+        });
+
+        self.static_text_boxes.retain(|_, text_box| {
+            text_box.last_frame_touched == self.current_frame || text_box.can_hide
+        });
+
+        self.text_edits.retain(|_, text_edit| {
+            text_edit.text_box.last_frame_touched == self.current_frame || text_edit.text_box.can_hide
+        });
+    }
+
     pub fn remove_text_box(&mut self, handle: TextBoxHandle) {
         self.text_changed = true;
         if let Some(AnyBox::TextBox(i)) = self.focused {

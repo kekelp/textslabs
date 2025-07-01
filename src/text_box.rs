@@ -66,6 +66,7 @@ pub struct TextBox<T: AsRef<str>> {
 
     pub(crate) hidden: bool,
     pub(crate) last_frame_touched: u64,
+    pub(crate) can_hide: bool,
 
 }
 
@@ -111,6 +112,7 @@ impl<T: AsRef<str>> TextBox<T> {
             clip_rect: None,
             hidden: false,
             last_frame_touched: 0,
+            can_hide: false,
         }
     }
 
@@ -294,8 +296,6 @@ impl<T: AsRef<str>> TextBox<T> {
     }
 
     pub fn set_hidden(&mut self, hidden: bool) {
-        dbg!("HHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHiding a bunch of stuff oh algo");
-        dbg!(self.hidden, hidden);
         if self.hidden != hidden {
             self.hidden = hidden;
 
@@ -306,6 +306,13 @@ impl<T: AsRef<str>> TextBox<T> {
     }
     pub fn hidden(&self) -> bool {
         self.hidden
+    }
+
+    pub fn set_can_hide(&mut self, can_hide: bool) {
+        self.can_hide = can_hide;
+    }
+    pub fn can_hide(&self) -> bool {
+        self.can_hide
     }
 
     pub fn selection(&self) -> &Selection {
