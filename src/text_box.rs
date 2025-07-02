@@ -8,7 +8,7 @@ use winit::{
 };
 use arboard::Clipboard;
 
-use parley::{Affinity, Alignment, AlignmentOptions, Selection, TextStyle};
+use parley::{Affinity, Alignment, AlignmentOptions, Selection};
 
 use crate::*;
 
@@ -80,14 +80,16 @@ pub(crate) fn original_default_style() -> TextStyle2 {
 
 pub struct SelectionState {
     pub(crate) selection: Selection,
-    pub(crate) prev_anchor: Option<Selection>,
 }
 impl SelectionState {
     pub(crate) fn new() -> Self {
         Self {
             selection: Default::default(),
-            prev_anchor: Default::default(),
         }
+    }
+
+    fn shift_click_extension(&mut self, layout: &Layout<ColorBrush>, x: f32, y: f32) {
+        self.selection = self.selection.shift_click_extension(layout, x, y);
     }
 }
 
@@ -112,7 +114,7 @@ impl<T: AsRef<str>> TextBox<T> {
             clip_rect: None,
             hidden: false,
             last_frame_touched: 0,
-            can_hide: false,
+            can_hide: true,
         }
     }
 
@@ -438,15 +440,6 @@ impl<T: AsRef<str>> TextBox<T> {
 
     /// Update the selection, and nudge the `Generation` if something other than `h_pos` changed.
     pub(crate) fn set_selection(&mut self, new_sel: Selection) {
-        self.set_selection_inner(new_sel);
-        self.selection.prev_anchor = None;
-    }
-
-    pub(crate) fn set_selection_inner(&mut self, new_sel: Selection) {
-        // if new_sel.focus() != self.selection.selection.focus() || new_sel.anchor() != self.selection.selection.anchor()
-        // {
-        //     self.generation.nudge();
-        // }
 
         // This debug code is quite useful when diagnosing selection problems.
         #[allow(clippy::print_stderr)] // reason = "unreachable debug code"
@@ -701,7 +694,7 @@ impl SelectionState {
                             3 => self.select_line_at_point(layout, cursor_pos.0, cursor_pos.1),
                             _ => {
                                 if shift {
-                                    self.extend_selection_with_anchor(
+                                    self.shift_click_extension(
                                         layout,
                                         cursor_pos.0,
                                         cursor_pos.1,
@@ -797,33 +790,8 @@ impl SelectionState {
         );
     }
 
-    /// Extend the selection starting from the previous anchor, moving the selection focus point to the cluster boundary closest to point.
-    ///
-    /// Used for shift-click behavior.
-    pub(crate) fn extend_selection_with_anchor(&mut self, layout: &Layout<ColorBrush>, x: f32, y: f32) {
-        // restore prev anchor
-        if let Some(prev_selection) = self.prev_anchor {
-            self.set_selection_with_old_anchor(prev_selection);
-        }
-        // extend
-        let cursor = Cursor::from_point(layout, x, y);
-        self.set_selection_with_old_anchor(
-            self.selection.extend(cursor),
-        );
-    }
-
     /// Update the selection, and nudge the `Generation` if something other than `h_pos` changed.
     pub(crate) fn set_selection(&mut self, new_sel: Selection) {
-        self.set_selection_inner(new_sel);
-        self.prev_anchor = Some(self.selection);
-    }
-
-    /// Update the selection without resetting the previous anchor.
-    fn set_selection_with_old_anchor(&mut self, new_sel: Selection) {
-        self.set_selection_inner(new_sel);
-    }
-
-    fn set_selection_inner(&mut self, new_sel: Selection) {
         self.selection = new_sel;
     }
 
