@@ -451,8 +451,10 @@ impl Text {
 
         if self.text_changed {
             text_renderer.clear();
+            dbg!("Clear all");
         } else if self.decorations_changed {
             text_renderer.clear_decorations_only();
+            dbg!("Clear decorations");
         }
 
         if self.text_changed {
@@ -608,6 +610,7 @@ impl Text {
     fn handle_focused_event(&mut self, focused: AnyBox, event: &WindowEvent, window: &Window) {
         match focused {
             AnyBox::TextEdit(i) => {
+                dbg!(self.text_edits[i as usize].raw_text());
                 let (style, style_changed) = do_styles(&mut self.text_edits[i as usize].text_box, &self.styles);
                 let result = set_text_style((style, style_changed), || {
                     self.text_edits[i as usize].handle_event(event, window, &self.input_state)

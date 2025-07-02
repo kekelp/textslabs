@@ -537,7 +537,7 @@ impl TextEdit {
                 if !event.state.is_pressed() {
                     return result;
                 }
-                self.cursor_reset();
+                // self.cursor_reset();
                 #[allow(unused)]
                 let mods_state = input_state.modifiers.state();
                 let shift = mods_state.shift_key();
