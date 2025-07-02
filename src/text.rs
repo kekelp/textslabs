@@ -20,6 +20,7 @@ pub struct Text {
     pub(crate) mouse_hit_stack: Vec<(AnyBox, f32)>,
     
     pub(crate) text_changed: bool,
+    pub(crate) using_frame_based_visibility: bool,
     pub(crate) decorations_changed: bool,
 
     pub(crate) current_frame: u64,
@@ -181,6 +182,7 @@ impl Text {
             text_changed: true,
             decorations_changed: true,
             current_frame: 1,
+            using_frame_based_visibility: false,
         }
     }
 
@@ -315,8 +317,9 @@ impl Text {
         original_default_style()
     }
 
-    pub fn next_frame(&mut self) {
+    pub fn advance_frame_and_forget_old_boxes(&mut self) {
         self.current_frame += 1;
+        self.using_frame_based_visibility = true;
     }
 
     pub fn refresh_text_box(&mut self, handle: &TextBoxHandle) {
@@ -426,6 +429,26 @@ impl Text {
 
     pub fn prepare_all(&mut self, text_renderer: &mut TextRenderer) {
 
+        if ! self.text_changed && self.using_frame_based_visibility {
+            // see if any text boxes were just hidden
+            for (_i, text_edit) in self.text_edits.iter_mut() {
+                if text_edit.text_box.last_frame_touched == self.current_frame - 1 {
+                    self.text_changed = true;
+                }
+            }
+            for (_i, text_box) in self.text_boxes.iter_mut() {
+                if text_box.last_frame_touched == self.current_frame - 1 {
+                    self.text_changed = true;
+                }
+
+            }
+            for (_i, text_box) in self.static_text_boxes.iter_mut() {
+                if text_box.last_frame_touched == self.current_frame - 1 {
+                    self.text_changed = true;
+                }
+            }
+        }
+
         if self.text_changed {
             text_renderer.clear();
         } else if self.decorations_changed {
@@ -476,6 +499,8 @@ impl Text {
             }
             self.decorations_changed = false;
         }
+
+        self.using_frame_based_visibility = false;
     }
 
     pub fn handle_events(&mut self, event: &WindowEvent, window: &Window) {

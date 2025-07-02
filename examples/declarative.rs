@@ -51,18 +51,6 @@ impl Pattern {
         }
     }
     
-    fn description(&self) -> &'static str {
-        match self {
-            Pattern::All => "All cells visible",
-            Pattern::Checkerboard => "Checkerboard pattern",
-            Pattern::Cross => "Cross pattern",
-            Pattern::Border => "Border cells only",
-            Pattern::Diagonal => "Main diagonal",
-            Pattern::Corners => "Four corners only",
-            Pattern::Center => "Center 3x3 area",
-            Pattern::Rows => "Alternating rows",
-        }
-    }
     
     fn should_show(&self, row: usize, col: usize) -> bool {
         match self {
@@ -83,12 +71,10 @@ struct DeclarativeGrid {
     text_renderer: TextRenderer,
     
     grid_handles: HashMap<(usize, usize), TextBoxHandle>,
-    description_handle: Option<TextBoxHandle>,
-    comment_handle: Option<TextBoxHandle>,
+    desc_handle: StaticTextBoxHandle,
+    comment_handle: StaticTextBoxHandle,
     
     current_pattern: Pattern,
-    description_style: StyleHandle,
-    comment_style: StyleHandle,
 }
 
 impl DeclarativeGrid {
@@ -104,7 +90,7 @@ impl DeclarativeGrid {
             ..Default::default()
         });
         
-        let description_style = text.add_style(TextStyle {
+        let desc_style = text.add_style(TextStyle {
             font_size: 24.0,
             brush: ColorBrush([200, 200, 255, 255]),
             ..Default::default()
@@ -115,6 +101,24 @@ impl DeclarativeGrid {
             brush: ColorBrush([180, 255, 180, 255]),
             ..Default::default()
         });
+        
+        let comment_handle = text.add_static_text_box(
+            "This is a silly mostly AI-generated example to show how text boxes can be hidden or removed in a declarative style rather than imperative (or \"retained-mode\").",
+            (50.0, 20.0),
+            (700.0, 80.0),
+            0.0,
+        );
+        text.get_static_text_box_mut(&comment_handle).set_can_hide(true);
+        text.get_static_text_box_mut(&comment_handle).set_style(&comment_style);
+        
+        let desc_handle = text.add_static_text_box(
+            "Use ← → to cycle patterns",
+            (50.0, 550.0),
+            (600.0, 40.0),
+            0.0,
+        );
+        text.get_static_text_box_mut(&desc_handle).set_can_hide(true);
+        text.get_static_text_box_mut(&desc_handle).set_style(&desc_style);
         
         let mut grid_handles = HashMap::new();
         for row in 0..5 {
@@ -132,7 +136,8 @@ impl DeclarativeGrid {
                 
                 let text_box = text.get_text_box_mut(&handle);
                 text_box.set_style(&grid_style);
-                text_box.set_can_hide(true); // Keep in memory when hidden
+                // Keep in memory when hidden. Without this, in addition to being auto-hidden, old text boxes would also be marked as to-remove, and removed on the next `Text::garbage_collect` call..
+                text_box.set_can_hide(true);
                 
                 grid_handles.insert((row, col), handle);
             }
@@ -142,16 +147,14 @@ impl DeclarativeGrid {
             text,
             text_renderer,
             grid_handles,
-            description_handle: None,
-            comment_handle: None,
+            desc_handle,
+            comment_handle,
             current_pattern: Pattern::All,
-            description_style,
-            comment_style,
         }
     }
     
     fn declare_frame(&mut self) {
-        self.text.next_frame();
+        self.text.advance_frame_and_forget_old_boxes();
         
         for row in 0..5 {
             for col in 0..5 {
@@ -162,48 +165,8 @@ impl DeclarativeGrid {
             }
         }
         
-        let comment_text = "This is a silly LLM-generated example to show how text boxes can be hidden or removed in a declarative style rather than imperative (or \"retained-mode\").";
-
-        match self.comment_handle {
-            Some(ref handle) => {
-                self.text.refresh_text_box(handle);
-                let text_box = self.text.get_text_box_mut(handle);
-                *text_box.raw_text_mut() = comment_text.to_string();
-            }
-            None => {
-                let handle = self.text.add_text_box(
-                    comment_text.to_string(),
-                    (50.0, 20.0),
-                    (700.0, 80.0),
-                    0.0,
-                );
-                let text_box = self.text.get_text_box_mut(&handle);
-                text_box.set_style(&self.comment_style);
-                text_box.set_can_hide(false);
-                self.comment_handle = Some(handle);
-            }
-        }
-        
-        let description_text = format!("Pattern: {} (Use ← → to cycle)", self.current_pattern.description());
-        match self.description_handle {
-            Some(ref handle) => {
-                self.text.refresh_text_box(handle);
-                let text_box = self.text.get_text_box_mut(handle);
-                *text_box.raw_text_mut() = description_text;
-            }
-            None => {
-                let handle = self.text.add_text_box(
-                    description_text,
-                    (50.0, 550.0),
-                    (600.0, 40.0),
-                    0.0,
-                );
-                let text_box = self.text.get_text_box_mut(&handle);
-                text_box.set_style(&self.description_style);
-                text_box.set_can_hide(false);
-                self.description_handle = Some(handle);
-            }
-        }
+        self.text.refresh_static_text_box(&self.comment_handle);
+        self.text.refresh_static_text_box(&self.desc_handle);
     }
     
     fn render(&mut self, view: &TextureView, device: &Device, queue: &Queue) {
