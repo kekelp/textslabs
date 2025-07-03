@@ -1,15 +1,14 @@
 use crate::*;
 
+/// A struct for rendering text and text edit boxes.
 pub struct TextRenderer {
-    pub text_renderer: ContextlessTextRenderer,
-    pub scale_cx: ScaleContext,
+    pub(crate) text_renderer: ContextlessTextRenderer,
+    pub(crate) scale_cx: ScaleContext,
 }
 
-pub struct ContextlessTextRenderer {
+pub(crate) struct ContextlessTextRenderer {
     pub frame: u64,
     pub tmp_image: Image,
-    pub font_cx: FontContext,
-    pub layout_cx: LayoutContext<ColorBrush>,
 
     pub(crate) glyph_cache: LruCache<GlyphKey, Option<StoredGlyph>, BuildHasherDefault<FxHasher>>,
     pub(crate) mask_atlas_pages: Vec<AtlasPage<GrayImage>>,
@@ -124,7 +123,7 @@ impl ContextlessTextRenderer {
 
 /// Key for building a glyph cache
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct GlyphKey {
+pub(crate) struct GlyphKey {
     /// Font ID
     pub font_id: u64,
     /// Glyph ID
@@ -178,7 +177,7 @@ impl<const N: u8> SubpixelBin<N> {
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Zeroable, Pod)]
-pub struct Quad {
+pub(crate) struct Quad {
     pub pos: [i32; 2],
     pub dim: [u16; 2],
     pub uv_origin: [u16; 2],
@@ -281,6 +280,7 @@ impl StoredGlyph {
     }
 }
 
+/// A color value used for text styling.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ColorBrush(pub [u8; 4]);
 impl Default for ColorBrush {
@@ -291,7 +291,7 @@ impl Default for ColorBrush {
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Params {
+pub(crate) struct Params {
     /// The width of the screen in pixels.
     pub screen_resolution_width: f32,
     /// The height of the screen in pixels.

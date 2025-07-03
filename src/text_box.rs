@@ -1,6 +1,4 @@
-use std::{
-    cell::RefCell, sync::{Arc, RwLock}
-};
+use std::cell::RefCell;
 
 use parley::*;
 use winit::{
@@ -78,8 +76,9 @@ pub(crate) fn original_default_style() -> TextStyle2 {
     } 
 }
 
-pub struct SelectionState {
-    pub(crate) selection: Selection,
+// todo: this struct is now useless.
+pub(crate) struct SelectionState {
+    pub selection: Selection,
 }
 impl SelectionState {
     pub(crate) fn new() -> Self {
@@ -94,7 +93,7 @@ impl SelectionState {
 }
 
 impl<T: AsRef<str>> TextBox<T> {
-    pub fn new(text: T, pos: (f64, f64), size: (f32, f32), depth: f32) -> Self {
+    pub(crate) fn new(text: T, pos: (f64, f64), size: (f32, f32), depth: f32) -> Self {
         Self {
             text,
             style_id: 0,
@@ -364,13 +363,8 @@ impl<T: AsRef<str>> TextBox<T> {
         self.selection.selection.geometry_with(&self.layout, f);
     }
 
-    /// Borrow the text content of the text, including the IME preedit
-    /// region if any.
-    ///
-    /// Application authors should generally prefer [`text`](Self::text). That method excludes the
-    /// IME preedit contents, which are not meaningful for applications to access; the
-    /// in-progress IME content is not itself what the user intends to write.
-    pub fn raw_text(&self) -> &str {
+    /// Returns the text in the text box.
+    pub fn text(&self) -> &str {
         &self.text.as_ref()
     }
 
@@ -402,29 +396,29 @@ impl<T: AsRef<str>> TextBox<T> {
         self.needs_relayout = true;
     }
 
-    #[cfg(feature = "accesskit")]
-    #[inline]
-    /// Perform an accessibility update if the layout is valid.
-    ///
-    /// Returns `None` if the layout is not up-to-date.
-    /// You can call [`refresh_layout`](Self::refresh_layout) before using this method,
-    /// to ensure that the layout is up-to-date.
-    /// The [`accessibility`](PlainEditorDriver::accessibility) method on the driver type
-    /// should be preferred if the contexts are available, which will do this automatically.
-    pub fn try_accessibility(
-        &mut self,
-        update: &mut TreeUpdate,
-        node: &mut Node,
-        next_node_id: impl FnMut() -> NodeId,
-        x_offset: f64,
-        y_offset: f64,
-    ) -> Option<()> {
-        if self.needs_relayout {
-            return None;
-        }
-        self.accessibility_unchecked(update, node, next_node_id, x_offset, y_offset);
-        Some(())
-    }
+    // #[cfg(feature = "accesskit")]
+    // #[inline]
+    // /// Perform an accessibility update if the layout is valid.
+    // ///
+    // /// Returns `None` if the layout is not up-to-date.
+    // /// You can call [`refresh_layout`](Self::refresh_layout) before using this method,
+    // /// to ensure that the layout is up-to-date.
+    // /// The [`accessibility`](PlainEditorDriver::accessibility) method on the driver type
+    // /// should be preferred if the contexts are available, which will do this automatically.
+    // pub fn try_accessibility(
+    //     &mut self,
+    //     update: &mut TreeUpdate,
+    //     node: &mut Node,
+    //     next_node_id: impl FnMut() -> NodeId,
+    //     x_offset: f64,
+    //     y_offset: f64,
+    // ) -> Option<()> {
+    //     if self.needs_relayout {
+    //         return None;
+    //     }
+    //     self.accessibility_unchecked(update, node, next_node_id, x_offset, y_offset);
+    //     Some(())
+    // }
 
     // --- MARK: Internal Helpers ---
     /// Make a cursor at a given byte index.
@@ -473,43 +467,43 @@ impl<T: AsRef<str>> TextBox<T> {
         self.selection.selection = new_sel;
     }
 
-    #[cfg(feature = "accesskit")]
-    /// Perform an accessibility update, assuming that the layout is valid.
-    ///
-    /// The wrapper [`accessibility`](PlainEditorDriver::accessibility) on the driver type should
-    /// be preferred.
-    ///
-    /// You should always call [`refresh_layout`](Self::refresh_layout) before using this method,
-    /// with no other modifying method calls in between.
-    pub(crate) fn accessibility_unchecked(
-        &mut self,
-        update: &mut TreeUpdate,
-        node: &mut Node,
-        next_node_id: impl FnMut() -> NodeId,
-        x_offset: f64,
-        y_offset: f64,
-    ) {
-        self.layout_access.build_nodes(
-            &self.text,
-            &self.layout,
-            update,
-            node,
-            next_node_id,
-            x_offset,
-            y_offset,
-        );
-        if self.show_cursor {
-            if let Some(selection) = self
-                .selection
-                .to_access_selection(&self.layout, &self.layout_access)
-            {
-                node.set_text_selection(selection);
-            }
-        } else {
-            node.clear_text_selection();
-        }
-        node.add_action(accesskit::Action::SetTextSelection);
-    }
+    // #[cfg(feature = "accesskit")]
+    // /// Perform an accessibility update, assuming that the layout is valid.
+    // ///
+    // /// The wrapper [`accessibility`](PlainEditorDriver::accessibility) on the driver type should
+    // /// be preferred.
+    // ///
+    // /// You should always call [`refresh_layout`](Self::refresh_layout) before using this method,
+    // /// with no other modifying method calls in between.
+    // pub(crate) fn accessibility_unchecked(
+    //     &mut self,
+    //     update: &mut TreeUpdate,
+    //     node: &mut Node,
+    //     next_node_id: impl FnMut() -> NodeId,
+    //     x_offset: f64,
+    //     y_offset: f64,
+    // ) {
+    //     self.layout_access.build_nodes(
+    //         &self.text,
+    //         &self.layout,
+    //         update,
+    //         node,
+    //         next_node_id,
+    //         x_offset,
+    //         y_offset,
+    //     );
+    //     if self.show_cursor {
+    //         if let Some(selection) = self
+    //             .selection
+    //             .to_access_selection(&self.layout, &self.layout_access)
+    //         {
+    //             node.set_text_selection(selection);
+    //         }
+    //     } else {
+    //         node.clear_text_selection();
+    //     }
+    //     node.add_action(accesskit::Action::SetTextSelection);
+    // }
 
 
     // --- MARK: Cursor Movement ---
@@ -638,16 +632,22 @@ impl<T: AsRef<str>> TextBox<T> {
 
 pub use parley::Rect;
 
-// todo: use this instead of hit_full
 pub(crate) trait Ext1 {
-    fn hit_bounding_box(&self, cursor_pos: (f64, f64)) -> bool;
+    fn hit_bounding_box(&mut self, cursor_pos: (f64, f64)) -> bool;
 }
-impl Ext1 for Layout<ColorBrush> {
-    fn hit_bounding_box(&self, cursor_pos: (f64, f64)) -> bool {
-        let hit = cursor_pos.0 > -X_TOLERANCE
-            && cursor_pos.0 < self.full_width() as f64 + X_TOLERANCE
-            && cursor_pos.1 > 0.0
-            && cursor_pos.1 < self.height() as f64;
+impl<T: AsRef<str>> Ext1 for TextBox<T> {
+    fn hit_bounding_box(&mut self, cursor_pos: (f64, f64)) -> bool {
+        let offset = (
+            cursor_pos.0 as f64 - self.left,
+            cursor_pos.1 as f64 - self.top,
+        );
+
+        // todo: does this need to refresh layout? if yes, also need to set the stupid thread local style
+        assert!(!self.needs_relayout);
+        let hit = offset.0 > -X_TOLERANCE
+            && offset.0 < self.layout.full_width() as f64 + X_TOLERANCE
+            && offset.1 > 0.0
+            && offset.1 < self.layout.height() as f64;
 
         return hit;
     }

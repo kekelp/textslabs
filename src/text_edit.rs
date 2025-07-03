@@ -120,7 +120,7 @@ pub(crate) fn selection_decorations_changed(initial_selection: Selection, new_se
     initial_range != new_range
 }
 
-/// A text editor widget that wraps a TextBox<String> and provides editing functionality.
+/// A text editor widget that wraps a [`TextBox<String>`] and provides editing functionality.
 pub struct TextEdit {
     pub(crate) text_box: TextBox<String>,
     pub(crate) compose: Option<Range<usize>>,
@@ -175,7 +175,7 @@ impl TextEdit {
     }
 
     pub fn raw_text(&self) -> &str {
-        self.text_box.raw_text()
+        self.text_box.text()
     }
 
     pub fn selected_text(&self) -> Option<&str> {
@@ -737,14 +737,14 @@ impl TextEdit {
         return result;
     }
 
-    #[cfg(feature = "accesskit")]
-    pub(crate) fn handle_accesskit_action_request(&mut self, req: &accesskit::ActionRequest) {
-        if req.action == accesskit::Action::SetTextSelection {
-            if let Some(accesskit::ActionData::SetTextSelection(selection)) = &req.data {
-                self.select_from_accesskit(selection);
-            }
-        }
-    }
+    // #[cfg(feature = "accesskit")]
+    // pub(crate) fn handle_accesskit_action_request(&mut self, req: &accesskit::ActionRequest) {
+    //     if req.action == accesskit::Action::SetTextSelection {
+    //         if let Some(accesskit::ActionData::SetTextSelection(selection)) = &req.data {
+    //             self.select_from_accesskit(selection);
+    //         }
+    //     }
+    // }
 
     // --- MARK: Forced relayout ---
     /// Insert at cursor, or replace selection.
@@ -959,34 +959,34 @@ impl TextEdit {
         }
     }
 
-    #[cfg(feature = "accesskit")]
-    /// Select inside the editor based on the selection provided by accesskit.
-    pub(crate) fn select_from_accesskit(&mut self, selection: &accesskit::TextSelection) {
-        assert!(!self.is_composing());
+    // #[cfg(feature = "accesskit")]
+    // /// Select inside the editor based on the selection provided by accesskit.
+    // pub(crate) fn select_from_accesskit(&mut self, selection: &accesskit::TextSelection) {
+    //     assert!(!self.is_composing());
 
-        self.refresh_layout();
-        if let Some(selection) =
-            Selection::from_access_selection(selection, &self.layout, &self.layout_access)
-        {
-            self.set_selection(selection);
-        }
-    }
+    //     self.refresh_layout();
+    //     if let Some(selection) =
+    //         Selection::from_access_selection(selection, &self.layout, &self.layout_access)
+    //     {
+    //         self.set_selection(selection);
+    //     }
+    // }
 
-    // --- MARK: Rendering ---
-    #[cfg(feature = "accesskit")]
-    /// Perform an accessibility update.
-    pub(crate) fn accessibility(
-        &mut self,
-        update: &mut TreeUpdate,
-        node: &mut Node,
-        next_node_id: impl FnMut() -> NodeId,
-        x_offset: f64,
-        y_offset: f64,
-    ) -> Option<()> {
-        self.refresh_layout();
-        self.accessibility_unchecked(update, node, next_node_id, x_offset, y_offset);
-        Some(())
-    }
+    // // --- MARK: Rendering ---
+    // #[cfg(feature = "accesskit")]
+    // /// Perform an accessibility update.
+    // pub(crate) fn accessibility(
+    //     &mut self,
+    //     update: &mut TreeUpdate,
+    //     node: &mut Node,
+    //     next_node_id: impl FnMut() -> NodeId,
+    //     x_offset: f64,
+    //     y_offset: f64,
+    // ) -> Option<()> {
+    //     self.refresh_layout();
+    //     self.accessibility_unchecked(update, node, next_node_id, x_offset, y_offset);
+    //     Some(())
+    // }
 
     pub(crate) fn undo(&mut self) {
         if ! self.is_composing() {
@@ -1022,15 +1022,6 @@ impl TextEdit {
                 Selection::from_byte_index(&self.text_box.layout, end, Affinity::Upstream);
             self.text_box.set_selection(new_selection);
         }
-    }
-
-    /// Replace the whole text.
-    pub(crate) fn set_text(&mut self, is: &str) {
-        assert!(!self.is_composing());
-
-        self.text_box.text.clear();
-        self.text_box.text.push_str(is);
-        self.text_box.needs_relayout = true;
     }
 
     fn replace_selection(&mut self, s: &str) {
@@ -1104,7 +1095,7 @@ impl Ranges {
 
 /// The result of undoing of redoing a text replace operation.
 #[derive(Debug, Clone)]
-pub struct TextRestore<'a> {
+struct TextRestore<'a> {
     /// A range into the original buffer that should be cleared.
     range_to_clear: Range<usize>,
     /// Text that should be inserted in the place of the cleared range.

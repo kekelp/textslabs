@@ -72,7 +72,7 @@ impl ContextlessTextRenderer {
         depth_stencil: Option<DepthStencilState>,
         params: TextRendererParams,
     ) -> Self {
-        let srgb = format.is_srgb();
+        let _srgb = format.is_srgb();
         // todo put this in the uniform and use it
         
         let atlas_size = params.atlas_page_size.size(device);
@@ -265,8 +265,6 @@ impl ContextlessTextRenderer {
         });
 
         let tmp_image = Image::new();
-        let font_cx = FontContext::new();
-        let layout_cx = LayoutContext::<ColorBrush>::new();
         let frame = 1;
         
         let vertex_buffer = create_vertex_buffer(device, INITIAL_BUFFER_SIZE);
@@ -275,8 +273,6 @@ impl ContextlessTextRenderer {
             frame,
             atlas_size,
             tmp_image,
-            font_cx,
-            layout_cx,
             mask_atlas_pages,
             color_atlas_pages,
             decorations: Vec::with_capacity(50),

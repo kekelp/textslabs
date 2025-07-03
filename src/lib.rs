@@ -25,7 +25,7 @@
 //! 
 //! Handles can't be `Clone`d or constructed manually, so each handle is effectively a unique reference to the corresponding text box. It can never be "dangling".
 //! 
-//! To remove the associated text box, you must remember to call [`Text::remove_text_box`]. This consumes the handle. For example, if every text box is associated to a "widget" in a GUI library, the widget struct will hold a [`TextHandle`]. Then, when the widget is removed, you must call [`Text::remove_text_box`] on its [`TextHandle`].
+//! To remove the associated text box, you must remember to call [`Text::remove_text_box`]. This consumes the handle. For example, if every text box is associated to a "widget" in a GUI library, the widget struct will hold a [`TextBoxHandle`]. Then, when the widget is removed, you must call [`Text::remove_text_box`] on its [`TextBoxHandle`].
 //! 
 //! 
 //! 
@@ -60,8 +60,8 @@ use wgpu::*;
 
 use image::{GrayImage, Luma, Rgba, RgbaImage};
 use parley::{
-    FontContext, Glyph, GlyphRun,
-    Layout, LayoutContext, PositionedLayoutItem,
+    Glyph, GlyphRun,
+    Layout, PositionedLayoutItem,
 };
 use std::borrow::Cow;
 use std::hash::BuildHasherDefault;

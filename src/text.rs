@@ -90,18 +90,18 @@ impl StyleHandle {
 }
 
 #[derive(Debug, Clone)]
-pub struct LastClickInfo {
+pub(crate) struct LastClickInfo {
     pub(crate) time: Instant,
     pub(crate) pos: (f64, f64),
     pub(crate) focused: Option<AnyBox>,
 }
 
 #[derive(Debug, Clone)]
-pub struct MouseState {
-    pub(crate) pointer_down: bool,
-    pub(crate) cursor_pos: (f64, f64),
-    pub(crate) last_click_info: Option<LastClickInfo>,
-    pub(crate) click_count: u32,
+pub(crate) struct MouseState {
+    pub pointer_down: bool,
+    pub cursor_pos: (f64, f64),
+    pub last_click_info: Option<LastClickInfo>,
+    pub click_count: u32,
 }
 
 impl MouseState {
@@ -112,13 +112,6 @@ impl MouseState {
             last_click_info: None,
             click_count: 0,
         }
-    }
-
-    pub fn reset(&mut self) {
-        self.pointer_down = false;
-        self.cursor_pos = (0.0, 0.0);
-        self.last_click_info = None;
-        self.click_count = 0;
     }
 }
 
@@ -451,10 +444,8 @@ impl Text {
 
         if self.text_changed {
             text_renderer.clear();
-            dbg!("Clear all");
         } else if self.decorations_changed {
             text_renderer.clear_decorations_only();
-            dbg!("Clear decorations");
         }
 
         if self.text_changed {
@@ -534,12 +525,13 @@ impl Text {
             }
         }
         for (i, text_box) in self.text_boxes.iter_mut() {
-            if !text_box.hidden && text_box.last_frame_touched == self.current_frame && text_box.hit_full_rect(cursor_pos) {
+            // todo: this is still wrong, where is the precise hit method though
+            if !text_box.hidden && text_box.last_frame_touched == self.current_frame && text_box.hit_bounding_box(cursor_pos) {
                 self.mouse_hit_stack.push((AnyBox::TextBox(i as u32), text_box.depth()));
             }
         }
         for (i, text_box) in self.static_text_boxes.iter_mut() {
-            if !text_box.hidden && text_box.last_frame_touched == self.current_frame && text_box.hit_full_rect(cursor_pos) {
+            if !text_box.hidden && text_box.last_frame_touched == self.current_frame && text_box.hit_bounding_box(cursor_pos) {
                 self.mouse_hit_stack.push((AnyBox::StaticTextBox(i as u32), text_box.depth()));
             }
         }
@@ -606,12 +598,9 @@ impl Text {
         }
     }
     
-    // todo: this can panic maybe
-    // either use slotmaps, or whenever a box is removed, check if it's focused, and clear focused
     fn handle_focused_event(&mut self, focused: AnyBox, event: &WindowEvent, window: &Window) {
         match focused {
             AnyBox::TextEdit(i) => {
-                dbg!(self.text_edits[i as usize].raw_text());
                 let (style, style_changed) = do_styles(&mut self.text_edits[i as usize].text_box, &self.styles);
                 let result = set_text_style((style, style_changed), || {
                     self.text_edits[i as usize].handle_event(event, window, &self.input_state)
