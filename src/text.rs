@@ -317,7 +317,7 @@ impl Text {
         original_default_style()
     }
 
-    pub fn advance_frame_and_forget_old_boxes(&mut self) {
+    pub fn advance_frame_and_hide_boxes(&mut self) {
         self.current_frame += 1;
         self.using_frame_based_visibility = true;
     }
