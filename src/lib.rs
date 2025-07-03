@@ -14,15 +14,12 @@
 //! 
 //! - Parley2 currently uses the built-in Swash CPU rasterizer and a basic homemade atlas renderer to actually show the text on screen. The performance is acceptable but it is not as good as it could be. There is also a questionable bit of unsafe code to circumvent some performance problems in Swash. This might eventually be fixed by switching to the new "Vello Hybrid" renderer.
 //! 
-//! - Parley itself has some limitations:
-//!     - font selection on Linux is incomplete
-//!     - IME area positioning on Linux is wrong
-//!     - some advanced shaping cases are apparently non supported coorrectly
+//! - Parley itself has some limitations, but they will be probably fixed soon.
 //! 
 //! 
 //! # Usage
 //! 
-//! See the `basic` example in the repository to see how the library is used. 
+//! See the `basic.rs` example in the repository to see how the library is used. 
 //! 
 //! This library has a handle-based interface: when adding a text box with [`Text::add_text_box`], a [`TextBoxHandle`] is returned.
 //! 
