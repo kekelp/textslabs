@@ -154,7 +154,7 @@ impl DeclarativeGrid {
     }
     
     fn declare_frame(&mut self) {
-        self.text.advance_frame_and_forget_old_boxes();
+        self.text.advance_frame_and_hide_boxes();
         
         for row in 0..5 {
             for col in 0..5 {
