@@ -27,7 +27,6 @@
 //! 
 //! To remove the associated text box, you must remember to call [`Text::remove_text_box`]. This consumes the handle. For example, if every text box is associated to a "widget" in a GUI library, the widget struct will hold a [`TextHandle`]. Then, when the widget is removed, you must call [`Text::remove_text_box`] on its [`TextHandle`].
 //! 
-//! There is an optional "`drop_bombs`" feature that causes a panic whenever a text box handle is dropped instead of being consumed by the appropriate remove function. This can be useful for debugging.
 //! 
 //! 
 
