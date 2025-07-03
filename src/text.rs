@@ -482,7 +482,6 @@ impl Text {
                     })
                 }            
             }
-            self.text_changed = false;
         }
 
         if self.decorations_changed || self.text_changed {
@@ -499,8 +498,10 @@ impl Text {
                     },
                 }
             }
-            self.decorations_changed = false;
         }
+
+        self.text_changed = false;
+        self.decorations_changed = false;
 
         self.using_frame_based_visibility = false;
     }
