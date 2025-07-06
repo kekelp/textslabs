@@ -20,7 +20,7 @@ fn main() {
 
 const WINDOW_WIDTH: u32 = 800;
 const WINDOW_HEIGHT: u32 = 600;
-const FAKE_RECT_DEPTH: f32 = 0.5; // In front of text (text depth is 1.0)
+const OCCLUDING_RECT_DEPTH: f32 = 0.5; // In front of text (text depth is 1.0)
 
 #[allow(dead_code)]
 struct State {
@@ -65,7 +65,7 @@ impl State {
             ".to_string(),
             (200.0, 200.0), // Center of 800x600 window
             (350.0, 600.0),
-            1.0, // Behind the fake rectangle (depth 0.5)
+            1.0, // Behind the occluding rectangle (depth 0.5)
         );
 
         let text_renderer = TextRenderer::new(&device, &queue, surface_config.format);
@@ -146,30 +146,36 @@ impl State {
     }
 
     fn handle_event_with_occlusion(&mut self, event: &WindowEvent) {
-        // Find which text box would receive the event, and find out if the occluding rectangle would receive the event
-        let topmost_text_box_opt = self.text.find_topmost_text_box(event);
-        let fake_rect_hit = self.cursor_pos.0 > WINDOW_WIDTH as f64 / 2.0;
-        
-        // If no box is hit, or if no other object is hit, there's nothing to compare.
-        // We still use handle_event_with_topmost to avoid doing the hit-scanning twice.
-        let Some(topmost_text_box) = topmost_text_box_opt else {
-            // ... run custom code to handle the rectangle being clicked, if there was any.
-            // We still need to call handle_event_with_topmost with None, e.g. to defocus the text box if needed.  
-            self.text.handle_event_with_topmost(event, &self.window, None);
-            return;
-        };
-        if ! fake_rect_hit {
-            self.text.handle_event_with_topmost(event, &self.window, Some(topmost_text_box));
-            return;
-        };
+        if let WindowEvent::MouseInput { .. } = event {
 
-        // If both text and rectangle are hit, compare depths.
-        let text_depth = self.text.get_text_box_depth(&topmost_text_box);
-        if text_depth < FAKE_RECT_DEPTH {
-            self.text.handle_event_with_topmost(event, &self.window, Some(topmost_text_box));
+            // Find which text box would receive the event, and find out if the occluding rectangle would receive the event
+            let topmost_text_box_opt = self.text.find_topmost_text_box(event);
+            let occluding_rect_hit = self.cursor_pos.0 > WINDOW_WIDTH as f64 / 2.0;
+            
+            // If no box is hit, or if no other object is hit, there's nothing to compare.
+            // We still use handle_event_with_topmost to avoid doing the hit-scanning twice.
+            let Some(topmost_text_box) = topmost_text_box_opt else {
+                // ... run custom code to handle the rectangle being clicked, if there was any.
+                // We still need to call handle_event_with_topmost with None, e.g. to defocus the text box if needed.  
+                self.text.handle_event_with_topmost(event, &self.window, None);
+                return;
+            };
+            if ! occluding_rect_hit {
+                self.text.handle_event_with_topmost(event, &self.window, Some(topmost_text_box));
+                return;
+            };
+
+            // If both text and rectangle are hit, compare depths.
+            let text_depth = self.text.get_text_box_depth(&topmost_text_box);
+            if text_depth < OCCLUDING_RECT_DEPTH {
+                self.text.handle_event_with_topmost(event, &self.window, Some(topmost_text_box));
+            } else {
+                // ... run custom code to handle the rectangle being clicked, if there was any.
+                self.text.handle_event_with_topmost(event, &self.window, None);
+            }
+
         } else {
-            // ... run custom code to handle the rectangle being clicked, if there was any.
-            self.text.handle_event_with_topmost(event, &self.window, None);
+            self.text.handle_event(event, &self.window);
         }
     }
 }

@@ -586,8 +586,10 @@ impl Text {
 
     /// Handle window events for text widgets.
     /// 
-    /// This is the simple interface - use this when text widgets aren't occluded by other objects.
-    /// For complex z-ordering, use [`Text::find_topmost_text_box`] and [`Text::handle_event_with_topmost`].
+    /// This is the simple interface that works when text widgets aren't occluded by other objects.
+    /// For complex z-ordering, use [`Text::find_topmost_text_box`] and [`Text::handle_event_with_topmost`], as described in the crate-level docs and shown in the `occlusion.rs` example.
+    /// 
+    /// Any events other than `winit::WindowEvent::MouseInput` can use either this method or the occlusion method interchangeably.
     pub fn handle_event(&mut self, event: &WindowEvent, window: &Window) {
         self.input_state.handle_event(event);
 
@@ -604,9 +606,9 @@ impl Text {
         }
     }
 
-    /// Find which text widget would receive a mouse event, ignoring other objects.
+    /// Find the topmost text box that would receive mouse events, if it wasn't occluded by any non-text-box objects.
     /// 
-    /// Returns the ID of the topmost text widget at the event position, or None if no widget is hit.
+    /// Returns the handle of the topmost text widget at the event position, or None if no widget is hit.
     /// Use this with [`Text::handle_event_with_topmost`] for complex z-ordering scenarios.
     pub fn find_topmost_text_box(&mut self, event: &WindowEvent) -> Option<AnyBox> {
         // Only handle mouse events that have a position
@@ -634,6 +636,8 @@ impl Text {
     /// 
     /// Use this for complex z-ordering scenarios where text boxs might be occluded by other objects.
     /// Pass `Some(text_box_id)` if a text box should receive the event, or `None` if it's occluded.
+    /// 
+    /// If the text box is occluded, this function should still be called with `None`, so that text boxes can defocus.
     pub fn handle_event_with_topmost(&mut self, event: &WindowEvent, window: &Window, topmost_text_box: Option<AnyBox>) {
         self.input_state.handle_event(event);
 
@@ -689,7 +693,7 @@ impl Text {
             }
         }
         self.focused = new_focus;
-        // todo: could skip some rerenders here if the old focus wasn't editable and had collapsed selection
+        // todo: could skip some rerenders here if the old focus wasn't editable and had collapsed selection.
         self.decorations_changed = true;
     }
 
