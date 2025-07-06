@@ -141,7 +141,7 @@ pub(crate) struct GlyphKey {
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct SubpixelBin<const N: u8>(pub u8);
+pub(crate) struct SubpixelBin<const N: u8>(pub u8);
 
 fn quantize<const N: u8>(pos: f32) -> (i32, f32, SubpixelBin::<N>) {
     let trunc = pos as i32;

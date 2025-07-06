@@ -1048,7 +1048,7 @@ impl TextEdit {
 
 
 #[derive(Clone, Debug)]
-pub struct TextEditHistory {
+pub(crate) struct TextEditHistory {
     undo_text: String,
     redo_text: String,
     history: Vec<RecordedOp>,

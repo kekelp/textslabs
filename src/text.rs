@@ -33,7 +33,7 @@ pub struct Text {
 /// 
 /// Obtained when creating a text edit box with [`Text::add_text_edit()`].
 /// 
-/// Use with [`Text::get_text_edit()`] to get a reference to the corresponding  [`TextEdit`]. 
+/// Use with [`Text::get_text_edit()`] to get a reference to the corresponding [`TextEdit`]. 
 #[derive(Debug)]
 pub struct TextEditHandle {
     pub(crate) i: u32,
@@ -43,7 +43,7 @@ pub struct TextEditHandle {
 /// 
 /// Obtained when creating a text box with [`Text::add_text_box()`].
 /// 
-/// Use with [`Text::get_text_box()`] to get a reference to the corresponding  [`TextBox<String>`]
+/// Use with [`Text::get_text_box()`] to get a reference to the corresponding [`TextBox<String>`]
 #[derive(Debug)]
 pub struct TextBoxHandle {
     pub(crate) i: u32,
@@ -53,7 +53,7 @@ pub struct TextBoxHandle {
 /// 
 /// Obtained when creating a static text box with [`Text::add_static_text_box()`].
 /// 
-/// Use with [`Text::get_static_text_box()`] to get a reference to the corresponding  [`TextBox<&'static str>`]
+/// Use with [`Text::get_static_text_box()`] to get a reference to the corresponding [`TextBox<&'static str>`]
 #[derive(Debug)]
 pub struct StaticTextBoxHandle {
     pub(crate) i: u32,
@@ -246,28 +246,22 @@ impl Text {
         TextEditHandle { i }
     }
 
-    /// Add a single-line text edit and return a handle.
-    /// 
-    /// The handle can be used with [`Text::get_text_edit()`] to get a reference to the [`TextEdit`] that was added.
-    /// 
-    /// The [`TextEdit`] must be manually removed by calling [`Text::remove_text_edit()`].
-    #[must_use]
-    pub fn add_single_line_edit(&mut self, text: String, pos: (f64, f64), size: (f32, f32), depth: f32) -> TextEditHandle {
-        let mut text_edit = TextEdit::new_single_line(text, pos, size, depth);
-        text_edit.text_box.last_frame_touched = self.current_frame;
-        let i = self.text_edits.insert(text_edit) as u32;
-        self.text_changed = true;
-        TextEditHandle { i }
-    }
 
-    /// Get a reference to a text box.
+    /// Get a mutable reference to a text box.
     /// 
     /// `handle` is the handle that was returned when first creating the text box with [`Text::add_text_box()`].
+    /// 
+    /// This is a fast lookup operation that does not require any hashing.
     pub fn get_text_box_mut(&mut self, handle: &TextBoxHandle) -> &mut TextBox<String> {
         self.text_changed = true;
         &mut self.text_boxes[handle.i as usize]
     }
 
+    /// Get a reference to a text box.
+    /// 
+    /// `handle` is the handle that was returned when first creating the text box with [`Text::add_text_box()`].
+    ///    
+    /// This is a fast lookup operation that does not require any hashing.
     pub fn get_text_box(&self, handle: &TextBoxHandle) -> &TextBox<String> {
         &self.text_boxes[handle.i as usize]
     }
@@ -275,6 +269,8 @@ impl Text {
     /// Get a mutable reference to a static text box.
     /// 
     /// `handle` is the handle that was returned when first creating the static text box with [`Text::add_static_text_box()`].
+    ///    
+    /// This is a fast lookup operation that does not require any hashing.
     pub fn get_static_text_box_mut(&mut self, handle: &StaticTextBoxHandle) -> &mut TextBox<&'static str> {
         self.text_changed = true;
         &mut self.static_text_boxes[handle.i as usize]
@@ -283,6 +279,8 @@ impl Text {
     /// Get a reference to a static text box.
     /// 
     /// `handle` is the handle that was returned when first creating the static text box with [`Text::add_static_text_box()`].
+    ///    
+    /// This is a fast lookup operation that does not require any hashing.
     pub fn get_static_text_box(&self, handle: &StaticTextBoxHandle) -> &TextBox<&'static str> {
         &self.static_text_boxes[handle.i as usize]
     }
@@ -290,6 +288,8 @@ impl Text {
     /// Get a mutable reference to a text edit.
     /// 
     /// `handle` is the handle that was returned when first creating the text edit with [`Text::add_text_edit()`] or similar functions.
+    ///    
+    /// This is a fast lookup operation that does not require any hashing.
     pub fn get_text_edit_mut(&mut self, handle: &TextEditHandle) -> &mut TextEdit {
         self.text_changed = true;
         &mut self.text_edits[handle.i as usize]
@@ -298,10 +298,13 @@ impl Text {
     /// Get a reference to a text edit.
     /// 
     /// `handle` is the handle that was returned when first creating the text edit with [`Text::add_text_edit()`] or similar functions.
+    ///    
+    /// This is a fast lookup operation that does not require any hashing.
     pub fn get_text_edit(&self, handle: &TextEditHandle) -> &TextEdit {
         &self.text_edits[handle.i as usize]
     }
 
+    /// Get the [`parley::Layout`] for a text box, recomputing it only if needed.
     pub fn get_text_box_layout(&mut self, handle: &TextBoxHandle) -> &Layout<ColorBrush> {
         let text_box = &mut self.text_boxes[handle.i as usize];
         let (style, style_changed) = do_styles(text_box, &self.styles);
@@ -310,6 +313,7 @@ impl Text {
         })
     }
 
+    /// Get the [`parley::Layout`] for a text box, recomputing it only if needed.
     pub fn get_static_text_box_layout(&mut self, handle: &StaticTextBoxHandle) -> &Layout<ColorBrush> {
         let static_text_box = &mut self.static_text_boxes[handle.i as usize];
         let (style, style_changed) = do_styles(static_text_box, &self.styles);
@@ -318,6 +322,7 @@ impl Text {
         })
     }
 
+    /// Get the [`parley::Layout`] for a text edit box, recomputing it only if needed.
     pub fn get_text_edit_layout(&mut self, handle: &TextEditHandle) -> &Layout<ColorBrush> {
         let text_edit = &mut self.text_edits[handle.i as usize];
         let (style, style_changed) = do_styles(&mut text_edit.text_box, &self.styles);
@@ -356,23 +361,39 @@ impl Text {
         original_default_style()
     }
 
+    /// Advance an internal global frame counter that causes all text boxes to be implicitly marked as outdated and hidden.
+    /// 
+    /// You can then use [`Text::refresh_text_box()`] to "refresh" only the text boxes that should stay visible.
+    /// 
+    /// This allows to control the visibility of text boxes in a more "declarative" way.
+    /// 
+    /// Additionally, you can also use [`TextBox::set_can_hide()`] to decide if boxes should stay hidden in the background, or if they should marked as "to delete". You can the call [`Text::garbage_collect()`] to remove all the outdated text boxes that were marked as "to delete". 
     pub fn advance_frame_and_hide_boxes(&mut self) {
         self.current_frame += 1;
         self.using_frame_based_visibility = true;
     }
 
+    /// Refresh a text box, causing it to stay visible even if [`Text::advance_frame_and_hide_boxes()`] was called.
+    /// 
+    /// Part of the "declarative" interface.  
     pub fn refresh_text_box(&mut self, handle: &TextBoxHandle) {
         if let Some(text_box) = self.text_boxes.get_mut(handle.i as usize) {
             text_box.last_frame_touched = self.current_frame;
         }
     }
 
+    /// Refresh a text box, causing it to stay visible even if [`Text::advance_frame_and_hide_boxes()`] was called.
+    /// 
+    /// Part of the "declarative" interface.
     pub fn refresh_static_text_box(&mut self, handle: &StaticTextBoxHandle) {
         if let Some(text_box) = self.static_text_boxes.get_mut(handle.i as usize) {
             text_box.last_frame_touched = self.current_frame;
         }
     }
 
+    /// Refresh a text edit box, causing it to stay visible even if [`Text::advance_frame_and_hide_boxes()`] was called.
+    /// 
+    /// Part of the "declarative" interface.
     pub fn refresh_text_edit(&mut self, handle: &TextEditHandle) {
         if let Some(text_edit) = self.text_edits.get_mut(handle.i as usize) {
             text_edit.text_box.last_frame_touched = self.current_frame;
@@ -380,6 +401,13 @@ impl Text {
     }
 
 
+    /// Remove all text boxes that were made outdated by [`Text::advance_frame_and_hide_boxes()`], were not refreshed with [`Text::refresh_text_box()`], and were not set to remain as hidden with [`TextBox::set_can_hide()`].
+    /// 
+    /// After calling this function, all handles to the text boxes that were deleted this way become "dangling", and using them in functions like [`Text::get_text_box()`] or [`Text::remove_text_box()`] will cause panics or incorrect results.
+    /// 
+    /// If the structs holding the text handles are managed in a similar declarative way, this should be easy to avoid, but mixing declarative and imperative approaches to removing can lead to problems. 
+    /// 
+    /// On the other hand, it's fine to use the declarative system for *hiding* text boxes, but sticking to imperative [`Text::remove_text_box()`] calls to remove them.
     pub fn garbage_collect(&mut self) {
         // Clear focus if the focused text box will be removed
         if let Some(focused) = self.focused {
