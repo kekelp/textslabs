@@ -615,36 +615,7 @@ impl Text {
             _ => return None,
         };
 
-        self.mouse_hit_stack.clear();
-
-        // Find all text widgets at this position
-        for (i, text_edit) in self.text_edits.iter_mut() {
-            if !text_edit.text_box.hidden && text_edit.text_box.last_frame_touched == self.current_frame && text_edit.text_box.hit_full_rect(cursor_pos) {
-                self.mouse_hit_stack.push((AnyBox::TextEdit(i as u32), text_edit.depth()));
-            }
-        }
-        for (i, text_box) in self.text_boxes.iter_mut() {
-            if !text_box.hidden && text_box.last_frame_touched == self.current_frame && text_box.hit_bounding_box(cursor_pos) {
-                self.mouse_hit_stack.push((AnyBox::TextBox(i as u32), text_box.depth()));
-            }
-        }
-        for (i, text_box) in self.static_text_boxes.iter_mut() {
-            if !text_box.hidden && text_box.last_frame_touched == self.current_frame && text_box.hit_bounding_box(cursor_pos) {
-                self.mouse_hit_stack.push((AnyBox::StaticTextBox(i as u32), text_box.depth()));
-            }
-        }
-
-        // Find the topmost (lowest depth value)
-        let mut topmost = None;
-        let mut top_z = f32::MAX;
-        for (id, z) in self.mouse_hit_stack.iter() {
-            if *z < top_z {
-                top_z = *z;
-                topmost = Some(*id);
-            }
-        }
-
-        topmost
+        self.find_topmost_at_pos(cursor_pos)
     }
 
     /// Get the depth of a text box by its handle.
@@ -684,18 +655,16 @@ impl Text {
         }
     }
 
-    fn refocus(&mut self) {
+    fn find_topmost_at_pos(&mut self, cursor_pos: (f64, f64)) -> Option<AnyBox> {
         self.mouse_hit_stack.clear();
 
-        let cursor_pos = self.input_state.mouse.cursor_pos;
-
+        // Find all text widgets at this position
         for (i, text_edit) in self.text_edits.iter_mut() {
             if !text_edit.text_box.hidden && text_edit.text_box.last_frame_touched == self.current_frame && text_edit.text_box.hit_full_rect(cursor_pos) {
                 self.mouse_hit_stack.push((AnyBox::TextEdit(i as u32), text_edit.depth()));
             }
         }
         for (i, text_box) in self.text_boxes.iter_mut() {
-            // todo: this is still wrong, where is the precise hit method though
             if !text_box.hidden && text_box.last_frame_touched == self.current_frame && text_box.hit_bounding_box(cursor_pos) {
                 self.mouse_hit_stack.push((AnyBox::TextBox(i as u32), text_box.depth()));
             }
@@ -706,18 +675,26 @@ impl Text {
             }
         }
 
-        let mut new_focus = None;
+        // Find the topmost (lowest depth value)
+        let mut topmost = None;
         let mut top_z = f32::MAX;
-        for (id, z) in self.mouse_hit_stack.iter().rev() {
+        for (id, z) in self.mouse_hit_stack.iter() {
             if *z < top_z {
                 top_z = *z;
-                new_focus = Some(id.clone());
+                topmost = Some(*id);
             }
         }
 
+        topmost
+    }
+
+    fn refocus(&mut self) {
+        let cursor_pos = self.input_state.mouse.cursor_pos;
+        let new_focus = self.find_topmost_at_pos(cursor_pos);
+
         if new_focus != self.focused {
             if let Some(old_focus) = self.focused {
-                self.remove_focus(old_focus)
+                self.remove_focus(old_focus);
             }
         }
 
