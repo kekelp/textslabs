@@ -593,7 +593,8 @@ impl Text {
 
         if let WindowEvent::MouseInput { state, button, .. } = event {
             if state.is_pressed() && *button == MouseButton::Left {
-                self.refocus();
+                let new_focus = self.find_topmost_at_pos(self.input_state.mouse.cursor_pos);
+                self.refocus(new_focus);
                 self.handle_click_counting();
             }
         }
@@ -638,13 +639,7 @@ impl Text {
 
         if let WindowEvent::MouseInput { state, button, .. } = event {
             if state.is_pressed() && *button == MouseButton::Left {
-                // Use the provided topmost instead of calling refocus()
-                if topmost_text_box != self.focused {
-                    if let Some(old_focus) = self.focused {
-                        self.remove_focus(old_focus);
-                    }
-                }
-                self.focused = topmost_text_box;
+                self.refocus(topmost_text_box);
                 self.handle_click_counting();
             }
         }
@@ -687,17 +682,15 @@ impl Text {
         topmost
     }
 
-    fn refocus(&mut self) {
-        let cursor_pos = self.input_state.mouse.cursor_pos;
-        let new_focus = self.find_topmost_at_pos(cursor_pos);
-
+    fn refocus(&mut self, new_focus: Option<AnyBox>) {
         if new_focus != self.focused {
             if let Some(old_focus) = self.focused {
                 self.remove_focus(old_focus);
             }
         }
-
         self.focused = new_focus;
+        // todo: could skip some rerenders here if the old focus wasn't editable and had collapsed selection
+        self.decorations_changed = true;
     }
 
     fn handle_click_counting(&mut self) {
