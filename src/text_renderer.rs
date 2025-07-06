@@ -167,16 +167,6 @@ fn quantize<const N: u8>(pos: f32) -> (i32, f32, SubpixelBin::<N>) {
     return (adjusted_trunc, fract, SubpixelBin::<N>(bin))
 }
 
-impl<const N: u8> SubpixelBin<N> {    
-    pub fn as_float(&self) -> f32 {
-        if self.0 == 0 {
-            0.0
-        } else {
-            (2 * self.0 - 1) as f32 / (2 * N) as f32
-        }
-    }
-}
-
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Zeroable, Pod)]
 pub(crate) struct Quad {

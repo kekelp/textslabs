@@ -118,7 +118,7 @@ impl<T: AsRef<str>> TextBox<T> {
             clip_rect: None,
             hidden: false,
             last_frame_touched: 0,
-            can_hide: true,
+            can_hide: false,
         }
     }
 
@@ -373,6 +373,7 @@ impl<T: AsRef<str>> TextBox<T> {
         &self.text.as_ref()
     }
 
+    // Returns a mutable reference to the text box's text buffer.
     pub fn raw_text_mut(&mut self) -> &mut T {
         self.needs_relayout = true;
         &mut self.text

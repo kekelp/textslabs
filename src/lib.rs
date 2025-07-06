@@ -19,16 +19,67 @@
 //! 
 //! # Usage
 //! 
-//! See the `basic.rs` example in the repository to see how the library is used. 
+//! See the `basic.rs` example in the repository to see how the library is used.
 //! 
-//! This library has a handle-based interface: when adding a text box with [`Text::add_text_box`], a [`TextBoxHandle`] is returned.
+//! ## Core Structs
 //! 
-//! Handles can't be `Clone`d or constructed manually, so each handle is effectively a unique reference to the corresponding text box. It can never be "dangling".
+//! The two main structs are:
+//! - [`Text`] - manages collections of text boxes and styles
+//! - [`TextRenderer`] - renders the text stored in [`Text`] on the GPU 
 //! 
-//! To remove the associated text box, you must remember to call [`Text::remove_text_box`]. This consumes the handle. For example, if every text box is associated to a "widget" in a GUI library, the widget struct will hold a [`TextBoxHandle`]. Then, when the widget is removed, you must call [`Text::remove_text_box`] on its [`TextBoxHandle`].
+//! ## Imperative Mode
 //! 
+//! The main way to use the library is imperative with a handle-based system:
 //! 
+//! ```rust
+//! let mut text = Text::new();
 //! 
+//! // Add text widgets and get handles
+//! let handle = text.add_text_box("Hello".to_string(), (10.0, 10.0), (200.0, 50.0), 0.0);
+//! let edit_handle = text.add_text_edit("Type here".to_string(), (10.0, 70.0), (200.0, 30.0), 0.0);
+//! 
+//! // Use handles to access and modify widgets.
+//! text.get_text_box_mut(&handle).set_style(&my_style);
+//! text.get_text_box_mut(&handle).raw_text_mut().push_str("... World");
+//! text.get_text_box_mut(&handle).set_hidden(true);
+//! 
+//! // Manually remove text boxes
+//! text.remove_text_box(handle);
+//! text.remove_text_edit(edit_handle);
+//! ```
+//! 
+//! Handles can't be `Clone`d or constructed manually, ensuring they're unique references that can never be "dangling".
+//! 
+//! [`Text`] uses slabs internally, so `get_text_box_mut()` and all similar functions are basically as fast as an array lookup. There is no hashing involved.
+//! 
+//! This is ideal for retained-mode GUI libraries, but declarative GUI libraries that diff their node trees can still use the imperative interface, calling the `Text::remove_*` functions when widgets are removed.
+//! 
+//! ## Declarative Mode
+//! 
+//! There is an optional declarative interface for hiding and removing text boxes. For hiding text boxes declaratively:
+//! 
+//! ```ignore
+//! // Each frame, advance an internal frame counter,
+//! //   and implicitly mark all text boxes as "outdated"
+//! text.advance_frame_and_hide_boxes();
+//! 
+//! // "Refresh" only the nodes that should remain visible
+//! for node in current_nodes {
+//!     text.refresh_text_box(&node.text_box_handle);
+//! }
+//! 
+//! // Text boxes that were not refreshed will be remain hidden.
+//! ```
+//! 
+//! For removing text boxes declaratively, then, you can call use [`Text::garbage_collect()`] to remove all the text boxes that were made outdated by [`Text::advance_frame_and_hide_boxes()`] and were not refreshed.
+//! 
+//! Individual text boxes can be kept hidden in the background by using [`TextBox::set_can_hide()`]. [`Text::garbage_collect()`] will skip removing text boxes that "can hide".
+//! 
+//! Because [`Text::garbage_collect()`] mass-removes text boxes without consuming their handles, the handles become "dangling" and should not be reused. Only use this if your widget management is also declarative, and you can be confident that the handles won't be kept around.
+//! 
+//! [`Text::garbage_collect()`] is the only function that breaks the "no dangling handles" promise. If you use imperative [`Text::remove_text_box()`] calls and avoid `garbage_collect()`, then there is no way for the handle system to break.
+//! 
+//! This library was written for use in Keru. Keru is a declarative library that diffs node trees, so it uses imperative-mode calls to remove widgets. However, it uses the declarative interface for hiding text boxes that need to be kept hidden in the background.
 
 mod setup;
 pub use setup::*;
