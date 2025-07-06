@@ -38,7 +38,7 @@ thread_local! {
     static CLIPBOARD: RefCell<Clipboard> = RefCell::new(Clipboard::new().unwrap());
 }
 
-pub fn with_clipboard<R>(f: impl FnOnce(&mut Clipboard) -> R) -> R {
+pub(crate) fn with_clipboard<R>(f: impl FnOnce(&mut Clipboard) -> R) -> R {
     let res = CLIPBOARD.with_borrow_mut(|clipboard| f(clipboard));
     res
 }

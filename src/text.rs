@@ -134,14 +134,11 @@ impl MouseState {
     }
 }
 
-/// Identifier for any type of text widget (text box, static text box, or text edit).
+/// Enum that can represent any type of text box (text box, static text box, or text edit).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AnyBox {
-    /// A text edit widget.
     TextEdit(u32),
-    /// A text box widget.
     TextBox(u32),
-    /// A static text box widget.
     StaticTextBox(u32),
 }
 
@@ -783,12 +780,12 @@ impl Text {
     }
 }
 
-
+// todo: remove all of this, and I guess just pass the arguments all the way down normally.
 thread_local! {
     static CURRENT_TEXT_STYLE: RefCell<Option<(TextStyle2, bool)>> = RefCell::new(None);
 }
 
-pub fn with_text_style<R>(f: impl FnOnce(&TextStyle2, bool) -> R) -> R {
+pub(crate) fn with_text_style<R>(f: impl FnOnce(&TextStyle2, bool) -> R) -> R {
     CURRENT_TEXT_STYLE.with_borrow(|style| {
         match style.as_ref() {
             Some((s, changed)) => f(s, *changed),
@@ -797,7 +794,7 @@ pub fn with_text_style<R>(f: impl FnOnce(&TextStyle2, bool) -> R) -> R {
     })
 }
 
-pub fn set_text_style<R>(style: (TextStyle2, bool), f: impl FnOnce() -> R) -> R {
+pub(crate) fn set_text_style<R>(style: (TextStyle2, bool), f: impl FnOnce() -> R) -> R {
     CURRENT_TEXT_STYLE.with_borrow_mut(|current_style| {
         *current_style = Some((style.0, style.1));
     });

@@ -113,7 +113,7 @@ pub use text_box::*;
 mod text_edit;
 pub use text_edit::*;
 
-pub use parley::{FontWeight, FontStyle, LineHeight, FontStack, TextStyle as ParleyTextStyle};
+pub use parley::TextStyle as ParleyTextStyle;
 
 /// Text style.
 /// 
