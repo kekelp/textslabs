@@ -90,12 +90,12 @@
 //! - Run `let topmost_text_box = `[`Text::find_topmost_text_box()`] to find out which text box *would* have received the event, if it wasn't for other objects.
 //! - Run some custom code to find out which other object *would* have received the event, if it wasn't for text boxes.
 //! - Compare the depth of the two candidates. For the text box, use [`Text::get_text_box_depth()`].
-//! - If the text box is on top, run [`Text::handle_event_with_topmost(Some(topmost_text_box))`], which will handle the event normally, but avoid looking for the topmost box again.
-//! - If the text box, is occluded, run [`Text::handle_event_with_topmost(None)`].
+//! - If the text box is on top, run [`Text::handle_event_with_topmost`]`(Some(topmost_text_box))`, which will handle the event normally, but avoid looking for the topmost box again.
+//! - If the text box, is occluded, run [`Text::handle_event_with_topmost`]`(None)`.
+//! 
+//! For any `winit::WindowEvent` other than a `winit::WindowEvent::MouseInput`, this process can be skipped, and you can just call [`Text::handle_event`].
 //! 
 //! The `occlusion.rs` example shows how this works.
-//! 
-//! For any `winit::WindowEvent` other than a `winit::WindowEvent::MouseInput`, this process can be skipped, and you can just call [`Text::handle_event`]
 
 
 mod setup;
