@@ -1,3 +1,5 @@
+// This example shows how to handle events in cases where text boxes might be occluded by other objects, using the process described in the crate-level docs.
+
 use parley2::*;
 use std::{sync::Arc, time::Duration};
 use wgpu::*;
@@ -57,9 +59,12 @@ impl State {
         
         // Create a text edit in the center of the screen (which will be in the occluded right half)
         let text_edit_handle = text.add_text_edit(
-            "This text is in the center.\nTry clicking here!\nIt should be occluded on the right half.".to_string(),
-            (250.0, 250.0), // Center of 800x600 window
-            (300.0, 600.0),
+            "The right half of this text is occluded.\n\
+            I tried rendering something on the right half, but it takes too much code. \n\
+            Just imagine that the right half of the screen is occluded by a semitransparent panel.
+            ".to_string(),
+            (200.0, 200.0), // Center of 800x600 window
+            (350.0, 600.0),
             1.0, // Behind the fake rectangle (depth 0.5)
         );
 

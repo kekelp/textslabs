@@ -93,7 +93,7 @@
 //! - If the text box is on top, run [`Text::handle_event_with_topmost(Some(topmost_text_box))`], which will handle the event normally, but avoid looking for the topmost box again.
 //! - If the text box, is occluded, run [`Text::handle_event_with_topmost(None)`].
 //! 
-
+//! The `occlusion.rs` example shows how this works.
 
 
 mod setup;
