@@ -43,6 +43,11 @@ pub fn with_clipboard<R>(f: impl FnOnce(&mut Clipboard) -> R) -> R {
     res
 }
 
+/// A text box.
+/// 
+/// This struct can't be created directly. Instead, use [`Text::add_text_box`]/[`Text::add_static_text_box`] to create one within [`Text`] and get a [`TextBoxHandle`]/[`StaticTextBoxHandle`] back.
+/// 
+/// Then, the handle can be used to get a reference to the `TextBox` with [`Text::get_text_box`]/[`Text::get_static_text_box`], or the equivalent `mut` functions.
 pub struct TextBox<T: AsRef<str>> {
     pub(crate) text: T,
     pub(crate) style: StyleHandle,
@@ -187,7 +192,7 @@ impl<T: AsRef<str>> TextBox<T> {
         });
     }
 
-    pub fn handle_event(&mut self, event: &WindowEvent, _window: &Window, input_state: &TextInputState) -> TextEventResult {
+    pub(crate) fn handle_event(&mut self, event: &WindowEvent, _window: &Window, input_state: &TextInputState) -> TextEventResult {
         if self.hidden {
             return TextEventResult::new();
         }

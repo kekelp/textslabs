@@ -6,6 +6,9 @@ use winit::{event::{Modifiers, MouseButton, WindowEvent}, window::Window};
 const MULTICLICK_DELAY: f64 = 0.4;
 const MULTICLICK_TOLERANCE_SQUARED: f64 = 26.0;
 
+/// Centralized struct that holds collections of [`TextBox`]es, [`TextEdit`]s, [`TextStyle2`]s.
+/// 
+/// For rendering, a [`TextRenderer`] is also needed.
 pub struct Text {
     pub(crate) text_boxes: Slab<TextBox<String>>,
     pub(crate) static_text_boxes: Slab<TextBox<&'static str>>,
@@ -26,16 +29,25 @@ pub struct Text {
     pub(crate) current_frame: u64,
 }
 
+/// Handle for a text edit box.
+/// 
+/// Use with [`Text::get_text_edit`] to get a reference to the corresponding  [`TextEdit`]. 
 #[derive(Debug)]
 pub struct TextEditHandle {
     pub(crate) i: u32,
 }
 
+/// Handle for a text box.
+/// 
+/// Use with [`Text::get_text_box`] to get a reference to the corresponding  [`TextBox<String>`]
 #[derive(Debug)]
 pub struct TextBoxHandle {
     pub(crate) i: u32,
 }
 
+/// Handle for a static text box.
+/// 
+/// Use with [`Text::get_static_text_box`] to get a reference to the corresponding  [`TextBox<&'static str>`]
 #[derive(Debug)]
 pub struct StaticTextBoxHandle {
     pub(crate) i: u32,
@@ -80,6 +92,7 @@ impl Drop for StaticTextBoxHandle {
     }
 }
 
+/// Handle for a text style. Use with Text methods to apply styles to text.
 pub struct StyleHandle {
     pub(crate) i: u32,
 }
@@ -123,7 +136,7 @@ pub(crate) enum AnyBox {
 }
 
 #[derive(Debug, Clone)]
-pub struct TextInputState {
+pub(crate) struct TextInputState {
     pub(crate) mouse: MouseState,
     pub(crate) modifiers: Modifiers,
 }
@@ -155,6 +168,7 @@ impl TextInputState {
 }
 
 pub(crate) const DEFAULT_STYLE_I: usize = 0;
+/// Pre-defined handle for the default text style.
 pub const DEFAULT_STYLE_HANDLE: StyleHandle = StyleHandle { i: DEFAULT_STYLE_I as u32 };
 
 impl Text {

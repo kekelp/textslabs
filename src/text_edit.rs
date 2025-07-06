@@ -11,7 +11,7 @@ const INSET: f32 = 2.0;
 
 use crate::*;
 
-/// Defines how newlines are entered in a text edit box
+/// Defines how newlines are entered in a text edit box.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NewlineMode {
     /// Enter key inserts newlines (default for multi-line)
@@ -30,7 +30,7 @@ impl Default for NewlineMode {
     }
 }
 
-/// Result of handling a window event on a text box.
+/// Result of handling a window event.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TextEventResult {
     /// Whether the text content changed
@@ -57,10 +57,7 @@ impl TextEventResult {
     
 }
 
-/// A string which is potentially discontiguous in memory.
-///
-/// This is returned by [`PlainEditor::text`], as the IME preedit
-/// area needs to be efficiently excluded from its return value.
+/// A string that may be split into two parts (used for IME composition).
 #[derive(Debug, Clone, Copy)]
 pub struct SplitString<'source>(pub(crate) [&'source str; 2]);
 
@@ -120,7 +117,11 @@ pub(crate) fn selection_decorations_changed(initial_selection: Selection, new_se
     initial_range != new_range
 }
 
-/// A text editor widget that wraps a [`TextBox<String>`] and provides editing functionality.
+/// A text edit box.
+/// 
+/// This struct can't be created directly. Instead, use [`Text::add_text_edit`] or similar functions to create one within [`Text`] and get a [`TextEditHandle`] back.
+/// 
+/// Then, the handle can be used to get a reference to the `TextEdit` with [`Text::get_text_edit`] or [`Text::get_text_edit_mut`].
 pub struct TextEdit {
     pub(crate) text_box: TextBox<String>,
     pub(crate) compose: Option<Range<usize>>,
@@ -159,7 +160,7 @@ impl TextEdit {
     }
 
     #[must_use]
-    pub fn handle_event(&mut self, event: &WindowEvent, window: &Window, input_state: &TextInputState) -> TextEventResult {
+    pub(crate) fn handle_event(&mut self, event: &WindowEvent, window: &Window, input_state: &TextInputState) -> TextEventResult {
         self.handle_event_editable(event, window, input_state)
     }
 

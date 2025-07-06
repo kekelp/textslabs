@@ -47,6 +47,9 @@ pub use text_edit::*;
 
 pub use parley::{FontWeight, FontStyle, LineHeight, FontStack, TextStyle as ParleyTextStyle};
 
+/// Text style.
+/// 
+/// To use it, first add a `TextStyle` into a [`Text`] with [`Text::add_style`], and get a [`StyleHandle`] back. Then, use [`TextBox::set_style`] to make a text box use the style.
 pub type TextStyle2 = ParleyTextStyle<'static, ColorBrush>;
 
 use bytemuck::{Pod, Zeroable};

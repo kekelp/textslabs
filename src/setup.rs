@@ -25,7 +25,9 @@ const ATLAS_BIND_GROUP_LAYOUT: BindGroupLayoutDescriptor = wgpu::BindGroupLayout
     label: Some("atlas bind group layout"),
 };
 
+/// Configuration parameters for the text renderer.
 pub struct TextRendererParams {
+    /// Size of texture atlas pages used for glyph caching.
     pub atlas_page_size: AtlasPageSize,
 }
 impl Default for TextRendererParams {
@@ -36,12 +38,18 @@ impl Default for TextRendererParams {
         Self { atlas_page_size }
     }
 }
+/// Determines the size of texture atlas pages for glyph storage.
 pub enum AtlasPageSize {
+    /// Fixed size in pixels.
     Flat(u32),
+    /// Use the current device's maximum texture size.
     CurrentDeviceMax,
-    DownlevelWrbgl2Max, // 2048
-    DownlevelMax, // 2048
-    WgpuMax, // 8192
+    /// Use WebGL2 downlevel maximum (2048px).
+    DownlevelWrbgl2Max,
+    /// Use general downlevel maximum (2048px).
+    DownlevelMax,
+    /// Use WGPU's default maximum (8192px).
+    WgpuMax,
 }
 impl AtlasPageSize {
     fn size(self, device: &Device) -> u32 {

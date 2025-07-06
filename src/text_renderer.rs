@@ -1,6 +1,8 @@
 use crate::*;
 
-/// A struct for rendering text and text edit boxes.
+/// A struct for rendering text and text edit boxes on the GPU.
+/// 
+/// Uses traditional CPU-size rasterizing and a dynamic glyph atlas on the GPU.
 pub struct TextRenderer {
     pub(crate) text_renderer: ContextlessTextRenderer,
     pub(crate) scale_cx: ScaleContext,
@@ -280,7 +282,7 @@ impl StoredGlyph {
     }
 }
 
-/// A color value used for text styling.
+/// RGBA color value for text rendering.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ColorBrush(pub [u8; 4]);
 impl Default for ColorBrush {
