@@ -1,0 +1,201 @@
+use parley2::*;
+use std::{sync::Arc, time::Duration};
+use wgpu::*;
+use winit::{
+    dpi::LogicalSize,
+    event::WindowEvent,
+    event_loop::EventLoop,
+    window::Window,
+    keyboard::ModifiersState,
+};
+
+fn main() {
+    let event_loop = EventLoop::new().unwrap();
+    event_loop
+        .run_app(&mut Application { state: None })
+        .unwrap();
+}
+
+const WINDOW_WIDTH: u32 = 800;
+const WINDOW_HEIGHT: u32 = 600;
+const FAKE_RECT_DEPTH: f32 = 0.5; // In front of text (text depth is 1.0)
+
+#[allow(dead_code)]
+struct State {
+    device: wgpu::Device,
+    queue: wgpu::Queue,
+    surface: wgpu::Surface<'static>,
+    surface_config: SurfaceConfiguration,
+    window: Arc<Window>,
+
+    text_renderer: TextRenderer,
+    text: Text,
+
+    text_edit_handle: TextEditHandle,
+    cursor_pos: (f64, f64),
+    modifiers: ModifiersState,
+}
+
+impl State {
+    fn new(window: Arc<Window>) -> Self {
+        let physical_size = window.inner_size();
+        let instance = Instance::new(InstanceDescriptor::default());
+        let adapter =
+            pollster::block_on(instance.request_adapter(&RequestAdapterOptions::default()))
+                .unwrap();
+        let (device, queue) =
+            pollster::block_on(adapter.request_device(&DeviceDescriptor::default(), None)).unwrap();
+        let surface = instance
+            .create_surface(window.clone())
+            .expect("Create surface");
+        let surface_config = surface
+            .get_default_config(&adapter, physical_size.width, physical_size.height)
+            .unwrap();
+        surface.configure(&device, &surface_config);
+
+        let mut text = Text::new();
+        
+        // Create a text edit in the center of the screen (which will be in the occluded right half)
+        let text_edit_handle = text.add_text_edit(
+            "This text is in the center.\nTry clicking here!\nIt should be occluded on the right half.".to_string(),
+            (250.0, 250.0), // Center of 800x600 window
+            (300.0, 100.0),
+            1.0, // Behind the fake rectangle (depth 0.5)
+        );
+
+        let text_renderer = TextRenderer::new(&device, &queue, surface_config.format);
+
+        Self {
+            device,
+            queue,
+            surface,
+            surface_config,
+            window,
+            text_renderer,
+            text,
+            text_edit_handle,
+            cursor_pos: (0.0, 0.0),
+            modifiers: ModifiersState::default(),
+        }
+    }
+
+    fn window_event(
+        &mut self,
+        event_loop: &winit::event_loop::ActiveEventLoop,
+        event: WindowEvent,
+    ) {
+        self.handle_event_with_occlusion(&event);
+
+        match event {
+            WindowEvent::Resized(size) => {
+                self.surface_config.width = size.width;
+                self.surface_config.height = size.height;
+                self.surface.configure(&self.device, &self.surface_config);
+                self.text_renderer.update_resolution(size.width as f32, size.height as f32);
+                self.window.request_redraw();
+            }
+            WindowEvent::RedrawRequested => {
+                let frame = self.surface.get_current_texture().unwrap();
+                let view = frame.texture.create_view(&TextureViewDescriptor::default());
+
+                self.text.prepare_all(&mut self.text_renderer);
+                self.text_renderer.gpu_load(&self.device, &self.queue);
+
+                let mut encoder = self.device.create_command_encoder(&CommandEncoderDescriptor { label: None });
+                {
+                    let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+                        color_attachments: &[Some(RenderPassColorAttachment {
+                            view: &view,
+                            resolve_target: None,
+                            ops: Operations {
+                                load: LoadOp::Clear(wgpu::Color {
+                                    r: 0.1,
+                                    g: 0.1,
+                                    b: 0.2,
+                                    a: 1.0,
+                                }),
+                                store: wgpu::StoreOp::Store,
+                            },
+                        })],
+                        ..Default::default()
+                    });
+
+                    self.text_renderer.render(&mut pass);
+                }
+
+                self.queue.submit(Some(encoder.finish()));
+                frame.present();
+
+                std::thread::sleep(Duration::from_millis(16));
+                self.window.request_redraw();
+            }
+            WindowEvent::ModifiersChanged(modifiers) => {
+                self.modifiers = modifiers.state();
+            }
+            WindowEvent::CursorMoved { position, .. } => {
+                self.cursor_pos = (position.x, position.y);
+            }
+            WindowEvent::CloseRequested => event_loop.exit(),
+            _ => {}
+        }
+    }
+
+    fn handle_event_with_occlusion(&mut self, event: &WindowEvent) {
+        // Find which text box would receive the event, and find out if the occluding rectangle would receive the event
+        let topmost_text_box_opt = self.text.find_topmost_text_box(event);
+        let fake_rect_hit = self.cursor_pos.0 > WINDOW_WIDTH as f64 / 2.0;        
+        
+        // If no box is hit, or if no other object is hit, there's nothing to compare.
+        // We still use handle_event_with_topmost to avoid doing the hit-scanning twice.
+        let Some(topmost_text_box) = topmost_text_box_opt else {
+            // ... run custom code to handle the rectangle being clicked, if there was any.
+            // We still need to call handle_event_with_topmost with None, e.g. to defocus the text box if needed.  
+            self.text.handle_event_with_topmost(event, &self.window, None);
+            return;
+        };
+        if ! fake_rect_hit {
+            self.text.handle_event_with_topmost(event, &self.window, Some(topmost_text_box));
+            return;
+        };
+
+        // If both text and rectangle are hit, compare depths.
+        let text_depth = self.text.get_text_box_depth(&topmost_text_box);
+        if text_depth < FAKE_RECT_DEPTH {
+            self.text.handle_event_with_topmost(event, &self.window, Some(topmost_text_box));
+        } else {
+            self.text.handle_event_with_topmost(event, &self.window, None);
+        }
+    }
+}
+
+struct Application {
+    state: Option<State>,
+}
+
+impl winit::application::ApplicationHandler for Application {
+    fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
+        if self.state.is_some() {
+            return;
+        }
+
+        let window_attributes = Window::default_attributes()
+            .with_inner_size(LogicalSize::new(WINDOW_WIDTH as f64, WINDOW_HEIGHT as f64))
+            .with_resizable(false)
+            .with_title("Occlusion Test - Right half is occluded");
+        let window = Arc::new(event_loop.create_window(window_attributes).unwrap());
+        window.set_ime_allowed(true);
+
+        self.state = Some(State::new(window));
+    }
+
+    fn window_event(
+        &mut self,
+        event_loop: &winit::event_loop::ActiveEventLoop,
+        _window_id: winit::window::WindowId,
+        event: WindowEvent,
+    ) {
+        if let Some(state) = &mut self.state {
+            state.window_event(event_loop, event);
+        };
+    }
+}
