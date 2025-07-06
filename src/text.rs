@@ -31,7 +31,9 @@ pub struct Text {
 
 /// Handle for a text edit box.
 /// 
-/// Use with [`Text::get_text_edit`] to get a reference to the corresponding  [`TextEdit`]. 
+/// Obtained when creating a text edit box with [`Text::add_text_edit()`].
+/// 
+/// Use with [`Text::get_text_edit()`] to get a reference to the corresponding  [`TextEdit`]. 
 #[derive(Debug)]
 pub struct TextEditHandle {
     pub(crate) i: u32,
@@ -39,7 +41,9 @@ pub struct TextEditHandle {
 
 /// Handle for a text box.
 /// 
-/// Use with [`Text::get_text_box`] to get a reference to the corresponding  [`TextBox<String>`]
+/// Obtained when creating a text box with [`Text::add_text_box()`].
+/// 
+/// Use with [`Text::get_text_box()`] to get a reference to the corresponding  [`TextBox<String>`]
 #[derive(Debug)]
 pub struct TextBoxHandle {
     pub(crate) i: u32,
@@ -47,7 +51,9 @@ pub struct TextBoxHandle {
 
 /// Handle for a static text box.
 /// 
-/// Use with [`Text::get_static_text_box`] to get a reference to the corresponding  [`TextBox<&'static str>`]
+/// Obtained when creating a static text box with [`Text::add_static_text_box()`].
+/// 
+/// Use with [`Text::get_static_text_box()`] to get a reference to the corresponding  [`TextBox<&'static str>`]
 #[derive(Debug)]
 pub struct StaticTextBoxHandle {
     pub(crate) i: u32,
@@ -198,6 +204,11 @@ impl Text {
         self.style_version_id_counter
     }
 
+    /// Add a text box and return a handle.
+    /// 
+    /// The handle can be used with [`Text::get_text_box()`] to get a reference to the [`TextBox`] that was added.
+    /// 
+    /// The [`TextBox`] must be manually removed by calling [`Text::remove_text_box()`].
     #[must_use]
     pub fn add_text_box(&mut self, text: String, pos: (f64, f64), size: (f32, f32), depth: f32) -> TextBoxHandle {
         let mut text_box = TextBox::new(text, pos, size, depth);
@@ -234,15 +245,9 @@ impl Text {
         TextEditHandle { i }
     }
 
-    #[must_use]
-    pub fn add_text_edit_with_newline_mode(&mut self, text: String, pos: (f64, f64), size: (f32, f32), depth: f32, newline_mode: NewlineMode) -> TextEditHandle {
-        let mut text_edit = TextEdit::new_with_newline_mode(text, pos, size, depth, newline_mode);
-        text_edit.text_box.last_frame_touched = self.current_frame;
-        let i = self.text_edits.insert(text_edit) as u32;
-        self.text_changed = true;
-        TextEditHandle { i }
-    }
-
+    /// Get a reference to a text box.
+    /// 
+    /// `handle` is the handle that was returned when first creating the text box with [`Text::add_text_box()`].
     pub fn get_text_box_mut(&mut self, handle: &TextBoxHandle) -> &mut TextBox<String> {
         self.text_changed = true;
         &mut self.text_boxes[handle.i as usize]
@@ -394,6 +399,9 @@ impl Text {
         });
     }
 
+    /// Remove a text box.
+    /// 
+    /// `handle` is the handle that was returned when first creating the text box with [`Text::add_text_box()`].
     pub fn remove_text_box(&mut self, handle: TextBoxHandle) {
         self.text_changed = true;
         if let Some(AnyBox::TextBox(i)) = self.focused {
