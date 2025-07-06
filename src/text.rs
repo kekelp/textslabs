@@ -636,7 +636,6 @@ impl Text {
     pub fn handle_event_with_topmost(&mut self, event: &WindowEvent, window: &Window, topmost_text_box: Option<AnyBox>) {
         self.input_state.handle_event(event);
 
-        // todo: this is ai slop and wrong
         if let WindowEvent::MouseInput { state, button, .. } = event {
             if state.is_pressed() && *button == MouseButton::Left {
                 // Use the provided topmost instead of calling refocus()

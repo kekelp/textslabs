@@ -59,7 +59,7 @@ impl State {
         let text_edit_handle = text.add_text_edit(
             "This text is in the center.\nTry clicking here!\nIt should be occluded on the right half.".to_string(),
             (250.0, 250.0), // Center of 800x600 window
-            (300.0, 100.0),
+            (300.0, 600.0),
             1.0, // Behind the fake rectangle (depth 0.5)
         );
 
@@ -143,7 +143,7 @@ impl State {
     fn handle_event_with_occlusion(&mut self, event: &WindowEvent) {
         // Find which text box would receive the event, and find out if the occluding rectangle would receive the event
         let topmost_text_box_opt = self.text.find_topmost_text_box(event);
-        let fake_rect_hit = self.cursor_pos.0 > WINDOW_WIDTH as f64 / 2.0;        
+        let fake_rect_hit = self.cursor_pos.0 > WINDOW_WIDTH as f64 / 2.0;
         
         // If no box is hit, or if no other object is hit, there's nothing to compare.
         // We still use handle_event_with_topmost to avoid doing the hit-scanning twice.
@@ -163,6 +163,7 @@ impl State {
         if text_depth < FAKE_RECT_DEPTH {
             self.text.handle_event_with_topmost(event, &self.window, Some(topmost_text_box));
         } else {
+            // ... run custom code to handle the rectangle being clicked, if there was any.
             self.text.handle_event_with_topmost(event, &self.window, None);
         }
     }
