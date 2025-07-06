@@ -134,10 +134,14 @@ impl MouseState {
     }
 }
 
+/// Identifier for any type of text widget (text box, static text box, or text edit).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum AnyBox {
+pub enum AnyBox {
+    /// A text edit widget.
     TextEdit(u32),
+    /// A text box widget.
     TextBox(u32),
+    /// A static text box widget.
     StaticTextBox(u32),
 }
 
@@ -580,8 +584,11 @@ impl Text {
         self.using_frame_based_visibility = false;
     }
 
-    pub fn handle_events(&mut self, event: &WindowEvent, window: &Window) {
-
+    /// Handle window events for text widgets.
+    /// 
+    /// This is the simple interface - use this when text widgets aren't occluded by other objects.
+    /// For complex z-ordering, use [`Text::find_topmost_text_box`] and [`Text::handle_event_with_topmost`].
+    pub fn handle_event(&mut self, event: &WindowEvent, window: &Window) {
         self.input_state.handle_event(event);
 
         if let WindowEvent::MouseInput { state, button, .. } = event {
@@ -591,6 +598,86 @@ impl Text {
             }
         }
 
+        if let Some(focused) = self.focused {    
+            self.handle_focused_event(focused, event, window);
+        }
+    }
+
+    /// Find which text widget would receive a mouse event, ignoring other objects.
+    /// 
+    /// Returns the ID of the topmost text widget at the event position, or None if no widget is hit.
+    /// Use this with [`Text::handle_event_with_topmost`] for complex z-ordering scenarios.
+    pub fn find_topmost_text_box(&mut self, event: &WindowEvent) -> Option<AnyBox> {
+        // Only handle mouse events that have a position
+        let cursor_pos = match event {
+            WindowEvent::MouseInput { .. } => self.input_state.mouse.cursor_pos,
+            WindowEvent::CursorMoved { position, .. } => (position.x, position.y),
+            _ => return None,
+        };
+
+        self.mouse_hit_stack.clear();
+
+        // Find all text widgets at this position
+        for (i, text_edit) in self.text_edits.iter_mut() {
+            if !text_edit.text_box.hidden && text_edit.text_box.last_frame_touched == self.current_frame && text_edit.text_box.hit_full_rect(cursor_pos) {
+                self.mouse_hit_stack.push((AnyBox::TextEdit(i as u32), text_edit.depth()));
+            }
+        }
+        for (i, text_box) in self.text_boxes.iter_mut() {
+            if !text_box.hidden && text_box.last_frame_touched == self.current_frame && text_box.hit_bounding_box(cursor_pos) {
+                self.mouse_hit_stack.push((AnyBox::TextBox(i as u32), text_box.depth()));
+            }
+        }
+        for (i, text_box) in self.static_text_boxes.iter_mut() {
+            if !text_box.hidden && text_box.last_frame_touched == self.current_frame && text_box.hit_bounding_box(cursor_pos) {
+                self.mouse_hit_stack.push((AnyBox::StaticTextBox(i as u32), text_box.depth()));
+            }
+        }
+
+        // Find the topmost (lowest depth value)
+        let mut topmost = None;
+        let mut top_z = f32::MAX;
+        for (id, z) in self.mouse_hit_stack.iter() {
+            if *z < top_z {
+                top_z = *z;
+                topmost = Some(*id);
+            }
+        }
+
+        topmost
+    }
+
+    /// Get the depth of a text box by its handle.
+    /// 
+    /// Used for comparing depths when integrating with other objects that might occlude text boxs.
+    pub fn get_text_box_depth(&self, text_box_id: &AnyBox) -> f32 {
+        match text_box_id {
+            AnyBox::TextEdit(i) => self.text_edits.get(*i as usize).map(|te| te.depth()).unwrap_or(f32::MAX),
+            AnyBox::TextBox(i) => self.text_boxes.get(*i as usize).map(|tb| tb.depth()).unwrap_or(f32::MAX),
+            AnyBox::StaticTextBox(i) => self.static_text_boxes.get(*i as usize).map(|tb| tb.depth()).unwrap_or(f32::MAX),
+        }
+    }
+
+    /// Handle window events with a pre-determined topmost text box.
+    /// 
+    /// Use this for complex z-ordering scenarios where text boxs might be occluded by other objects.
+    /// Pass `Some(text_box_id)` if a text box should receive the event, or `None` if it's occluded.
+    pub fn handle_event_with_topmost(&mut self, event: &WindowEvent, window: &Window, topmost_text_box: Option<AnyBox>) {
+        self.input_state.handle_event(event);
+
+        // todo: this is ai slop and wrong
+        if let WindowEvent::MouseInput { state, button, .. } = event {
+            if state.is_pressed() && *button == MouseButton::Left {
+                // Use the provided topmost instead of calling refocus()
+                if topmost_text_box != self.focused {
+                    if let Some(old_focus) = self.focused {
+                        self.remove_focus(old_focus);
+                    }
+                }
+                self.focused = topmost_text_box;
+                self.handle_click_counting();
+            }
+        }
 
         if let Some(focused) = self.focused {    
             self.handle_focused_event(focused, event, window);

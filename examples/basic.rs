@@ -133,7 +133,7 @@ impl State {
         event_loop: &winit::event_loop::ActiveEventLoop,
         event: WindowEvent,
     ) {
-        self.text.handle_events(&event, &self.window);
+        self.text.handle_event(&event, &self.window);
 
         match event {
             WindowEvent::Resized(size) => {

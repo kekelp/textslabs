@@ -80,6 +80,21 @@
 //! [`Text::garbage_collect()`] is the only function that breaks the "no dangling handles" promise. If you use imperative [`Text::remove_text_box()`] calls and avoid `garbage_collect()`, then there is no way for the handle system to break.
 //! 
 //! This library was written for use in Keru. Keru is a declarative library that diffs node trees, so it uses imperative-mode calls to remove widgets. However, it uses the declarative interface for hiding text boxes that need to be kept hidden in the background.
+//! 
+//! ## Interaction
+//! 
+//! Text boxes and text edit boxes are fully interactive. In simple situations, this requires a single function call: [`Text::handle_event()`]. This function takes a `winit::WindowEvent` and updates all the text boxes accordingly. If it is a key press, it will go to the currently focused text box. If it is a mouse click, it will go to the topmost text box on the click's position, and so on.
+//! 
+//! As great as this sounds, sometimes text boxes are occluded by other objects, such as an opaque panel. In this case, handling a mouse click event requires information that the `Text` struct doesn't have, so the integration needs to be a bit more complex. The process is this:
+//! 
+//! - Run [let topmost_text_box = [`Text::find_topmost_text_box()`] to find out which text box *would* have received the event, if it wasn't for other objects.
+//! - Run some custom code to find out which other object *would* have received the event, if it wasn't for text boxes.
+//! - Compare the depth of the two candidates. For the text box, use [`Text::get_text_box_depth()`].
+//! - If the text box is on top, run [`Text::handle_event_with_topmost(Some(topmost_text_box))`], which will handle the event normally, but avoid looking for the topmost box again.
+//! - If the text box, is occluded, run [`Text::handle_event_with_topmost(None)`].
+//! 
+
+
 
 mod setup;
 pub use setup::*;
