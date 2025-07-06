@@ -218,6 +218,11 @@ impl Text {
         TextBoxHandle { i }
     }
 
+    /// Add a static text box and return a handle.
+    /// 
+    /// The handle can be used with [`Text::get_static_text_box()`] to get a reference to the [`TextBox`] that was added.
+    /// 
+    /// The [`TextBox`] must be manually removed by calling [`Text::remove_static_text_box()`].
     #[must_use]
     pub fn add_static_text_box(&mut self, text: &'static str, pos: (f64, f64), size: (f32, f32), depth: f32) -> StaticTextBoxHandle {
         let mut text_box = TextBox::new(text, pos, size, depth);
@@ -227,6 +232,11 @@ impl Text {
         StaticTextBoxHandle { i }
     }
 
+    /// Add a text edit and return a handle.
+    /// 
+    /// The handle can be used with [`Text::get_text_edit()`] to get a reference to the [`TextEdit`] that was added.
+    /// 
+    /// The [`TextEdit`] must be manually removed by calling [`Text::remove_text_edit()`].
     #[must_use]
     pub fn add_text_edit(&mut self, text: String, pos: (f64, f64), size: (f32, f32), depth: f32) -> TextEditHandle {
         let mut text_edit = TextEdit::new(text, pos, size, depth);
@@ -236,6 +246,11 @@ impl Text {
         TextEditHandle { i }
     }
 
+    /// Add a single-line text edit and return a handle.
+    /// 
+    /// The handle can be used with [`Text::get_text_edit()`] to get a reference to the [`TextEdit`] that was added.
+    /// 
+    /// The [`TextEdit`] must be manually removed by calling [`Text::remove_text_edit()`].
     #[must_use]
     pub fn add_single_line_edit(&mut self, text: String, pos: (f64, f64), size: (f32, f32), depth: f32) -> TextEditHandle {
         let mut text_edit = TextEdit::new_single_line(text, pos, size, depth);
@@ -257,20 +272,32 @@ impl Text {
         &self.text_boxes[handle.i as usize]
     }
 
+    /// Get a mutable reference to a static text box.
+    /// 
+    /// `handle` is the handle that was returned when first creating the static text box with [`Text::add_static_text_box()`].
     pub fn get_static_text_box_mut(&mut self, handle: &StaticTextBoxHandle) -> &mut TextBox<&'static str> {
         self.text_changed = true;
         &mut self.static_text_boxes[handle.i as usize]
     }
 
+    /// Get a reference to a static text box.
+    /// 
+    /// `handle` is the handle that was returned when first creating the static text box with [`Text::add_static_text_box()`].
     pub fn get_static_text_box(&self, handle: &StaticTextBoxHandle) -> &TextBox<&'static str> {
         &self.static_text_boxes[handle.i as usize]
     }
 
+    /// Get a mutable reference to a text edit.
+    /// 
+    /// `handle` is the handle that was returned when first creating the text edit with [`Text::add_text_edit()`] or similar functions.
     pub fn get_text_edit_mut(&mut self, handle: &TextEditHandle) -> &mut TextEdit {
         self.text_changed = true;
         &mut self.text_edits[handle.i as usize]
     }
 
+    /// Get a reference to a text edit.
+    /// 
+    /// `handle` is the handle that was returned when first creating the text edit with [`Text::add_text_edit()`] or similar functions.
     pub fn get_text_edit(&self, handle: &TextEditHandle) -> &TextEdit {
         &self.text_edits[handle.i as usize]
     }
@@ -413,6 +440,9 @@ impl Text {
         std::mem::forget(handle);
     }
 
+    /// Remove a static text box.
+    /// 
+    /// `handle` is the handle that was returned when first creating the static text box with [`Text::add_static_text_box()`].
     pub fn remove_static_text_box(&mut self, handle: StaticTextBoxHandle) {
         self.text_changed = true;
         if let Some(AnyBox::StaticTextBox(i)) = self.focused {
@@ -424,6 +454,9 @@ impl Text {
         std::mem::forget(handle);
     }
 
+    /// Remove a text edit.
+    /// 
+    /// `handle` is the handle that was returned when first creating the text edit with [`Text::add_text_edit()`] or similar functions.
     pub fn remove_text_edit(&mut self, handle: TextEditHandle) {
         self.text_changed = true;
         if let Some(AnyBox::TextEdit(i)) = self.focused {
