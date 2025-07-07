@@ -368,7 +368,7 @@ impl Text {
     /// 
     /// This allows to control the visibility of text boxes in a more "declarative" way.
     /// 
-    /// Additionally, you can also use [`TextBox::set_can_hide()`] to decide if boxes should stay hidden in the background, or if they should marked as "to delete". You can the call [`Text::garbage_collect()`] to remove all the outdated text boxes that were marked as "to delete". 
+    /// Additionally, you can also use [`TextBox::set_can_hide()`] to decide if boxes should stay hidden in the background, or if they should marked as "to delete". You can the call [`Text::remove_old_nodes()`] to remove all the outdated text boxes that were marked as "to delete". 
     pub fn advance_frame_and_hide_boxes(&mut self) {
         self.current_frame += 1;
         self.using_frame_based_visibility = true;
@@ -409,7 +409,7 @@ impl Text {
     /// If the structs holding the text handles are managed in a similar declarative way, this should be easy to avoid, but mixing declarative and imperative approaches to removing can lead to problems. 
     /// 
     /// On the other hand, it's fine to use the declarative system for *hiding* text boxes, but sticking to imperative [`Text::remove_text_box()`] calls to remove them.
-    pub fn garbage_collect(&mut self) {
+    pub fn remove_old_nodes(&mut self) {
         // Clear focus if the focused text box will be removed
         if let Some(focused) = self.focused {
             let should_clear_focus = match focused {

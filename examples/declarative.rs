@@ -136,7 +136,7 @@ impl DeclarativeGrid {
                 
                 let text_box = text.get_text_box_mut(&handle);
                 text_box.set_style(&grid_style);
-                // Keep in memory when hidden. Without this, in addition to being auto-hidden, old text boxes would also be marked as to-remove, and removed on the next `Text::garbage_collect` call..
+                // Keep in memory when hidden. Without this, in addition to being auto-hidden, old text boxes would also be marked as to-remove, and removed on the next `Text::remove_old_nodes` call..
                 text_box.set_can_hide(true);
                 
                 grid_handles.insert((row, col), handle);

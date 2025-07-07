@@ -19,13 +19,11 @@
 //! 
 //! # Usage
 //! 
-//! See the `basic.rs` example in the repository to see how the library is used.
-//! 
-//! ## Core Structs
+//! See the `basic.rs` example in the repository to see how the library can be used.
 //! 
 //! The two main structs are:
 //! - [`Text`] - manages collections of text boxes and styles
-//! - [`TextRenderer`] - renders the text stored in [`Text`] on the GPU 
+//! - [`TextRenderer`] - renders the text on the GPU 
 //! 
 //! ## Imperative Mode
 //! 
@@ -34,11 +32,11 @@
 //! ```rust
 //! let mut text = Text::new();
 //! 
-//! // Add text widgets and get handles
+//! // Add text boxes and get handles
 //! let handle = text.add_text_box("Hello".to_string(), (10.0, 10.0), (200.0, 50.0), 0.0);
 //! let edit_handle = text.add_text_edit("Type here".to_string(), (10.0, 70.0), (200.0, 30.0), 0.0);
 //! 
-//! // Use handles to access and modify widgets.
+//! // Use handles to access and modify the boxes
 //! text.get_text_box_mut(&handle).set_style(&my_style);
 //! text.get_text_box_mut(&handle).raw_text_mut().push_str("... World");
 //! text.get_text_box_mut(&handle).set_hidden(true);
@@ -48,11 +46,11 @@
 //! text.remove_text_edit(edit_handle);
 //! ```
 //! 
-//! Handles can't be `Clone`d or constructed manually, ensuring they're unique references that can never be "dangling".
+//! This interface is ideal for retained-mode GUI libraries, but declarative GUI libraries that diff their node trees can still use the imperative interface, calling the `Text::remove_*` functions when the nodes holding the handles are removed.
+//! 
+//! Handles can't be `Clone`d or constructed manually, so they are unique references that can never be "dangling".
 //! 
 //! [`Text`] uses slabs internally, so `get_text_box_mut()` and all similar functions are basically as fast as an array lookup. There is no hashing involved.
-//! 
-//! This is ideal for retained-mode GUI libraries, but declarative GUI libraries that diff their node trees can still use the imperative interface, calling the `Text::remove_*` functions when widgets are removed.
 //! 
 //! ## Declarative Mode
 //! 
@@ -60,7 +58,7 @@
 //! 
 //! ```ignore
 //! // Each frame, advance an internal frame counter,
-//! //   and implicitly mark all text boxes as "outdated"
+//! // and implicitly mark all text boxes as "outdated"
 //! text.advance_frame_and_hide_boxes();
 //! 
 //! // "Refresh" only the nodes that should remain visible
@@ -68,16 +66,17 @@
 //!     text.refresh_text_box(&node.text_box_handle);
 //! }
 //! 
-//! // Text boxes that were not refreshed will be remain hidden.
+//! // Text boxes that were not refreshed will be remain hidden,
+//! // and they will be skipped when rendering or handling events.
 //! ```
 //! 
-//! For removing text boxes declaratively, then, you can call use [`Text::garbage_collect()`] to remove all the text boxes that were made outdated by [`Text::advance_frame_and_hide_boxes()`] and were not refreshed.
+//! There's also an experimental function for removing text boxes declaratively. Call [`Text::remove_old_nodes()`] to remove all the text boxes that were made outdated by [`Text::advance_frame_and_hide_boxes()`] and were not refreshed.
 //! 
-//! Individual text boxes can be kept hidden in the background by using [`TextBox::set_can_hide()`]. [`Text::garbage_collect()`] will skip removing text boxes that "can hide".
+//! Individual text boxes can be kept hidden in the background by using [`TextBox::set_can_hide()`]. [`Text::remove_old_nodes()`] will skip removing text boxes that "can hide".
 //! 
-//! Because [`Text::garbage_collect()`] mass-removes text boxes without consuming their handles, the handles become "dangling" and should not be reused. Only use this if your widget management is also declarative, and you can be confident that the handles won't be kept around.
+//! Because [`Text::remove_old_nodes()`] mass-removes text boxes without consuming their handles, the handles become "dangling" and should not be reused. Only use this if your node management is also declarative, so you can be confident that the handles won't be kept around.
 //! 
-//! [`Text::garbage_collect()`] is the only function that breaks the "no dangling handles" promise. If you use imperative [`Text::remove_text_box()`] calls and avoid `garbage_collect()`, then there is no way for the handle system to break.
+//! [`Text::remove_old_nodes()`] is the only function that breaks the "no dangling handles" promise. If you use imperative [`Text::remove_text_box()`] calls and avoid `remove_old_nodes()`, then there is no way for the handle system to break.
 //! 
 //! This library was written for use in Keru. Keru is a declarative library that diffs node trees, so it uses imperative-mode calls to remove widgets. However, it uses the declarative interface for hiding text boxes that need to be kept hidden in the background.
 //! 
@@ -85,7 +84,7 @@
 //! 
 //! Text boxes and text edit boxes are fully interactive. In simple situations, this requires a single function call: [`Text::handle_event()`]. This function takes a `winit::WindowEvent` and updates all the text boxes accordingly. If it is a key press, it will go to the currently focused text box. If it is a mouse click, it will go to the topmost text box on the click's position, and so on.
 //! 
-//! As great as this sounds, sometimes text boxes are occluded by other objects, such as an opaque panel. In this case, handling a mouse click event requires information that the `Text` struct doesn't have, so the integration needs to be a bit more complex. The process is this:
+//! As great as this sounds, sometimes text boxes are occluded by other objects, such as an opaque panel. In this case, handling a mouse click event requires information that the [`Text`] struct doesn't have, so the integration needs to be a bit more complex. The process is this:
 //! 
 //! - Run `let topmost_text_box = `[`Text::find_topmost_text_box()`] to find out which text box *would* have received the event, if it wasn't for other objects.
 //! - Run some custom code to find out which other object *would* have received the event, if it wasn't for text boxes.
