@@ -119,9 +119,9 @@ pub(crate) fn selection_decorations_changed(initial_selection: Selection, new_se
 
 /// A text edit box.
 /// 
-/// This struct can't be created directly. Instead, use [`Text::add_text_edit`] or similar functions to create one within [`Text`] and get a [`TextEditHandle`] back.
+/// This struct can't be created directly. Instead, use [`Text::add_text_edit()`] or similar functions to create one within [`Text`] and get a [`TextEditHandle`] back.
 /// 
-/// Then, the handle can be used to get a reference to the `TextEdit` with [`Text::get_text_edit`] or [`Text::get_text_edit_mut`].
+/// Then, the handle can be used to get a reference to the `TextEdit` with [`Text::get_text_edit()`] or [`Text::get_text_edit_mut()`].
 pub struct TextEdit {
     pub(crate) text_box: TextBox<String>,
     pub(crate) compose: Option<Range<usize>>,
@@ -908,7 +908,7 @@ impl TextEdit {
     ///
     /// This starts composing. Composing is reset by calling [`clear_compose`](Self::clear_compose).
     /// While composing, it is a logic error to call anything other than
-    /// [`Self::set_compose`] or [`Self::clear_compose`].
+    /// [`Self::set_compose()`] or [`Self::clear_compose()`].
     ///
     /// The preedit text replaces the current selection if this call starts composing.
     ///

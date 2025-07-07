@@ -584,7 +584,7 @@ impl Text {
     /// Handle window events for text widgets.
     /// 
     /// This is the simple interface that works when text widgets aren't occluded by other objects.
-    /// For complex z-ordering, use [`Text::find_topmost_text_box`] and [`Text::handle_event_with_topmost`], as described in the crate-level docs and shown in the `occlusion.rs` example.
+    /// For complex z-ordering, use [`Text::find_topmost_text_box()`] and [`Text::handle_event_with_topmost()`], as described in the crate-level docs and shown in the `occlusion.rs` example.
     /// 
     /// Any events other than `winit::WindowEvent::MouseInput` can use either this method or the occlusion method interchangeably.
     pub fn handle_event(&mut self, event: &WindowEvent, window: &Window) {
@@ -606,7 +606,7 @@ impl Text {
     /// Find the topmost text box that would receive mouse events, if it wasn't occluded by any non-text-box objects.
     /// 
     /// Returns the handle of the topmost text widget at the event position, or None if no widget is hit.
-    /// Use this with [`Text::handle_event_with_topmost`] for complex z-ordering scenarios.
+    /// Use this with [`Text::handle_event_with_topmost()`] for complex z-ordering scenarios.
     pub fn find_topmost_text_box(&mut self, event: &WindowEvent) -> Option<AnyBox> {
         // Only handle mouse events that have a position
         let cursor_pos = match event {

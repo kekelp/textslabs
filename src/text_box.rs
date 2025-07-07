@@ -45,9 +45,9 @@ pub(crate) fn with_clipboard<R>(f: impl FnOnce(&mut Clipboard) -> R) -> R {
 
 /// A text box.
 /// 
-/// This struct can't be created directly. Instead, use [`Text::add_text_box`]/[`Text::add_static_text_box`] to create one within [`Text`] and get a [`TextBoxHandle`]/[`StaticTextBoxHandle`] back.
+/// This struct can't be created directly. Instead, use [`Text::add_text_box()`]/[`Text::add_static_text_box()`] to create one within [`Text`] and get a [`TextBoxHandle`]/[`StaticTextBoxHandle`] back.
 /// 
-/// Then, the handle can be used to get a reference to the `TextBox` with [`Text::get_text_box`]/[`Text::get_static_text_box`], or the equivalent `mut` functions.
+/// Then, the handle can be used to get a reference to the `TextBox` with [`Text::get_text_box()`]/[`Text::get_static_text_box()`], or the equivalent `mut` functions.
 pub struct TextBox<T: AsRef<str>> {
     pub(crate) text: T,
     pub(crate) style: StyleHandle,
@@ -335,9 +335,9 @@ impl<T: AsRef<str>> TextBox<T> {
 
 
     /// Borrow the current selection. The indices returned by functions
-    /// such as [`Selection::text_range`] refer to the raw text text,
+    /// such as [`Selection::text_range()`] refer to the raw text text,
     /// including the IME preedit region, which can be accessed via
-    /// [`PlainEditor::raw_text`].
+    /// [`PlainEditor::raw_text()`].
     pub fn raw_selection(&self) -> &Selection {
         &self.selection.selection
     }
