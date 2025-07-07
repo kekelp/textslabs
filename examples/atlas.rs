@@ -180,8 +180,8 @@ impl winit::application::ApplicationHandler for Application {
 }
 
 fn rich_layout() -> Layout<ColorBrush> {
-    const RICH_TEXT: &str = "Press F1 to see the atlas pages \n\
-    Press the left and right arrows to cycle through different examples\n
+    // const RICH_TEXT: &str = "Press F1 to see the atlas pages \n\
+    const RICH_TEXT: &str = "Press the left and right arrows to cycle through different examples\n
     
     This example uses tiny atlas pages to test out the multi-page functions, but normally only a single page will ever be used.
     When a glyph would have to spill out into a new page, the atlas will evict glyphs from older frames, trying to make enough space to avoid spilling.
