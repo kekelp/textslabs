@@ -145,50 +145,34 @@ impl<T: AsRef<str>> TextBox<T> {
     pub(crate) fn refresh_layout(&mut self) {
         with_text_style(|style, style_changed| {
             if self.needs_relayout || style_changed {
-                // todo: deduplicate
-                with_text_cx(|layout_cx, font_cx| {
-                    let mut builder = layout_cx.tree_builder(font_cx, 1.0, true, style);
-        
-                    builder.push_text(&self.text.as_ref());
-        
-                    let (mut layout, _) = builder.build();
-        
-                    layout.break_all_lines(Some(self.max_advance));
-                    layout.align(
-                        Some(self.max_advance),
-                        self.alignment,
-                        AlignmentOptions::default(),
-                    );
-        
-                    self.layout = layout;
-                    self.needs_relayout = false;
-                });
+                self.rebuild_layout(style);
             }
         });
     }
 
     pub(crate) fn update_layout(&mut self) {
         with_text_style(|style, _style_changed| {
+            self.rebuild_layout(style);
+        });
+    }
 
-            // todo: deduplicate
-            with_text_cx(|layout_cx, font_cx| {
-                let mut builder = layout_cx.tree_builder(font_cx, 1.0, true, style);
-    
-                builder.push_text(&self.text.as_ref());
-    
-                let (mut layout, _) = builder.build();
-    
-                layout.break_all_lines(Some(self.max_advance));
-                layout.align(
-                    Some(self.max_advance),
-                    self.alignment,
-                    AlignmentOptions::default(),
-                );
-    
-                self.layout = layout;
-                self.needs_relayout = false;
-            });
-            
+    fn rebuild_layout(&mut self, style: &TextStyle2) {
+        with_text_cx(|layout_cx, font_cx| {
+            let mut builder = layout_cx.tree_builder(font_cx, 1.0, true, style);
+
+            builder.push_text(&self.text.as_ref());
+
+            let (mut layout, _) = builder.build();
+
+            layout.break_all_lines(Some(self.max_advance));
+            layout.align(
+                Some(self.max_advance),
+                self.alignment,
+                AlignmentOptions::default(),
+            );
+
+            self.layout = layout;
+            self.needs_relayout = false;
         });
     }
 
