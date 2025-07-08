@@ -131,6 +131,7 @@ pub struct TextEdit {
     pub(crate) history: TextEditHistory,
     pub(crate) single_line: bool,
     pub(crate) newline_mode: NewlineMode,
+    pub(crate) edit_disabled: bool,
 }
 
 impl TextEdit {
@@ -144,6 +145,7 @@ impl TextEdit {
             history: TextEditHistory::new(),
             single_line: false,
             newline_mode: NewlineMode::default(),
+            edit_disabled: false,
         }
     }
 
@@ -161,7 +163,11 @@ impl TextEdit {
 
     #[must_use]
     pub(crate) fn handle_event(&mut self, event: &WindowEvent, window: &Window, input_state: &TextInputState) -> TextEventResult {
-        self.handle_event_editable(event, window, input_state)
+        if !self.edit_disabled {
+            self.handle_event_editable(event, window, input_state)
+        } else {
+            return TextEventResult::new();
+        }
     }
 
     pub fn text(&self) -> SplitString<'_> {
@@ -185,10 +191,6 @@ impl TextEdit {
 
     pub fn pos(&self) -> (f64, f64) {
         self.text_box.pos()
-    }
-
-    pub fn selectable(&self) -> bool {
-        self.text_box.selectable()
     }
 
     pub fn hidden(&self) -> bool {
@@ -303,10 +305,6 @@ impl TextEdit {
         self.text_box.set_scale(scale)
     }
 
-    pub fn set_selectable(&mut self, value: bool) {
-        self.text_box.set_selectable(value)
-    }
-
     pub fn set_hidden(&mut self, hidden: bool) {
         self.text_box.set_hidden(hidden)
     }
@@ -353,6 +351,14 @@ impl TextEdit {
 
     pub fn newline_mode(&self) -> NewlineMode {
         self.newline_mode
+    }
+
+    pub fn set_edit_disabled(&mut self, edit_disabled: bool) {
+        self.edit_disabled = edit_disabled;
+    }
+
+    pub fn is_edit_disabled(&self) -> bool {
+        self.edit_disabled
     }
 
     fn remove_newlines(&mut self) {
@@ -731,7 +737,7 @@ impl TextEdit {
             _ => {}
         }
 
-        if selection_decorations_changed(initial_selection, self.text_box.selection.selection, initial_show_cursor, self.show_cursor, true) {
+        if selection_decorations_changed(initial_selection, self.text_box.selection.selection, initial_show_cursor, self.show_cursor, !self.edit_disabled) {
             result.set_decorations_changed();
         }
 
