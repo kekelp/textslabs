@@ -189,6 +189,11 @@ impl State {
                                     self.text.get_style_mut(&self.big_text_style).font_size -= 2.0;
                                 }
                             }
+                            "d" => {
+                                // Toggle disabled state of first text edit
+                                let is_disabled = self.text.get_text_edit(&self.text_edits[0]).is_disabled();
+                                self.text.set_text_edit_disabled(&self.text_edits[0], !is_disabled);
+                            }
                             _ => {}
                         }
                     }

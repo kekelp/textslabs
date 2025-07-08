@@ -131,7 +131,7 @@ pub struct TextEdit {
     pub(crate) history: TextEditHistory,
     pub(crate) single_line: bool,
     pub(crate) newline_mode: NewlineMode,
-    pub(crate) edit_disabled: bool,
+    pub(crate) disabled: bool,
 }
 
 impl TextEdit {
@@ -145,7 +145,7 @@ impl TextEdit {
             history: TextEditHistory::new(),
             single_line: false,
             newline_mode: NewlineMode::default(),
-            edit_disabled: false,
+            disabled: false,
         }
     }
 
@@ -163,7 +163,7 @@ impl TextEdit {
 
     #[must_use]
     pub(crate) fn handle_event(&mut self, event: &WindowEvent, window: &Window, input_state: &TextInputState) -> TextEventResult {
-        if !self.edit_disabled {
+        if !self.disabled {
             self.handle_event_editable(event, window, input_state)
         } else {
             return TextEventResult::new();
@@ -353,12 +353,12 @@ impl TextEdit {
         self.newline_mode
     }
 
-    pub fn set_edit_disabled(&mut self, edit_disabled: bool) {
-        self.edit_disabled = edit_disabled;
+    pub fn set_disabled(&mut self, disabled: bool) {
+        self.disabled = disabled;
     }
 
-    pub fn is_edit_disabled(&self) -> bool {
-        self.edit_disabled
+    pub fn is_disabled(&self) -> bool {
+        self.disabled
     }
 
     fn remove_newlines(&mut self) {
@@ -737,7 +737,7 @@ impl TextEdit {
             _ => {}
         }
 
-        if selection_decorations_changed(initial_selection, self.text_box.selection.selection, initial_show_cursor, self.show_cursor, !self.edit_disabled) {
+        if selection_decorations_changed(initial_selection, self.text_box.selection.selection, initial_show_cursor, self.show_cursor, !self.disabled) {
             result.set_decorations_changed();
         }
 

@@ -271,6 +271,7 @@ impl<T: AsRef<str>> TextBox<T> {
         self.selectable
     }
 
+
     pub fn set_depth(&mut self, value: f32) {
         self.depth = value;
     }
