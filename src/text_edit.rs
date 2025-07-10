@@ -357,7 +357,7 @@ impl TextEdit {
         self.disabled = disabled;
     }
 
-    pub fn is_disabled(&self) -> bool {
+    pub fn disabled(&self) -> bool {
         self.disabled
     }
 

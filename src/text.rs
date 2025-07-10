@@ -326,7 +326,7 @@ impl Text {
     /// Get the [`parley::Layout`] for a text edit box, recomputing it only if needed.
     pub fn get_text_edit_layout(&mut self, handle: &TextEditHandle) -> &Layout<ColorBrush> {
         let text_edit = &mut self.text_edits[handle.i as usize];
-        let (style, style_changed) = do_styles_text_edit(text_edit, &self.styles);
+        let (style, style_changed) = do_styles(&mut text_edit.text_box, &self.styles);
         set_text_style((style, style_changed), || {
             text_edit.layout()
         })
@@ -539,7 +539,7 @@ impl Text {
         if self.text_changed {
             for (_i, text_edit) in self.text_edits.iter_mut() {
                 if !text_edit.hidden() && text_edit.text_box.last_frame_touched == self.current_frame {
-                    let (style, style_changed) = do_styles_text_edit(text_edit, &self.styles);
+                    let (style, style_changed) = do_styles(&mut text_edit.text_box, &self.styles);
                     set_text_style((style, style_changed), || {                
                         text_renderer.prepare_text_edit(text_edit);
                     });
@@ -567,7 +567,9 @@ impl Text {
             if let Some(focused) = self.focused {
                 match focused {
                     AnyBox::TextEdit(i) => {
-                        text_renderer.prepare_text_box_decorations(&self.text_edits[i as usize].text_box, true);
+                        if ! &self.text_edits[i as usize].disabled() {
+                            text_renderer.prepare_text_box_decorations(&self.text_edits[i as usize].text_box, true);
+                        }
                     },
                     AnyBox::TextBox(i) => {
                         text_renderer.prepare_text_box_decorations(&self.text_boxes[i as usize], false);
@@ -745,7 +747,7 @@ impl Text {
     fn handle_focused_event(&mut self, focused: AnyBox, event: &WindowEvent, window: &Window) {
         match focused {
             AnyBox::TextEdit(i) => {
-                let (style, style_changed) = do_styles_text_edit(&mut self.text_edits[i as usize], &self.styles);
+                let (style, style_changed) = do_styles(&mut self.text_edits[i as usize].text_box, &self.styles);
                 let result = set_text_style((style, style_changed), || {
                     self.text_edits[i as usize].handle_event(event, window, &self.input_state)
                 });
@@ -788,6 +790,15 @@ impl Text {
     /// When disabled, the text edit will not respond to events and will be rendered with greyed out text.
     pub fn set_text_edit_disabled(&mut self, handle: &TextEditHandle, disabled: bool) {
         self.get_text_edit_mut(handle).set_disabled(disabled);
+        if disabled {
+            if let Some(AnyBox::TextEdit(e)) = self.focused {
+                if e == handle.i {
+                    self.get_text_edit_mut(handle).text_box.reset_selection();
+                    self.focused = None;
+                }
+            }
+        }
+
     }
 }
 
@@ -824,34 +835,4 @@ fn do_styles<T: AsRef<str>>(text_box: &mut TextBox<T>, styles: &Slab<(TextStyle2
     let changed = last_style_id != id;
     text_box.style_id = id;
     (style, changed)
-}
-
-fn do_styles_text_edit(text_edit: &mut TextEdit, styles: &Slab<(TextStyle2, u64)>) -> (TextStyle2, bool) {
-    let style_handle = text_edit.text_box.style.sneak_clone();
-    let last_style_id = text_edit.text_box.style_id;
-    // todo: ABA problem here.
-    let (mut style, id) = styles.get(style_handle.i as usize).unwrap_or(&styles[DEFAULT_STYLE_HANDLE.i as usize]).clone();
-    let changed = last_style_id != id;
-    text_edit.text_box.style_id = id;
-    
-    // Apply disabled styling if disabled
-    if text_edit.disabled {
-        style = apply_disabled_style(style);
-    }
-    
-    (style, changed)
-}
-
-fn apply_disabled_style(mut style: TextStyle2) -> TextStyle2 {
-    // Convert to a muted gray color for disabled state
-    let [r, g, b, a] = style.brush.0;
-    
-    // Use luminance formula to convert to grayscale, then reduce to a muted tone
-    let luminance = (0.299 * r as f32 + 0.587 * g as f32 + 0.114 * b as f32) as u8;
-    
-    // Create a muted gray that's not too dark but clearly disabled
-    let disabled_gray = (luminance as f32 * 0.4 + 96.0) as u8; // Mix with light gray base
-    
-    style.brush = ColorBrush([disabled_gray, disabled_gray, disabled_gray, a]);
-    style
 }

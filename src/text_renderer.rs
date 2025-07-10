@@ -324,7 +324,7 @@ impl TextRenderer {
     }
 
     pub fn prepare_layout(&mut self, layout: &Layout<ColorBrush>, left: f32, top: f32) {
-        self.text_renderer.prepare_layout(layout, &mut self.scale_cx, left, top, None);
+        self.text_renderer.prepare_layout(layout, &mut self.scale_cx, left, top, None, None);
         self.text_renderer.needs_gpu_sync = true;
     }
 
@@ -343,7 +343,7 @@ impl TextRenderer {
         self.prepare_text_box_decorations(text_box, false);
 
         // Prepare text layout
-        self.text_renderer.prepare_layout(text_box.layout(), &mut self.scale_cx, left, top, clip_rect);
+        self.text_renderer.prepare_layout(text_box.layout(), &mut self.scale_cx, left, top, clip_rect, None);
         self.text_renderer.needs_gpu_sync = true;
     }
 
@@ -359,7 +359,12 @@ impl TextRenderer {
         let clip_rect = text_edit.clip_rect();
 
         // Prepare text layout
-        self.text_renderer.prepare_layout(text_edit.layout(), &mut self.scale_cx, left, top, clip_rect);
+        let color_modulation = if text_edit.disabled() { 
+            Some(ColorBrush([128, 128, 128, 255])) // Gray modulation color
+        } else { 
+            None 
+        };
+        self.text_renderer.prepare_layout(text_edit.layout(), &mut self.scale_cx, left, top, clip_rect, color_modulation);
         self.text_renderer.needs_gpu_sync = true;
     }
 
@@ -493,12 +498,12 @@ impl ContextlessTextRenderer {
     }
 
 
-    fn prepare_layout(&mut self, layout: &Layout<ColorBrush>, scale_cx: &mut ScaleContext, left: f32, top: f32, clip_rect: Option<parley::Rect>) {
+    fn prepare_layout(&mut self, layout: &Layout<ColorBrush>, scale_cx: &mut ScaleContext, left: f32, top: f32, clip_rect: Option<parley::Rect>, color_modulation: Option<ColorBrush>) {
         for line in layout.lines() {
             for item in line.items() {
                 match item {
                     PositionedLayoutItem::GlyphRun(glyph_run) => {
-                        self.prepare_glyph_run(&glyph_run, scale_cx, left, top, clip_rect);
+                        self.prepare_glyph_run(&glyph_run, scale_cx, left, top, clip_rect, color_modulation);
                     }
                     PositionedLayoutItem::InlineBox(_inline_box) => {}
                 }
@@ -512,7 +517,8 @@ impl ContextlessTextRenderer {
         scale_cx: &mut ScaleContext,
         left: f32,
         top: f32,
-        clip_rect: Option<parley::Rect>
+        clip_rect: Option<parley::Rect>,
+        color_modulation: Option<ColorBrush>
     ) {
         let mut run_x = left + glyph_run.offset();
         let run_y = top + glyph_run.baseline();
@@ -550,7 +556,21 @@ impl ContextlessTextRenderer {
         }
 
         for glyph in glyph_run.glyphs() {
-            let glyph_ctx = GlyphWithContext::new(glyph, run_x, run_y, font_key, font_size, style.brush);
+            // Apply color modulation if provided
+            let color = if let Some(modulation_color) = color_modulation {
+                let [r1, g1, b1, a1] = style.brush.0;
+                let [r2, g2, b2, a2] = modulation_color.0;
+                ColorBrush([
+                    ((r1 as u16 * r2 as u16) / 255) as u8,
+                    ((g1 as u16 * g2 as u16) / 255) as u8,
+                    ((b1 as u16 * b2 as u16) / 255) as u8,
+                    ((a1 as u16 * a2 as u16) / 255) as u8,
+                ])
+            } else {
+                style.brush
+            };
+            
+            let glyph_ctx = GlyphWithContext::new(glyph, run_x, run_y, font_key, font_size, color);
 
             if let Some(stored_glyph) = self.glyph_cache.get(&glyph_ctx.key()) {
                 if let Some(stored_glyph) = stored_glyph {

@@ -82,7 +82,7 @@ impl State {
         ];
         
         text.get_text_edit_mut(&text_edit_handles[0]).set_single_line(true);
-        text.get_text_edit_mut(&text_edit_handles[0]).set_style(&big_text_style_handle);
+        // text.get_text_edit_mut(&text_edit_handles[0]).set_style(&big_text_style_handle);
         text.get_text_edit_mut(&text_edit_handles[1]).set_style(&big_text_style_handle);
         text.get_text_edit_mut(&text_edit_handles[4]).set_newline_mode(NewlineMode::ShiftEnter);
         text.get_text_edit_mut(&text_edit_handles[5]).set_single_line(true);
@@ -190,8 +190,7 @@ impl State {
                                 }
                             }
                             "d" => {
-                                // Toggle disabled state of first text edit
-                                let is_disabled = self.text.get_text_edit(&self.text_edits[0]).is_disabled();
+                                let is_disabled = self.text.get_text_edit(&self.text_edits[0]).disabled();
                                 self.text.set_text_edit_disabled(&self.text_edits[0], !is_disabled);
                             }
                             _ => {}
