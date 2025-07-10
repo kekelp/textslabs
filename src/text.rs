@@ -800,6 +800,11 @@ impl Text {
         }
 
     }
+
+    /// Returns whether any text was changed in the last frame.
+    pub fn get_text_changed(&self) -> bool {
+        self.text_changed
+    }
 }
 
 // todo: remove all of this, and I guess just pass the arguments all the way down normally.
