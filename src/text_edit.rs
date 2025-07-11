@@ -149,18 +149,6 @@ impl TextEdit {
         }
     }
 
-    pub fn new_single_line(text: String, pos: (f64, f64), size: (f32, f32), depth: f32) -> Self {
-        let mut edit = Self::new(text, pos, size, depth);
-        edit.set_single_line(true);
-        edit
-    }
-
-    pub fn new_with_newline_mode(text: String, pos: (f64, f64), size: (f32, f32), depth: f32, newline_mode: NewlineMode) -> Self {
-        let mut edit = Self::new(text, pos, size, depth);
-        edit.set_newline_mode(newline_mode);
-        edit
-    }
-
     #[must_use]
     pub(crate) fn handle_event(&mut self, event: &WindowEvent, window: &Window, input_state: &TextInputState) -> TextEventResult {
         if !self.disabled {
@@ -359,6 +347,18 @@ impl TextEdit {
 
     pub fn disabled(&self) -> bool {
         self.disabled
+    }
+
+    /// Programmatically set the text content of this text edit.
+    /// This will replace all text and move the cursor to the end.
+    pub fn set_text(&mut self, new_text: String) {
+        self.text_box.text = new_text;
+        self.text_box.needs_relayout = true;
+        self.move_to_text_end();
+        // Clear any composition state
+        self.compose = None;
+        // Reset cursor blinking
+        self.cursor_reset();
     }
 
     fn remove_newlines(&mut self) {
@@ -665,14 +665,14 @@ impl TextEdit {
                         result.set_text_changed();
                     }
                     Key::Named(NamedKey::Enter) => {
-                        let should_insert_newline = match self.newline_mode {
+                        let newline_mode_matches = match self.newline_mode {
                             NewlineMode::Enter => !action_mod && !shift,
                             NewlineMode::ShiftEnter => shift && !action_mod,
                             NewlineMode::CtrlEnter => action_mod && !shift,
                             NewlineMode::None => false,
                         };
                         
-                        if should_insert_newline {
+                        if newline_mode_matches && ! self.single_line {
                             self.insert_or_replace_selection("\n");
                             result.set_text_changed();
                         }

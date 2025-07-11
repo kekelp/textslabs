@@ -805,6 +805,13 @@ impl Text {
     pub fn get_text_changed(&self) -> bool {
         self.text_changed
     }
+
+    /// Programmatically set the text content of a text edit.
+    /// This will replace all text and move the cursor to the end.
+    pub fn set_text_edit_text(&mut self, handle: &TextEditHandle, new_text: String) {
+        self.get_text_edit_mut(handle).set_text(new_text);
+        self.text_changed = true;
+    }
 }
 
 // todo: remove all of this, and I guess just pass the arguments all the way down normally.
