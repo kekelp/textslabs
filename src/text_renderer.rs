@@ -339,9 +339,6 @@ impl TextRenderer {
         let (left, top) = (left as f32, top as f32);
         let clip_rect = text_box.clip_rect();
 
-        // Prepare decorations (selection and cursor)
-        self.prepare_text_box_decorations(text_box, false);
-
         // Prepare text layout
         self.text_renderer.prepare_layout(text_box.layout(), &mut self.scale_cx, left, top, clip_rect, None);
         self.text_renderer.needs_gpu_sync = true;

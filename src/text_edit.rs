@@ -132,6 +132,8 @@ pub struct TextEdit {
     pub(crate) single_line: bool,
     pub(crate) newline_mode: NewlineMode,
     pub(crate) disabled: bool,
+    pub(crate) showing_placeholder: bool,
+    pub(crate) placeholder_text: Option<String>,
 }
 
 impl TextEdit {
@@ -146,6 +148,8 @@ impl TextEdit {
             single_line: false,
             newline_mode: NewlineMode::default(),
             disabled: false,
+            showing_placeholder: false,
+            placeholder_text: None,
         }
     }
 
@@ -170,7 +174,11 @@ impl TextEdit {
     }
 
     pub fn raw_text(&self) -> &str {
-        self.text_box.text()
+        if self.showing_placeholder {
+            ""
+        } else {
+            self.text_box.text()
+        }
     }
 
     pub fn selected_text(&self) -> Option<&str> {
@@ -359,6 +367,19 @@ impl TextEdit {
         self.compose = None;
         // Reset cursor blinking
         self.cursor_reset();
+        // Not showing placeholder anymore since we have real text
+        self.showing_placeholder = false;
+    }
+
+    /// Set placeholder text that will be shown when the text edit is empty
+    pub fn set_placeholder(&mut self, placeholder: String) {
+        self.placeholder_text = Some(placeholder.clone());
+        if self.text_box.text.is_empty() || self.showing_placeholder {
+            self.text_box.text = placeholder;
+            self.text_box.needs_relayout = true;
+            self.showing_placeholder = true;
+            self.text_box.reset_selection();
+        }
     }
 
     fn remove_newlines(&mut self) {
@@ -537,7 +558,10 @@ impl TextEdit {
 
         self.text_box.refresh_layout();
 
-        self.text_box.handle_event_no_edit_inner(event, input_state);
+        let showing_placeholder = self.showing_placeholder;
+        if ! self.showing_placeholder {
+            self.text_box.handle_event_no_edit_inner(event, input_state, showing_placeholder);
+        }
 
         match event {
             WindowEvent::KeyboardInput { event, .. } if !self.is_composing() => {
@@ -593,7 +617,7 @@ impl TextEdit {
 
                 match &event.logical_key {
                     Key::Named(NamedKey::ArrowLeft) => {
-                        if !shift {
+                        if !shift && ! self.showing_placeholder {
                             if action_mod {
                                 self.text_box.move_word_left();
                             } else {
@@ -602,7 +626,7 @@ impl TextEdit {
                         }
                     }
                     Key::Named(NamedKey::ArrowRight) => {
-                        if !shift {                            
+                        if !shift && ! self.showing_placeholder {                            
                             if action_mod {
                                 self.text_box.move_word_right();
                             } else {
@@ -611,7 +635,7 @@ impl TextEdit {
                         }
                     }
                     Key::Named(NamedKey::ArrowUp) => {
-                        if !shift {
+                        if !shift && ! self.showing_placeholder {
                             if self.single_line {
                                 // In single line mode, up arrow moves to beginning of text
                                 self.text_box.move_to_text_start();
@@ -621,7 +645,7 @@ impl TextEdit {
                         }
                     }
                     Key::Named(NamedKey::ArrowDown) => {
-                        if !shift {
+                        if !shift && ! self.showing_placeholder {
                             if self.single_line {
                                 // In single line mode, down arrow moves to end of text
                                 self.text_box.move_to_text_end();
@@ -631,7 +655,7 @@ impl TextEdit {
                         }
                     }
                     Key::Named(NamedKey::Home) => {
-                        if !shift {
+                        if !shift && ! self.showing_placeholder {
                             if action_mod {
                                 self.text_box.move_to_text_start();
                             } else {
@@ -640,7 +664,7 @@ impl TextEdit {
                         }
                     }
                     Key::Named(NamedKey::End) => {
-                        if !shift {
+                        if !shift && ! self.showing_placeholder {
                             if action_mod {
                                 self.text_box.move_to_text_end();
                             } else {
@@ -649,12 +673,14 @@ impl TextEdit {
                         }
                     }
                     Key::Named(NamedKey::Delete) => {
-                        if action_mod {
-                            self.delete_word();
-                        } else {
-                            self.delete();
+                        if ! self.showing_placeholder {
+                            if action_mod {
+                                self.delete_word();
+                            } else {
+                                self.delete();
+                            }
+                            result.set_text_changed();
                         }
-                        result.set_text_changed();
                     }
                     Key::Named(NamedKey::Backspace) => {
                         if action_mod {
@@ -696,24 +722,30 @@ impl TextEdit {
                 phase, location, ..
             }) if !self.is_composing() => {
                 use winit::event::TouchPhase::*;
-                match phase {
-                    Started => {
-                        // todo: use left and top. I can't test this though
-                        // TODO: start a timer to convert to a SelectWordAtPoint
-                        self.text_box.move_to_point(location.x as f32 - INSET, location.y as f32 - INSET);
+                if ! self.showing_placeholder {
+                    match phase {
+                        Started => {
+                            // todo: use left and top. I can't test this though
+                            let cursor_pos = (
+                                location.x - self.text_box.left as f64,
+                                location.y - self.text_box.top as f64,
+                            );
+                            // TODO: start a timer to convert to a SelectWordAtPoint
+                            self.text_box.move_to_point(cursor_pos.0 as f32, cursor_pos.1 as f32);
+                        }
+                        Cancelled => {
+                            self.text_box.collapse_selection();
+                        }
+                        Moved => {
+                            // TODO: cancel SelectWordAtPoint timer
+                            self.text_box.extend_selection_to_point(
+                                location.x as f32 - INSET,
+                                location.y as f32 - INSET,
+                            );
+                        }
+                        Ended => (),
                     }
-                    Cancelled => {
-                        self.text_box.collapse_selection();
-                    }
-                    Moved => {
-                        // TODO: cancel SelectWordAtPoint timer
-                        self.text_box.extend_selection_to_point(
-                            location.x as f32 - INSET,
-                            location.y as f32 - INSET,
-                        );
-                    }
-                    Ended => (),
-                }
+                } 
             }
             WindowEvent::Ime(Ime::Disabled) => {
                 self.clear_compose();
@@ -735,6 +767,15 @@ impl TextEdit {
                 }
             }
             _ => {}
+        }
+
+        if let Some(placeholder) = &self.placeholder_text {
+            if self.text_box.text.as_str().is_empty() {
+                self.text_box.text = placeholder.clone();
+                self.showing_placeholder = true;
+                self.text_box.needs_relayout = true;
+                self.text_box.selection.selection = Selection::zero();
+            }
         }
 
         if selection_decorations_changed(initial_selection, self.text_box.selection.selection, initial_show_cursor, self.show_cursor, !self.disabled) {
@@ -786,7 +827,14 @@ impl TextEdit {
     pub(crate) fn insert_or_replace_selection(&mut self, s: &str) {
         assert!(!self.is_composing());
 
-        // In single line mode, convert newlines to spaces (standard HTML input behavior)
+        if self.showing_placeholder {
+            self.text_box.text.clear();
+            self.showing_placeholder = false;
+            self.text_box.needs_relayout = true;
+            self.move_to_text_start();
+        }
+
+        // In single line mode, convert newlines to spaces
         if self.single_line && (s.contains('\n') || s.contains('\r')) {
             let filtered_text = s.replace('\n', " ").replace('\r', " ");
             self.replace_selection_and_record(&filtered_text);

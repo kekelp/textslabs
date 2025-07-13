@@ -64,7 +64,7 @@ impl State {
         });
 
         let text_edit_handles = vec![
-            text.add_text_edit("Single line input".to_string(), (10.0, 15.0), (200.0, 30.0), 0.0),
+            text.add_text_edit("".to_string(), (10.0, 15.0), (200.0, 30.0), 0.0),
             text.add_text_edit("Editable text 無限での座を含む全ての".to_string(), (300.0, 200.0), (400.0, 200.0), 0.0),
             text.add_text_edit("Multi-line\ntext edit\nbox".to_string(), (10.0, 60.0), (200.0, 100.0), 0.0),
             text.add_text_edit("Press Ctrl+Plus and Ctrl+Minus to adjust the size of the big text".to_string(), (470.0, 60.0), (200.0, 100.0), 0.0),
@@ -82,6 +82,7 @@ impl State {
         ];
         
         text.get_text_edit_mut(&text_edit_handles[0]).set_single_line(true);
+        text.get_text_edit_mut(&text_edit_handles[0]).set_placeholder("Single line input".to_string());
         // text.get_text_edit_mut(&text_edit_handles[0]).set_style(&big_text_style_handle);
         text.get_text_edit_mut(&text_edit_handles[1]).set_style(&big_text_style_handle);
         text.get_text_edit_mut(&text_edit_handles[4]).set_newline_mode(NewlineMode::ShiftEnter);

@@ -150,6 +150,7 @@ impl<T: AsRef<str>> TextBox<T> {
         });
     }
 
+    // todo: all these calls are really sure that they don't need to check?
     pub(crate) fn update_layout(&mut self) {
         with_text_style(|style, _style_changed| {
             self.rebuild_layout(style);
@@ -173,6 +174,33 @@ impl<T: AsRef<str>> TextBox<T> {
 
             self.layout = layout;
             self.needs_relayout = false;
+            
+
+            self.selection.selection = self.selection.selection.refresh(&self.layout);
+
+
+            // with_text_cx(|layout_cx, font_cx| {
+            //     // let mut builder = layout_cx.tree_builder(font_cx, 1.0, true, style);
+            //     let mut builder = layout_cx.ranged_builder(font_cx, &self.text.as_ref(), self.scale, true);
+                
+            //     // // todo: styles
+            //     // for prop in style.values() {
+            //     //     builder.push_default(prop.to_owned());
+            //     // }
+    
+            //     let mut layout = builder.build(&self.text.as_ref());
+    
+            //     layout.break_all_lines(Some(self.max_advance));
+            //     layout.align(
+            //         Some(self.max_advance),
+            //         self.alignment,
+            //         AlignmentOptions::default(),
+            //     );
+    
+            //     // self.selection.selection = self.selection.selection.refresh(&self.layout);
+    
+            //     self.layout = layout;
+            //     self.needs_relayout = false;
         });
     }
 
@@ -185,7 +213,7 @@ impl<T: AsRef<str>> TextBox<T> {
         
         let mut result = TextEventResult::new();
 
-        self.handle_event_no_edit_inner(event, input_state);
+        self.handle_event_no_edit_inner(event, input_state, false);
 
         if selection_decorations_changed(initial_selection, self.selection.selection, false, false, false) {
             result.set_decorations_changed();
@@ -194,7 +222,7 @@ impl<T: AsRef<str>> TextBox<T> {
         return result;
     }
 
-    pub(crate) fn handle_event_no_edit_inner(&mut self, event: &winit::event::WindowEvent, input_state: &TextInputState) {
+    pub(crate) fn handle_event_no_edit_inner(&mut self, event: &WindowEvent, input_state: &TextInputState, edit_showing_placeholder: bool) {
         if self.hidden {
             return;
         }
@@ -211,6 +239,7 @@ impl<T: AsRef<str>> TextBox<T> {
             &self.layout,
             self.left as f32,
             self.top as f32,
+            edit_showing_placeholder
         );
         
         match event {
@@ -652,7 +681,17 @@ impl SelectionState {
         layout: &Layout<ColorBrush>,
         left: f32,
         top: f32,
+        edit_showing_placeholder: bool
     ) {
+        if edit_showing_placeholder {
+            if let WindowEvent::MouseInput { state, button, .. } = event {
+                if *button == winit::event::MouseButton::Left && state.is_pressed() {
+                    self.selection = Selection::zero();
+                    return
+                }
+            }
+        }
+
         match event {
             WindowEvent::CursorMoved { position, .. } => {
                 let cursor_pos = (position.x as f32, position.y as f32);
