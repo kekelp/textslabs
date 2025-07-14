@@ -61,7 +61,7 @@ impl State {
             font_size: 64.0,
             brush: ColorBrush(white),
             ..Default::default()
-        });
+        }, None);
 
         let text_edit_handles = vec![
             text.add_text_edit("".to_string(), (10.0, 15.0), (200.0, 30.0), 0.0),
@@ -92,7 +92,7 @@ impl State {
         let small_text_style_handle = text.add_style(TextStyle {
             font_size: 24.0,
             ..Default::default()
-        });
+        }, None);
 
         text.get_text_box_mut(&text_box_handles[0]).set_style(&small_text_style_handle);
         text.get_text_box_mut(&text_box_handles[0]).set_clip_rect(Some(parley::Rect {
@@ -102,7 +102,7 @@ impl State {
             y1: 20.0,
         }));
 
-        text.get_style_mut(&big_text_style_handle).font_size = 32.0;
+        text.get_text_style_mut(&big_text_style_handle).font_size = 32.0;
 
         text.get_static_text_box_mut(&static_text_box_handles[1]).set_style(&big_text_style_handle);
 
@@ -182,12 +182,12 @@ impl State {
                     if let Some(s) = event.text {
                         match s.as_str() {
                             "+" => {
-                                self.text.get_style_mut(&self.big_text_style).font_size += 2.0;
+                                self.text.get_text_style_mut(&self.big_text_style).font_size += 2.0;
                             }
                             "-" => {
-                                let current_size = self.text.get_style(&self.big_text_style).font_size;
+                                let current_size = self.text.get_text_style(&self.big_text_style).font_size;
                                 if current_size > 4.0 {
-                                    self.text.get_style_mut(&self.big_text_style).font_size -= 2.0;
+                                    self.text.get_text_style_mut(&self.big_text_style).font_size -= 2.0;
                                 }
                             }
                             "d" => {

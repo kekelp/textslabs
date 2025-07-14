@@ -382,6 +382,11 @@ impl TextEdit {
         }
     }
 
+    /// Check if placeholder text is currently being shown
+    pub fn showing_placeholder(&self) -> bool {
+        self.showing_placeholder
+    }
+
     fn remove_newlines(&mut self) {
         let text_with_spaces = self.text_box.text.replace('\n', " ").replace('\r', " ");
         if text_with_spaces != self.text_box.text {
@@ -752,10 +757,16 @@ impl TextEdit {
                 result.set_text_changed();
             }
             WindowEvent::Ime(Ime::Commit(text)) => {
+                if self.showing_placeholder {
+                    self.clear_placeholder()
+                }
                 self.insert_or_replace_selection(&text);
                 result.set_text_changed();
             }
             WindowEvent::Ime(Ime::Preedit(text, cursor)) => {
+                if self.showing_placeholder {
+                    self.clear_placeholder()
+                }
                 if text.is_empty() {
                     self.clear_compose();
                     result.set_text_changed();
@@ -770,7 +781,7 @@ impl TextEdit {
         }
 
         if let Some(placeholder) = &self.placeholder_text {
-            if self.text_box.text.as_str().is_empty() {
+            if self.text_box.text.as_str().is_empty() && !self.showing_placeholder {
                 self.text_box.text = placeholder.clone();
                 self.showing_placeholder = true;
                 self.text_box.needs_relayout = true;
@@ -827,12 +838,7 @@ impl TextEdit {
     pub(crate) fn insert_or_replace_selection(&mut self, s: &str) {
         assert!(!self.is_composing());
 
-        if self.showing_placeholder {
-            self.text_box.text.clear();
-            self.showing_placeholder = false;
-            self.text_box.needs_relayout = true;
-            self.move_to_text_start();
-        }
+        self.clear_placeholder();
 
         // In single line mode, convert newlines to spaces
         if self.single_line && (s.contains('\n') || s.contains('\r')) {
@@ -840,6 +846,15 @@ impl TextEdit {
             self.replace_selection_and_record(&filtered_text);
         } else {
             self.replace_selection_and_record(s);
+        }
+    }
+
+    pub(crate) fn clear_placeholder(&mut self) {
+        if self.showing_placeholder {
+            self.text_box.text.clear();
+            self.showing_placeholder = false;
+            self.text_box.needs_relayout = true;
+            self.text_box.selection.selection = Selection::zero();
         }
     }
 

@@ -14,7 +14,7 @@ pub struct Text {
     pub(crate) static_text_boxes: Slab<TextBox<&'static str>>,
     pub(crate) text_edits: Slab<TextEdit>,
 
-    pub(crate) styles: Slab<(TextStyle2, u64)>,
+    pub(crate) styles: Slab<(TextStyle2, TextEditStyle, u64)>,
     pub(crate) style_version_id_counter: u64,
 
     pub(crate) input_state: TextInputState,
@@ -181,7 +181,7 @@ pub const DEFAULT_STYLE_HANDLE: StyleHandle = StyleHandle { i: DEFAULT_STYLE_I a
 impl Text {
     pub fn new() -> Self {
         let mut styles = Slab::with_capacity(10);
-        let i = styles.insert((original_default_style(), 0));
+        let i = styles.insert((original_default_style(), TextEditStyle::default(), 0));
         debug_assert!(i == DEFAULT_STYLE_I);
 
         Self {
@@ -308,7 +308,7 @@ impl Text {
     /// Get the [`parley::Layout`] for a text box, recomputing it only if needed.
     pub fn get_text_box_layout(&mut self, handle: &TextBoxHandle) -> &Layout<ColorBrush> {
         let text_box = &mut self.text_boxes[handle.i as usize];
-        let (style, style_changed) = do_styles(text_box, &self.styles);
+        let (style, edit_style, style_changed) = get_styles_for_element(text_box, &self.styles);
         set_text_style((style, style_changed), || {
             text_box.layout()
         })
@@ -317,7 +317,7 @@ impl Text {
     /// Get the [`parley::Layout`] for a text box, recomputing it only if needed.
     pub fn get_static_text_box_layout(&mut self, handle: &StaticTextBoxHandle) -> &Layout<ColorBrush> {
         let static_text_box = &mut self.static_text_boxes[handle.i as usize];
-        let (style, style_changed) = do_styles(static_text_box, &self.styles);
+        let (style, edit_style, style_changed) = get_styles_for_element(static_text_box, &self.styles);
         set_text_style((style, style_changed), || {
             static_text_box.layout()
         })
@@ -326,36 +326,54 @@ impl Text {
     /// Get the [`parley::Layout`] for a text edit box, recomputing it only if needed.
     pub fn get_text_edit_layout(&mut self, handle: &TextEditHandle) -> &Layout<ColorBrush> {
         let text_edit = &mut self.text_edits[handle.i as usize];
-        let (style, style_changed) = do_styles(&mut text_edit.text_box, &self.styles);
-        set_text_style((style, style_changed), || {
+        let (text_style, _text_edit_style, style_changed) = get_styles_for_element(&mut text_edit.text_box, &self.styles);
+        set_text_style((text_style, style_changed), || {
             text_edit.layout()
         })
     }
 
     #[must_use]
-    pub fn add_style(&mut self, style: TextStyle2) -> StyleHandle {
+    pub fn add_style(&mut self, text_style: TextStyle2, text_edit_style: Option<TextEditStyle>) -> StyleHandle {
+        let text_edit_style = text_edit_style.unwrap_or_default();
         let new_id = self.new_style_id();
-        let i = self.styles.insert((style, new_id)) as u32;
+        let i = self.styles.insert((text_style, text_edit_style, new_id)) as u32;
         StyleHandle { i }
     }
 
-    pub fn get_style(&self, handle: &StyleHandle) -> &TextStyle2 {
+    pub fn get_text_style(&self, handle: &StyleHandle) -> &TextStyle2 {
         &self.styles[handle.i as usize].0
     }
 
-    pub fn get_style_mut(&mut self, handle: &StyleHandle) -> &mut TextStyle2 {
-        self.styles[handle.i as usize].1 = self.new_style_id();
-        // a bit heavy handed, but it's fine
+    pub fn get_text_style_mut(&mut self, handle: &StyleHandle) -> &mut TextStyle2 {
+        self.styles[handle.i as usize].2 = self.new_style_id();
         self.text_changed = true;
         &mut self.styles[handle.i as usize].0
     }
 
-    pub fn get_default_style(&self) -> &TextStyle2 {
-        self.get_style(&DEFAULT_STYLE_HANDLE)
+    pub fn get_text_edit_style(&self, handle: &StyleHandle) -> &TextEditStyle {
+        &self.styles[handle.i as usize].1
     }
 
-    pub fn get_default_style_mut(&mut self) -> &mut TextStyle2 {
-        self.get_style_mut(&DEFAULT_STYLE_HANDLE)
+    pub fn get_text_edit_style_mut(&mut self, handle: &StyleHandle) -> &mut TextEditStyle {
+        self.styles[handle.i as usize].2 = self.new_style_id();
+        self.text_changed = true;
+        &mut self.styles[handle.i as usize].1
+    }
+
+    pub fn get_default_text_style(&self) -> &TextStyle2 {
+        self.get_text_style(&DEFAULT_STYLE_HANDLE)
+    }
+
+    pub fn get_default_text_style_mut(&mut self) -> &mut TextStyle2 {
+        self.get_text_style_mut(&DEFAULT_STYLE_HANDLE)
+    }
+
+    pub fn get_default_text_edit_style(&self) -> &TextEditStyle {
+        self.get_text_edit_style(&DEFAULT_STYLE_HANDLE)
+    }
+
+    pub fn get_default_text_edit_style_mut(&mut self) -> &mut TextEditStyle {
+        self.get_text_edit_style_mut(&DEFAULT_STYLE_HANDLE)
     }
 
     pub fn original_default_style(&self) -> TextStyle2 {
@@ -539,26 +557,40 @@ impl Text {
         if self.text_changed {
             for (_i, text_edit) in self.text_edits.iter_mut() {
                 if !text_edit.hidden() && text_edit.text_box.last_frame_touched == self.current_frame {
-                    let (style, style_changed) = do_styles(&mut text_edit.text_box, &self.styles);
-                    set_text_style((style, style_changed), || {                
+                    let (text_style, text_edit_style, style_changed) = get_styles_for_element(&mut text_edit.text_box, &self.styles);
+                    
+                    // Choose the appropriate color based on text edit state
+                    let mut effective_style = text_style.clone();
+                    let color_override = if text_edit.disabled() {
+                        effective_style.brush = text_edit_style.disabled_text_color;
+                        true
+                    } else if text_edit.showing_placeholder {
+                        effective_style.brush = text_edit_style.placeholder_text_color;
+                        true
+                    } else {
+                        false
+                    };
+                    
+                    // Force style change when we're overriding the color
+                    set_text_style((effective_style, style_changed || color_override), || {                
                         text_renderer.prepare_text_edit(text_edit);
                     });
                 }
             }
             for (_i, text_box) in self.text_boxes.iter_mut() {
                 if !text_box.hidden() && text_box.last_frame_touched == self.current_frame {
-                    let (style, style_changed) = do_styles(text_box, &self.styles);
-                    set_text_style((style, style_changed), || {  
+                    let (text_style, _text_edit_style, style_changed) = get_styles_for_element(text_box, &self.styles);
+                    set_text_style((text_style, style_changed), || {  
                         text_renderer.prepare_text_box(text_box);
-                    })
+                    });
                 }            
             }
             for (_i, text_box) in self.static_text_boxes.iter_mut() {
                 if !text_box.hidden() && text_box.last_frame_touched == self.current_frame {
-                    let (style, style_changed) = do_styles(text_box, &self.styles);
-                    set_text_style((style, style_changed), || {  
+                    let (text_style, _text_edit_style, style_changed) = get_styles_for_element(text_box, &self.styles);
+                    set_text_style((text_style, style_changed), || {  
                         text_renderer.prepare_text_box(text_box);
-                    })
+                    });
                 }            
             }
         }
@@ -747,7 +779,7 @@ impl Text {
     fn handle_focused_event(&mut self, focused: AnyBox, event: &WindowEvent, window: &Window) {
         match focused {
             AnyBox::TextEdit(i) => {
-                let (style, style_changed) = do_styles(&mut self.text_edits[i as usize].text_box, &self.styles);
+                let (style, edit_style, style_changed) = get_styles_for_element(&mut self.text_edits[i as usize].text_box, &self.styles);
                 let result = set_text_style((style, style_changed), || {
                     self.text_edits[i as usize].handle_event(event, window, &self.input_state)
                 });
@@ -759,7 +791,7 @@ impl Text {
                 }
             },
             AnyBox::TextBox(i) => {
-                let (style, style_changed) = do_styles(&mut self.text_boxes[i as usize], &self.styles);
+                let (style, edit_style, style_changed) = get_styles_for_element(&mut self.text_boxes[i as usize], &self.styles);
                 let result = set_text_style((style, style_changed), || {
                     self.text_boxes[i as usize].handle_event(event, window, &self.input_state)
                 });
@@ -771,7 +803,7 @@ impl Text {
                 }
             },
             AnyBox::StaticTextBox(i) => {
-                let (style, style_changed) = do_styles(&mut self.static_text_boxes[i as usize], &self.styles);
+                let (style, edit_style, style_changed) = get_styles_for_element(&mut self.static_text_boxes[i as usize], &self.styles);
                 let result = set_text_style((style, style_changed), || {
                     self.static_text_boxes[i as usize].handle_event(event, window, &self.input_state)
                 });
@@ -839,12 +871,12 @@ pub(crate) fn set_text_style<R>(style: (TextStyle2, bool), f: impl FnOnce() -> R
     result
 }
 
-fn do_styles<T: AsRef<str>>(text_box: &mut TextBox<T>, styles: &Slab<(TextStyle2, u64)>) -> (TextStyle2, bool) {
+fn get_styles_for_element<T: AsRef<str>>(text_box: &mut TextBox<T>, styles: &Slab<(TextStyle2, TextEditStyle, u64)>) -> (TextStyle2, TextEditStyle, bool) {
     let style_handle = text_box.style.sneak_clone();
     let last_style_id = text_box.style_id;
     // todo: ABA problem here.
-    let (style, id) = styles.get(style_handle.i as usize).unwrap_or(&styles[DEFAULT_STYLE_HANDLE.i as usize]).clone();
+    let (text_style, text_edit_style, id) = styles.get(style_handle.i as usize).unwrap_or(&styles[DEFAULT_STYLE_HANDLE.i as usize]).clone();
     let changed = last_style_id != id;
     text_box.style_id = id;
-    (style, changed)
+    (text_style, text_edit_style, changed)
 }

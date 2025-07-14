@@ -88,19 +88,19 @@ impl DeclarativeGrid {
             font_size: 32.0,
             brush: ColorBrush([255, 255, 255, 255]),
             ..Default::default()
-        });
+        }, None);
         
         let desc_style = text.add_style(TextStyle {
             font_size: 24.0,
             brush: ColorBrush([200, 200, 255, 255]),
             ..Default::default()
-        });
+        }, None);
         
         let comment_style = text.add_style(TextStyle {
             font_size: 18.0,
             brush: ColorBrush([180, 255, 180, 255]),
             ..Default::default()
-        });
+        }, None);
         
         let comment_handle = text.add_static_text_box(
             "This is a silly mostly AI-generated example to show how text boxes can be hidden or removed in a declarative style rather than imperative (or \"retained-mode\").",

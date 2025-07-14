@@ -110,8 +110,28 @@ pub use parley::TextStyle as ParleyTextStyle;
 
 /// Text style.
 /// 
-/// To use it, first add a `TextStyle` into a [`Text`] with [`Text::add_style()`], and get a [`StyleHandle`] back. Then, use [`TextBox::set_style()`] to make a text box use the style.
+/// To use it, first add a `TextStyle2` into a [`Text`] with [`Text::add_style()`], and get a [`StyleHandle`] back. Then, use [`TextBox::set_style()`] to make a text box use the style.
 pub type TextStyle2 = ParleyTextStyle<'static, ColorBrush>;
+
+/// Style configuration for text edit boxes.
+/// 
+/// Contains color settings that are specific to text edit behavior (disabled/placeholder states).
+#[derive(Clone, Debug, PartialEq)]
+pub struct TextEditStyle {
+    /// Color to use when text is disabled
+    pub disabled_text_color: ColorBrush,
+    /// Color to use for placeholder text
+    pub placeholder_text_color: ColorBrush,
+}
+
+impl Default for TextEditStyle {
+    fn default() -> Self {
+        Self {
+            disabled_text_color: ColorBrush([128, 128, 128, 255]), // Gray
+            placeholder_text_color: ColorBrush([160, 160, 160, 255]), // Lighter gray
+        }
+    }
+}
 
 use bytemuck::{Pod, Zeroable};
 use etagere::euclid::{Size2D, UnknownUnit};
