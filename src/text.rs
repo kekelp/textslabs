@@ -308,28 +308,22 @@ impl Text {
     /// Get the [`parley::Layout`] for a text box, recomputing it only if needed.
     pub fn get_text_box_layout(&mut self, handle: &TextBoxHandle) -> &Layout<ColorBrush> {
         let text_box = &mut self.text_boxes[handle.i as usize];
-        let (style, edit_style, style_changed) = get_styles_for_element(text_box, &self.styles);
-        set_text_style((style, style_changed), || {
-            text_box.layout()
-        })
+        refresh_text_box_layout(text_box, &self.styles);
+        return &self.text_boxes[handle.i as usize].layout
     }
 
     /// Get the [`parley::Layout`] for a text box, recomputing it only if needed.
     pub fn get_static_text_box_layout(&mut self, handle: &StaticTextBoxHandle) -> &Layout<ColorBrush> {
         let static_text_box = &mut self.static_text_boxes[handle.i as usize];
-        let (style, edit_style, style_changed) = get_styles_for_element(static_text_box, &self.styles);
-        set_text_style((style, style_changed), || {
-            static_text_box.layout()
-        })
+        refresh_static_text_box_layout(static_text_box, &self.styles);
+        return &self.static_text_boxes[handle.i as usize].layout
     }
 
     /// Get the [`parley::Layout`] for a text edit box, recomputing it only if needed.
     pub fn get_text_edit_layout(&mut self, handle: &TextEditHandle) -> &Layout<ColorBrush> {
         let text_edit = &mut self.text_edits[handle.i as usize];
-        let (text_style, _text_edit_style, style_changed) = get_styles_for_element(&mut text_edit.text_box, &self.styles);
-        set_text_style((text_style, style_changed), || {
-            text_edit.layout()
-        })
+        refresh_text_edit_layout(text_edit, &self.styles);
+        return &self.text_edits[handle.i as usize].text_box.layout
     }
 
     #[must_use]
@@ -557,40 +551,20 @@ impl Text {
         if self.text_changed {
             for (_i, text_edit) in self.text_edits.iter_mut() {
                 if !text_edit.hidden() && text_edit.text_box.last_frame_touched == self.current_frame {
-                    let (text_style, text_edit_style, style_changed) = get_styles_for_element(&mut text_edit.text_box, &self.styles);
-                    
-                    // Choose the appropriate color based on text edit state
-                    let mut effective_style = text_style.clone();
-                    let color_override = if text_edit.disabled() {
-                        effective_style.brush = text_edit_style.disabled_text_color;
-                        true
-                    } else if text_edit.showing_placeholder {
-                        effective_style.brush = text_edit_style.placeholder_text_color;
-                        true
-                    } else {
-                        false
-                    };
-                    
-                    // Force style change when we're overriding the color
-                    set_text_style((effective_style, style_changed || color_override), || {                
-                        text_renderer.prepare_text_edit(text_edit);
-                    });
+                    refresh_text_edit_layout(text_edit, &self.styles);
+                    text_renderer.prepare_text_edit_layout(text_edit);
                 }
             }
             for (_i, text_box) in self.text_boxes.iter_mut() {
                 if !text_box.hidden() && text_box.last_frame_touched == self.current_frame {
-                    let (text_style, _text_edit_style, style_changed) = get_styles_for_element(text_box, &self.styles);
-                    set_text_style((text_style, style_changed), || {  
-                        text_renderer.prepare_text_box(text_box);
-                    });
+                    refresh_text_box_layout(text_box, &self.styles);
+                    text_renderer.prepare_text_box_layout(text_box);
                 }            
             }
             for (_i, text_box) in self.static_text_boxes.iter_mut() {
                 if !text_box.hidden() && text_box.last_frame_touched == self.current_frame {
-                    let (text_style, _text_edit_style, style_changed) = get_styles_for_element(text_box, &self.styles);
-                    set_text_style((text_style, style_changed), || {  
-                        text_renderer.prepare_text_box(text_box);
-                    });
+                    refresh_static_text_box_layout(text_box, &self.styles);
+                    text_renderer.prepare_text_box_layout(text_box);
                 }            
             }
         }
@@ -617,6 +591,24 @@ impl Text {
         self.decorations_changed = false;
 
         self.using_frame_based_visibility = false;
+    }
+
+    pub fn prepare_text_edit(&mut self, i: TextEditHandle, text_renderer: &mut TextRenderer) {
+        if self.text_edits[i.i as usize].hidden() {
+            return;
+        }
+        
+        self.text_edits[i.i as usize].refresh_layout();
+        
+        let (left, top) = self.text_edits[i.i as usize].pos();
+        let (left, top) = (left as f32, top as f32);
+        let clip_rect = self.text_edits[i.i as usize].clip_rect();
+
+        let layout = self.get_text_edit_layout(&i);
+
+        // Prepare text layout
+        text_renderer.prepare_layout(layout, left, top, clip_rect);
+        text_renderer.text_renderer.needs_gpu_sync = true;
     }
 
     /// Handle window events for text widgets.
@@ -779,8 +771,8 @@ impl Text {
     fn handle_focused_event(&mut self, focused: AnyBox, event: &WindowEvent, window: &Window) {
         match focused {
             AnyBox::TextEdit(i) => {
-                let (style, edit_style, style_changed) = get_styles_for_element(&mut self.text_edits[i as usize].text_box, &self.styles);
-                let result = set_text_style((style, style_changed), || {
+                let (style, _edit_style, style_changed) = get_styles_for_element(&mut self.text_edits[i as usize].text_box, &self.styles);
+                let result = set_text_style((style.clone(), style_changed), || {
                     self.text_edits[i as usize].handle_event(event, window, &self.input_state)
                 });
                 if result.text_changed {
@@ -791,8 +783,8 @@ impl Text {
                 }
             },
             AnyBox::TextBox(i) => {
-                let (style, edit_style, style_changed) = get_styles_for_element(&mut self.text_boxes[i as usize], &self.styles);
-                let result = set_text_style((style, style_changed), || {
+                let (style, _edit_style, style_changed) = get_styles_for_element(&mut self.text_boxes[i as usize], &self.styles);
+                let result = set_text_style((style.clone(), style_changed), || {
                     self.text_boxes[i as usize].handle_event(event, window, &self.input_state)
                 });
                 if result.text_changed {
@@ -803,8 +795,8 @@ impl Text {
                 }
             },
             AnyBox::StaticTextBox(i) => {
-                let (style, edit_style, style_changed) = get_styles_for_element(&mut self.static_text_boxes[i as usize], &self.styles);
-                let result = set_text_style((style, style_changed), || {
+                let (style, _edit_style, style_changed) = get_styles_for_element(&mut self.static_text_boxes[i as usize], &self.styles);
+                let result = set_text_style((style.clone(), style_changed), || {
                     self.static_text_boxes[i as usize].handle_event(event, window, &self.input_state)
                 });
                 if result.text_changed {
@@ -846,6 +838,36 @@ impl Text {
     }
 }
 
+pub fn refresh_text_edit_layout(text_edit: &mut TextEdit, styles: &Slab<(TextStyle2, TextEditStyle, u64)>) {
+    let (style, edit_style, style_changed) = get_styles_for_element(&mut text_edit.text_box, &styles);
+
+    let color_override = if text_edit.disabled {
+        Some(edit_style.disabled_text_color)
+    } else if text_edit.showing_placeholder {
+        Some(edit_style.placeholder_text_color)
+    } else {
+        None
+    };
+
+    if text_edit.text_box.needs_relayout || style_changed {
+        text_edit.text_box.rebuild_layout(style, color_override, text_edit.single_line);
+    }
+}
+
+pub fn refresh_text_box_layout(text_box: &mut TextBox<String>, styles: &Slab<(TextStyle2, TextEditStyle, u64)>) {
+    let (style, _edit_style, style_changed) = get_styles_for_element(text_box, styles);
+    if text_box.needs_relayout || style_changed {
+        text_box.rebuild_layout(style, None, false);
+    }
+}
+
+pub fn refresh_static_text_box_layout(static_text_box: &mut TextBox<&'static str>, styles: &Slab<(TextStyle2, TextEditStyle, u64)>) {
+    let (style, _edit_style, style_changed) = get_styles_for_element(static_text_box, styles);
+    if static_text_box.needs_relayout || style_changed {
+        static_text_box.rebuild_layout(style, None, false);
+    }
+}
+
 // todo: remove all of this, and I guess just pass the arguments all the way down normally.
 thread_local! {
     static CURRENT_TEXT_STYLE: RefCell<Option<(TextStyle2, bool)>> = RefCell::new(None);
@@ -871,12 +893,12 @@ pub(crate) fn set_text_style<R>(style: (TextStyle2, bool), f: impl FnOnce() -> R
     result
 }
 
-fn get_styles_for_element<T: AsRef<str>>(text_box: &mut TextBox<T>, styles: &Slab<(TextStyle2, TextEditStyle, u64)>) -> (TextStyle2, TextEditStyle, bool) {
+fn get_styles_for_element<'a, T: AsRef<str>>(text_box: &mut TextBox<T>, styles: &'a Slab<(TextStyle2, TextEditStyle, u64)>) -> (&'a TextStyle2, &'a TextEditStyle, bool) {
     let style_handle = text_box.style.sneak_clone();
     let last_style_id = text_box.style_id;
     // todo: ABA problem here.
-    let (text_style, text_edit_style, id) = styles.get(style_handle.i as usize).unwrap_or(&styles[DEFAULT_STYLE_HANDLE.i as usize]).clone();
-    let changed = last_style_id != id;
-    text_box.style_id = id;
+    let (text_style, text_edit_style, id) = styles.get(style_handle.i as usize).unwrap_or(&styles[DEFAULT_STYLE_HANDLE.i as usize]);
+    let changed = last_style_id != *id;
+    text_box.style_id = *id;
     (text_style, text_edit_style, changed)
 }

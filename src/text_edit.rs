@@ -213,10 +213,6 @@ impl TextEdit {
         self.text_box.selection_geometry()
     }
 
-    pub fn layout(&mut self) -> &Layout<ColorBrush> {
-        self.text_box.layout()
-    }
-
     pub fn is_composing(&self) -> bool {
         self.compose.is_some()
     }

@@ -323,40 +323,34 @@ impl TextRenderer {
         self.text_renderer.clear_decorations();
     }
 
-    pub fn prepare_layout(&mut self, layout: &Layout<ColorBrush>, left: f32, top: f32) {
-        self.text_renderer.prepare_layout(layout, &mut self.scale_cx, left, top, None);
+    pub fn prepare_layout(&mut self, layout: &Layout<ColorBrush>, left: f32, top: f32, clip_rect: Option<parley::Rect>) {
+        self.text_renderer.prepare_layout(layout, &mut self.scale_cx, left, top, clip_rect);
         self.text_renderer.needs_gpu_sync = true;
     }
 
-    pub fn prepare_text_box<T: AsRef<str>>(&mut self, text_box: &mut TextBox<T>) {
+    pub fn prepare_text_box_layout<T: AsRef<str>>(&mut self, text_box: &mut TextBox<T>) {
         if text_box.hidden() {
             return;
         }
-        
-        text_box.refresh_layout();
-        
+                
         let (left, top) = text_box.pos();
         let (left, top) = (left as f32, top as f32);
         let clip_rect = text_box.clip_rect();
 
-        // Prepare text layout
-        self.text_renderer.prepare_layout(text_box.layout(), &mut self.scale_cx, left, top, clip_rect);
+        self.text_renderer.prepare_layout(&text_box.layout, &mut self.scale_cx, left, top, clip_rect);
         self.text_renderer.needs_gpu_sync = true;
     }
 
-    pub fn prepare_text_edit(&mut self, text_edit: &mut TextEdit) {
+    pub fn prepare_text_edit_layout(&mut self, text_edit: &mut TextEdit) {
         if text_edit.hidden() {
             return;
         }
-        
-        text_edit.refresh_layout();
-        
+                
         let (left, top) = text_edit.pos();
         let (left, top) = (left as f32, top as f32);
         let clip_rect = text_edit.clip_rect();
 
-        // Prepare text layout
-        self.text_renderer.prepare_layout(text_edit.layout(), &mut self.scale_cx, left, top, clip_rect);
+        self.text_renderer.prepare_layout(&text_edit.text_box.layout, &mut self.scale_cx, left, top, clip_rect);
         self.text_renderer.needs_gpu_sync = true;
     }
 

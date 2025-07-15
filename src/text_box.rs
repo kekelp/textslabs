@@ -122,11 +122,6 @@ impl<T: AsRef<str>> TextBox<T> {
         }
     }
 
-    pub(crate) fn layout(&mut self) -> &Layout<ColorBrush> {
-        self.refresh_layout();
-        &self.layout
-    }
-
     #[must_use]
     pub(crate) fn hit_full_rect(&self, cursor_pos: (f64, f64)) -> bool {
         let offset = (
@@ -142,30 +137,27 @@ impl<T: AsRef<str>> TextBox<T> {
         return hit;
     }
 
-    pub(crate) fn refresh_layout(&mut self) {
-        with_text_style(|style, style_changed| {
-            if self.needs_relayout || style_changed {
-                self.rebuild_layout(style);
-            }
-        });
-    }
-
-    // todo: all these calls are really sure that they don't need to check?
-    pub(crate) fn update_layout(&mut self) {
-        with_text_style(|style, _style_changed| {
-            self.rebuild_layout(style);
-        });
-    }
-
-    fn rebuild_layout(&mut self, style: &TextStyle2) {
+    pub(crate) fn rebuild_layout(
+        &mut self,
+        style: &TextStyle2,
+        color_override: Option<ColorBrush>,
+        single_line: bool,
+    ) {
         with_text_cx(|layout_cx, font_cx| {
             let mut builder = layout_cx.tree_builder(font_cx, 1.0, true, style);
+
+            if let Some(color_override) = color_override {
+                builder.push_style_modification_span(&[
+                    StyleProperty::Brush(color_override)
+                ]);
+            }
 
             builder.push_text(&self.text.as_ref());
 
             let (mut layout, _) = builder.build();
 
-            layout.break_all_lines(Some(self.max_advance));
+            let max_advance = if single_line { None } else { Some(self.max_advance) };
+            layout.break_all_lines(max_advance);
             layout.align(
                 Some(self.max_advance),
                 self.alignment,
@@ -177,30 +169,6 @@ impl<T: AsRef<str>> TextBox<T> {
             
 
             self.selection.selection = self.selection.selection.refresh(&self.layout);
-
-
-            // with_text_cx(|layout_cx, font_cx| {
-            //     // let mut builder = layout_cx.tree_builder(font_cx, 1.0, true, style);
-            //     let mut builder = layout_cx.ranged_builder(font_cx, &self.text.as_ref(), self.scale, true);
-                
-            //     // // todo: styles
-            //     // for prop in style.values() {
-            //     //     builder.push_default(prop.to_owned());
-            //     // }
-    
-            //     let mut layout = builder.build(&self.text.as_ref());
-    
-            //     layout.break_all_lines(Some(self.max_advance));
-            //     layout.align(
-            //         Some(self.max_advance),
-            //         self.alignment,
-            //         AlignmentOptions::default(),
-            //     );
-    
-            //     // self.selection.selection = self.selection.selection.refresh(&self.layout);
-    
-            //     self.layout = layout;
-            //     self.needs_relayout = false;
         });
     }
 
