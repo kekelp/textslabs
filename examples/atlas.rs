@@ -106,7 +106,7 @@ impl State {
 
                 let now = std::time::Instant::now();
                 self.text_renderer.clear();
-                self.text_renderer.prepare_layout(&self.text_layouts[self.current_layout], 50.0, 50.0);
+                self.text_renderer.prepare_layout(&self.text_layouts[self.current_layout], 50.0, 50.0, None);
                 println!("prepare(): {:?}", now.elapsed());
 
                 self.text_renderer.gpu_load(&self.device, &self.queue);
