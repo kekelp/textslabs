@@ -198,8 +198,6 @@ impl<T: AsRef<str>> TextBox<T> {
             self.reset_selection();
             return;
         }
-
-        self.refresh_layout();
         
         self.selection.handle_event(
             event,
@@ -497,7 +495,6 @@ impl<T: AsRef<str>> TextBox<T> {
     // --- MARK: Cursor Movement ---
     /// Move the cursor to the cluster boundary nearest this point in the layout.
     pub(crate) fn move_to_point(&mut self, x: f32, y: f32) {
-        self.refresh_layout();
         self.set_selection(Selection::from_point(&self.layout, x, y));
     }
 
@@ -506,14 +503,12 @@ impl<T: AsRef<str>> TextBox<T> {
     /// No-op if index is not a char boundary.
     pub(crate) fn move_to_byte(&mut self, index: usize) {
         if self.text.as_ref().is_char_boundary(index) {
-            self.refresh_layout();
             self.set_selection(self.cursor_at(index).into());
         }
     }
 
     /// Move the cursor to the start of the text.
     pub(crate) fn move_to_text_start(&mut self) {
-        self.refresh_layout();
         self.set_selection(
             self.selection
                 .selection
@@ -523,13 +518,11 @@ impl<T: AsRef<str>> TextBox<T> {
 
     /// Move the cursor to the start of the physical line.
     pub(crate) fn move_to_line_start(&mut self) {
-        self.refresh_layout();
         self.set_selection(self.selection.selection.line_start(&self.layout, false));
     }
 
     /// Move the cursor to the end of the text.
     pub(crate) fn move_to_text_end(&mut self) {
-        self.refresh_layout();
         self.set_selection(
             self.selection
                 .selection
@@ -539,25 +532,21 @@ impl<T: AsRef<str>> TextBox<T> {
 
     /// Move the cursor to the end of the physical line.
     pub(crate) fn move_to_line_end(&mut self) {
-        self.refresh_layout();
         self.set_selection(self.selection.selection.line_end(&self.layout, false));
     }
 
     /// Move up to the closest physical cluster boundary on the previous line, preserving the horizontal position for repeated movements.
     pub(crate) fn move_up(&mut self) {
-        self.refresh_layout();
         self.set_selection(self.selection.selection.previous_line(&self.layout, false));
     }
 
     /// Move down to the closest physical cluster boundary on the next line, preserving the horizontal position for repeated movements.
     pub(crate) fn move_down(&mut self) {
-        self.refresh_layout();
         self.set_selection(self.selection.selection.next_line(&self.layout, false));
     }
 
     /// Move to the next cluster left in visual order.
     pub(crate) fn move_left(&mut self) {
-        self.refresh_layout();
         self.set_selection(
             self.selection
                 .selection
@@ -567,13 +556,11 @@ impl<T: AsRef<str>> TextBox<T> {
 
     /// Move to the next cluster right in visual order.
     pub(crate) fn move_right(&mut self) {
-        self.refresh_layout();
         self.set_selection(self.selection.selection.next_visual(&self.layout, false));
     }
 
     /// Move to the next word boundary left.
     pub(crate) fn move_word_left(&mut self) {
-        self.refresh_layout();
         self.set_selection(
             self.selection
                 .selection
@@ -583,7 +570,6 @@ impl<T: AsRef<str>> TextBox<T> {
 
     /// Move to the next word boundary right.
     pub(crate) fn move_word_right(&mut self) {
-        self.refresh_layout();
         self.set_selection(
             self.selection
                 .selection
@@ -593,7 +579,6 @@ impl<T: AsRef<str>> TextBox<T> {
 
     /// Select the whole text.
     pub(crate) fn select_all(&mut self) {
-        self.refresh_layout();
         self.set_selection(
             Selection::from_byte_index(&self.layout, 0_usize, Affinity::default()).move_lines(
                 &self.layout,
@@ -610,7 +595,6 @@ impl<T: AsRef<str>> TextBox<T> {
 
     /// Move the selection focus point to the cluster boundary closest to point.
     pub(crate) fn extend_selection_to_point(&mut self, x: f32, y: f32) {
-        self.refresh_layout();
         self.selection.extend_selection_to_point(&self.layout, x, y);
     }
 

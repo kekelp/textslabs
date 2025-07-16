@@ -505,41 +505,6 @@ impl TextEdit {
     pub fn selection_geometry_with(&self, f: impl FnMut(Rect, usize)) {
         self.text_box.selection_geometry_with(f)
     }
-
-    pub fn refresh_layout(&mut self) {
-        if self.single_line {
-            self.refresh_layout_single_line()
-        } else {
-            self.text_box.refresh_layout()
-        }
-    }
-
-    fn refresh_layout_single_line(&mut self) {
-        use crate::text_box::with_text_cx;
-        
-        with_text_style(|style, style_changed| {
-            if self.text_box.needs_relayout || style_changed {
-                with_text_cx(|layout_cx, font_cx| {
-                    let mut builder = layout_cx.tree_builder(font_cx, 1.0, true, style);
-        
-                    builder.push_text(&self.text_box.text.as_ref());
-        
-                    let (mut layout, _) = builder.build();
-        
-                    // In single line mode, don't break lines - use None for max_advance
-                    layout.break_all_lines(None);
-                    layout.align(
-                        Some(self.text_box.max_advance),
-                        self.text_box.alignment,
-                        AlignmentOptions::default(),
-                    );
-        
-                    self.text_box.layout = layout;
-                    self.text_box.needs_relayout = false;
-                });
-            }
-        });
-    }
 }
 
 
@@ -556,8 +521,6 @@ impl TextEdit {
         let initial_show_cursor = self.show_cursor;
         
         let mut result = TextEventResult::new();
-
-        self.text_box.refresh_layout();
 
         let showing_placeholder = self.showing_placeholder;
         if ! self.showing_placeholder {
@@ -998,7 +961,6 @@ impl TextEdit {
         };
         self.compose = Some(start..start + text.len());
         self.show_cursor = cursor.is_some();
-        self.text_box.update_layout();
 
         // Select the location indicated by the IME. If `cursor` is none, collapse the selection to
         // a caret at the start of the preedit text. As `self.show_cursor` is `false`, it
@@ -1019,9 +981,15 @@ impl TextEdit {
         if let Some(preedit_range) = self.compose.take() {
             self.text_box.text.replace_range(preedit_range.clone(), "");
             self.show_cursor = true;
-            self.text_box.update_layout();
 
-            self.text_box.set_selection(self.text_box.cursor_at(preedit_range.start).into());
+            let (index, affinity) = if preedit_range.start >= self.text_box.text.as_str().len() {
+                (self.text_box.text.as_str().len(), Affinity::Upstream)
+            } else {
+                (preedit_range.start, Affinity::Downstream)
+            };
+
+            // Don't update the layout. it will be updated after event handling is done anyway.
+            self.text_box.selection.selection = Cursor::from_byte_index_unchecked(index, affinity).into();
         }
     }
 
@@ -1066,7 +1034,6 @@ impl TextEdit {
 
                 let prev_selection = op.prev_selection;
                 self.text_box.set_selection(prev_selection);
-                self.text_box.update_layout();
             }
         }
     }
@@ -1082,11 +1049,8 @@ impl TextEdit {
 
             let end = op.range_to_clear.start + op.text_to_restore.len();
 
-            self.text_box.update_layout();
-
-            let new_selection =
-                Selection::from_byte_index(&self.text_box.layout, end, Affinity::Upstream);
-            self.text_box.set_selection(new_selection);
+            // Don't update the layout. it will be updated after event handling is done anyway.
+            self.text_box.selection.selection = Cursor::from_byte_index_unchecked(end, Affinity::Upstream).into();
         }
     }
 
@@ -1099,14 +1063,15 @@ impl TextEdit {
             self.text_box.text.replace_range(range, s);
         }
 
-        self.text_box.update_layout();
-        let new_index = start.saturating_add(s.len());
+        let index = start.saturating_add(s.len());
         let affinity = if s.ends_with("\n") {
             Affinity::Downstream
         } else {
             Affinity::Upstream
         };
-        self.text_box.set_selection(Cursor::from_byte_index(&self.text_box.layout, new_index, affinity).into());
+
+        // Don't update the layout. it will be updated after event handling is done anyway.
+        self.text_box.selection.selection = Cursor::from_byte_index_unchecked(index, affinity).into();
     }
 
 }

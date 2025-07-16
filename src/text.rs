@@ -593,24 +593,6 @@ impl Text {
         self.using_frame_based_visibility = false;
     }
 
-    pub fn prepare_text_edit(&mut self, i: TextEditHandle, text_renderer: &mut TextRenderer) {
-        if self.text_edits[i.i as usize].hidden() {
-            return;
-        }
-        
-        self.text_edits[i.i as usize].refresh_layout();
-        
-        let (left, top) = self.text_edits[i.i as usize].pos();
-        let (left, top) = (left as f32, top as f32);
-        let clip_rect = self.text_edits[i.i as usize].clip_rect();
-
-        let layout = self.get_text_edit_layout(&i);
-
-        // Prepare text layout
-        text_renderer.prepare_layout(layout, left, top, clip_rect);
-        text_renderer.text_renderer.needs_gpu_sync = true;
-    }
-
     /// Handle window events for text widgets.
     /// 
     /// This is the simple interface that works when text widgets aren't occluded by other objects.
@@ -628,8 +610,10 @@ impl Text {
             }
         }
 
-        if let Some(focused) = self.focused {    
+        if let Some(focused) = self.focused {
+            self.refresh_anybox_layout(focused);
             self.handle_focused_event(focused, event, window);
+            self.refresh_anybox_layout(focused);
         }
     }
 
@@ -676,7 +660,9 @@ impl Text {
         }
 
         if let Some(focused) = self.focused {    
+            self.refresh_anybox_layout(focused);
             self.handle_focused_event(focused, event, window);
+            self.refresh_anybox_layout(focused);
         }
     }
 
@@ -771,16 +757,14 @@ impl Text {
     fn handle_focused_event(&mut self, focused: AnyBox, event: &WindowEvent, window: &Window) {
         match focused {
             AnyBox::TextEdit(i) => {
-                let (style, _edit_style, style_changed) = get_styles_for_element(&mut self.text_edits[i as usize].text_box, &self.styles);
-                let result = set_text_style((style.clone(), style_changed), || {
-                    self.text_edits[i as usize].handle_event(event, window, &self.input_state)
-                });
+                let result = self.text_edits[i as usize].handle_event(event, window, &self.input_state);
                 if result.text_changed {
                     self.text_changed = true;
                 }
                 if result.decorations_changed {
                     self.decorations_changed = true;
                 }
+                self.text_edits[i as usize].text_box.needs_relayout = true;
             },
             AnyBox::TextBox(i) => {
                 let (style, _edit_style, style_changed) = get_styles_for_element(&mut self.text_boxes[i as usize], &self.styles);
@@ -835,6 +819,23 @@ impl Text {
     pub fn set_text_edit_text(&mut self, handle: &TextEditHandle, new_text: String) {
         self.get_text_edit_mut(handle).set_text(new_text);
         self.text_changed = true;
+    }
+
+    pub(crate) fn refresh_anybox_layout(&mut self, handle: AnyBox) {
+        match handle {
+            AnyBox::TextEdit(i) => {
+                let text_edit = &mut self.text_edits[i as usize];
+                refresh_text_edit_layout(text_edit, &mut self.styles);
+            },
+            AnyBox::TextBox(i) => {
+                let text_box = &mut self.text_boxes[i as usize];
+                refresh_text_box_layout(text_box, &mut self.styles);
+            },
+            AnyBox::StaticTextBox(i) => {
+                let static_text_box = &mut self.static_text_boxes[i as usize];
+                refresh_static_text_box_layout(static_text_box, &mut self.styles);
+            },
+        }
     }
 }
 
