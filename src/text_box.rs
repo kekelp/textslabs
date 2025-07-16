@@ -156,13 +156,16 @@ impl<T: AsRef<str>> TextBox<T> {
 
             let (mut layout, _) = builder.build();
 
-            let max_advance = if single_line { None } else { Some(self.max_advance) };
-            layout.break_all_lines(max_advance);
-            layout.align(
-                Some(self.max_advance),
-                self.alignment,
-                AlignmentOptions::default(),
-            );
+            if ! single_line {
+                layout.break_all_lines(Some(self.max_advance));
+                layout.align(
+                    Some(self.max_advance),
+                    self.alignment,
+                    AlignmentOptions::default(),
+                );
+            } else {
+                layout.break_all_lines(None);
+            }
 
             self.layout = layout;
             self.needs_relayout = false;

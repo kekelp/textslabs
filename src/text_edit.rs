@@ -804,14 +804,7 @@ impl TextEdit {
 
         self.clear_placeholder();
 
-        // In single line mode, convert newlines to spaces
-        // todo: don't allocate here
-        if self.single_line && (s.contains('\n') || s.contains('\r')) {
-            let filtered_text = s.replace('\n', " ").replace('\r', " ");
-            self.replace_selection_and_record(&filtered_text);
-        } else {
-            self.replace_selection_and_record(s);
-        }
+        self.replace_selection_and_record(s);
     }
 
     pub(crate) fn clear_placeholder(&mut self) {
@@ -1002,7 +995,7 @@ impl TextEdit {
                 (preedit_range.start, Affinity::Downstream)
             };
 
-            // Don't update the layout. it will be updated after event handling is done anyway.
+            // In parley, the layout is updated first, then the checked version is used. This should be fine too.
             self.text_box.selection.selection = Cursor::from_byte_index_unchecked(index, affinity).into();
         }
     }
@@ -1073,15 +1066,13 @@ impl TextEdit {
                 clear_placeholder!(self);
             }
 
-            // todo: this insert_str is skipping the single-line newline conversion.
-            // This only matters if the text box becomes single-line between the insert and the redo, I guess.
             self
                 .text_box.text
                 .insert_str(op.range_to_clear.start, op.text_to_restore);
 
             let end = op.range_to_clear.start + op.text_to_restore.len();
 
-            // Don't update the layout. it will be updated after event handling is done anyway.
+            // In parley, the layout is updated first, then the checked version is used. This should be fine too.
             self.text_box.selection.selection = Cursor::from_byte_index_unchecked(end, Affinity::Upstream).into();
         }
     }
@@ -1102,7 +1093,7 @@ impl TextEdit {
             Affinity::Upstream
         };
 
-        // Don't update the layout. it will be updated after event handling is done anyway.
+        // In parley, the layout is updated first, then the checked version is used. This should be fine too.
         self.text_box.selection.selection = Cursor::from_byte_index_unchecked(index, affinity).into();
     }
 
