@@ -13,6 +13,8 @@ struct VertexOutput {
     @location(0) color: vec4<f32>,
     @location(1) uv: vec2f,
     @location(2) @interpolate(flat) flags: u32,
+    @location(3) quad_pos: vec2<f32>,
+    @location(4) @interpolate(flat) quad_size: vec2<f32>,
 };
 
 struct Params {
@@ -42,6 +44,14 @@ fn split(u: u32) -> vec2<f32> {
          u & 0x0000ffffu,
         (u & 0xffff0000u) >> 16u,
     ));
+}
+
+fn get_content_type(flags: u32) -> u32 {
+    return flags & 0x0Fu;
+}
+
+fn get_fade_edges(flags: u32) -> u32 {
+    return (flags >> 4u) & 0x0Fu;
 }
 
 @vertex
@@ -76,13 +86,42 @@ fn vs_main(input: VertexInput) -> VertexOutput {
     );
 
     vert_output.flags = input.flags;
+    vert_output.quad_pos = coords;
+    vert_output.quad_size = dim;
 
     return vert_output;
 }
 
+fn calculate_fade_alpha(quad_pos: vec2<f32>, fade_edges: u32, quad_size: vec2<f32>) -> f32 {
+    let fade_distance = 15.0;
+    var alpha = 1.0;
+    
+    let pixel_pos = quad_pos * quad_size;
+    
+    // Check each edge: left=1, right=2, top=4, bottom=8
+    if (fade_edges & 1u) != 0u {
+        alpha = min(alpha, pixel_pos.x / fade_distance);
+    }
+    if (fade_edges & 2u) != 0u {
+        alpha = min(alpha, (quad_size.x - pixel_pos.x) / fade_distance);
+    }
+    if (fade_edges & 4u) != 0u {
+        alpha = min(alpha, pixel_pos.y / fade_distance);
+    }
+    if (fade_edges & 8u) != 0u {
+        alpha = min(alpha, (quad_size.y - pixel_pos.y) / fade_distance);
+    }
+    
+    return clamp(alpha, 0.0, 1.0);
+}
+
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
-    if input.flags == 1 {
+    let content_type = get_content_type(input.flags);
+    let fade_edges = get_fade_edges(input.flags);
+    var fade_alpha = calculate_fade_alpha(input.quad_pos, fade_edges, input.quad_size);
+    
+    if content_type == 1 {
         var color = textureSampleLevel(mask_atlas_texture, atlas_sampler, input.uv, 0.0);
         color = vec4<f32>(
             srgb_to_linear(color.r),
@@ -90,18 +129,22 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
             srgb_to_linear(color.b),
             color.a,
         );
-        return vec4<f32>(input.color * color);
+        var result = vec4<f32>(input.color * color);
+        result.a *= fade_alpha;
+        return result;
     
-    } else if input.flags == 0 {
+    } else if content_type == 0 {
         var glyph_alpha = textureSampleLevel(mask_atlas_texture, atlas_sampler, input.uv, 0.0).r;
-            var color = vec3f(
+        var color = vec3f(
             srgb_to_linear(input.color.rgb.r),
             srgb_to_linear(input.color.rgb.g),
             srgb_to_linear(input.color.rgb.b),
         );
-        return vec4<f32>(color, input.color.a * glyph_alpha);
+        return vec4<f32>(color, input.color.a * glyph_alpha * fade_alpha);
     
     } else {
-        return vec4f(input.color);
+        var result = vec4f(input.color);
+        result.a *= fade_alpha;
+        return result;
     }
 }

@@ -1,5 +1,18 @@
 use crate::*;
 
+// Flag bit constants
+const FLAG_CONTENT_TYPE_MASK: u32 = 0x0F;  // Bits 0-3
+const FLAG_FADE_EDGES_SHIFT: u32 = 4;      // Bits 4-7 for fade edges
+const FLAG_FADE_LEFT: u32 = 1 << (FLAG_FADE_EDGES_SHIFT + 0);   // Bit 4
+const FLAG_FADE_RIGHT: u32 = 1 << (FLAG_FADE_EDGES_SHIFT + 1);  // Bit 5  
+const FLAG_FADE_TOP: u32 = 1 << (FLAG_FADE_EDGES_SHIFT + 2);    // Bit 6
+const FLAG_FADE_BOTTOM: u32 = 1 << (FLAG_FADE_EDGES_SHIFT + 3); // Bit 7
+
+fn pack_flags(content_type: u32, fade_edges: u32) -> u32 {
+    (content_type & FLAG_CONTENT_TYPE_MASK) | 
+    ((fade_edges & 0x0F) << FLAG_FADE_EDGES_SHIFT)
+}
+
 /// A struct for rendering text and text edit boxes on the GPU.
 /// 
 /// Uses traditional CPU-size rasterizing and a dynamic glyph atlas on the GPU.
@@ -116,7 +129,7 @@ impl ContextlessTextRenderer {
             color,
             uv_origin: [0, 0],
             depth: 0.0,
-            flags: 2, // todo make names for these
+            flags: pack_flags(2, 0), // todo make names for these
         };
         self.decorations.push(quad);
     }
@@ -195,12 +208,14 @@ fn make_quad(glyph: &GlyphWithContext, stored_glyph: &StoredGlyph) -> Quad {
         dim: [size_x as u16, size_y as u16],
         uv_origin: [uv_x as u16, uv_y as u16],
         color,
-        flags,
+        flags: pack_flags(flags, 0), // No fade by default
         depth: 0.0,
     };
 }
 
 fn clip_quad(quad: Quad, left: f32, top: f32, clip_rect: Option<parley::Rect>) -> Option<Quad> {
+    let mut quad = quad;
+
     if let Some(clip) = clip_rect {
         let left = left as i32;
         let top = top as i32;
@@ -234,17 +249,23 @@ fn clip_quad(quad: Quad, left: f32, top: f32, clip_rect: Option<parley::Rect>) -
         let new_uv_x = quad.uv_origin[0] + left_clip as u16;
         let new_uv_y = quad.uv_origin[1] + top_clip as u16;
 
-        Some(Quad {
-            pos: [clipped_x0, clipped_y0],
-            dim: [(clipped_x1 - clipped_x0) as u16, (clipped_y1 - clipped_y0) as u16],
-            uv_origin: [new_uv_x, new_uv_y],
-            color: quad.color,
-            depth: quad.depth,
-            flags: quad.flags,
-        })
-    } else {
-        Some(quad)
+        // Extract content type from existing flags
+        let content_type = quad.flags & FLAG_CONTENT_TYPE_MASK;
+        
+        // Build fade edges bitmask
+        let mut fade_edges = 0u32;
+        if quad_x0 < clip_x0 { fade_edges |= 1; }
+        if quad_x1 > clip_x1 { fade_edges |= 2; }
+        if quad_y0 < clip_y0 { fade_edges |= 4; }
+        if quad_y1 > clip_y1 { fade_edges |= 8; }
+        
+        quad.pos = [clipped_x0, clipped_y0];
+        quad.dim = [(clipped_x1 - clipped_x0) as u16, (clipped_y1 - clipped_y0) as u16];
+        quad.uv_origin = [new_uv_x, new_uv_y];
+        quad.flags = pack_flags(content_type, fade_edges);
     }
+    
+    Some(quad)
 }
 
 /// A glyph as stored in a glyph atlas.
@@ -395,7 +416,7 @@ impl TextRenderer {
                 uv_origin: [0, 0],
                 color: 0xff0000ff,
                 depth: 0.0,
-                flags: 0,
+                flags: pack_flags(0, 0),
             }];
         }
     
@@ -408,7 +429,7 @@ impl TextRenderer {
                 uv_origin: [0, 0],
                 color: 0xffffffff,
                 depth: 0.0,
-                flags: 1,
+                flags: pack_flags(1, 0),
             }];
         }
         
