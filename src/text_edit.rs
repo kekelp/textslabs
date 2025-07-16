@@ -805,6 +805,7 @@ impl TextEdit {
         self.clear_placeholder();
 
         // In single line mode, convert newlines to spaces
+        // todo: don't allocate here
         if self.single_line && (s.contains('\n') || s.contains('\r')) {
             let filtered_text = s.replace('\n', " ").replace('\r', " ");
             self.replace_selection_and_record(&filtered_text);

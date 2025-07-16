@@ -1,6 +1,6 @@
 use crate::*;
 use slab::Slab;
-use std::{cell::RefCell, time::Instant};
+use std::time::Instant;
 use winit::{event::{Modifiers, MouseButton, WindowEvent}, window::Window};
 
 const MULTICLICK_DELAY: f64 = 0.4;
@@ -760,17 +760,15 @@ impl Text {
                 let result = self.text_edits[i as usize].handle_event(event, window, &self.input_state);
                 if result.text_changed {
                     self.text_changed = true;
+                    // todo: move this inside
+                    self.text_edits[i as usize].text_box.needs_relayout = true;
                 }
                 if result.decorations_changed {
                     self.decorations_changed = true;
                 }
-                self.text_edits[i as usize].text_box.needs_relayout = true;
             },
             AnyBox::TextBox(i) => {
-                let (style, _edit_style, style_changed) = get_styles_for_element(&mut self.text_boxes[i as usize], &self.styles);
-                let result = set_text_style((style.clone(), style_changed), || {
-                    self.text_boxes[i as usize].handle_event(event, window, &self.input_state)
-                });
+                let result = self.text_boxes[i as usize].handle_event(event, window, &self.input_state);
                 if result.text_changed {
                     self.text_changed = true;
                 }
@@ -779,10 +777,7 @@ impl Text {
                 }
             },
             AnyBox::StaticTextBox(i) => {
-                let (style, _edit_style, style_changed) = get_styles_for_element(&mut self.static_text_boxes[i as usize], &self.styles);
-                let result = set_text_style((style.clone(), style_changed), || {
-                    self.static_text_boxes[i as usize].handle_event(event, window, &self.input_state)
-                });
+                let result = self.static_text_boxes[i as usize].handle_event(event, window, &self.input_state);
                 if result.text_changed {
                     self.text_changed = true;
                 }
@@ -867,31 +862,6 @@ pub fn refresh_static_text_box_layout(static_text_box: &mut TextBox<&'static str
     if static_text_box.needs_relayout || style_changed {
         static_text_box.rebuild_layout(style, None, false);
     }
-}
-
-// todo: remove all of this, and I guess just pass the arguments all the way down normally.
-thread_local! {
-    static CURRENT_TEXT_STYLE: RefCell<Option<(TextStyle2, bool)>> = RefCell::new(None);
-}
-
-pub(crate) fn with_text_style<R>(f: impl FnOnce(&TextStyle2, bool) -> R) -> R {
-    CURRENT_TEXT_STYLE.with_borrow(|style| {
-        match style.as_ref() {
-            Some((s, changed)) => f(s, *changed),
-            None => panic!("No text style set! Use set_text_style() to set one."),
-        }
-    })
-}
-
-pub(crate) fn set_text_style<R>(style: (TextStyle2, bool), f: impl FnOnce() -> R) -> R {
-    CURRENT_TEXT_STYLE.with_borrow_mut(|current_style| {
-        *current_style = Some((style.0, style.1));
-    });
-    let result = f();
-    CURRENT_TEXT_STYLE.with_borrow_mut(|current_style| {
-        *current_style = None;
-    });
-    result
 }
 
 fn get_styles_for_element<'a, T: AsRef<str>>(text_box: &mut TextBox<T>, styles: &'a Slab<(TextStyle2, TextEditStyle, u64)>) -> (&'a TextStyle2, &'a TextEditStyle, bool) {
