@@ -356,7 +356,9 @@ impl<T: AsRef<str>> TextBox<T> {
         &self.text.as_ref()
     }
 
-    // Returns a mutable reference to the text box's text buffer.
+    // todo: just setting self.needs_relayout is probably not ok. what if the user calls this on a text edit box, and then a method like move_right()?
+    // this could be solved if get_text_edit_mut() did a relayout if needed. 
+    /// Returns a mutable reference to the text box's text buffer.
     pub fn raw_text_mut(&mut self) -> &mut T {
         self.needs_relayout = true;
         &mut self.text

@@ -481,6 +481,11 @@ impl TextEdit {
         self.text_box.extend_selection_to_point(x, y)
     }
 
+    // Returns a mutable reference to the text box's text buffer.
+    pub fn raw_text_mut(&mut self) -> &mut String {
+        self.text_box.raw_text_mut()
+    }
+
     // Cursor blinking methods
     pub fn cursor_reset(&mut self) {
         self.start_time = Some(Instant::now());

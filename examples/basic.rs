@@ -28,11 +28,15 @@ struct State {
     text_renderer: TextRenderer,
     text: Text,
 
-    text_boxes: Vec<TextBoxHandle>,
-    text_edits: Vec<TextEditHandle>,
-    static_text_boxes: Vec<StaticTextBoxHandle>,
+    // Text edits with explicit names
+    single_line_input: TextEditHandle,
 
-    small_text_style: StyleHandle,
+    // Text box with explicit name
+    clipped_text_box: TextBoxHandle,
+    
+    // Static text box with explicit name
+    justified_static_text: StaticTextBoxHandle,
+
     big_text_style: StyleHandle,
     modifiers: ModifiersState,
 }
@@ -57,45 +61,34 @@ impl State {
         let white = [255,0,0,255];
         let mut text = Text::new();
         
+        // Create a style
         let big_text_style_handle = text.add_style(TextStyle {
             font_size: 64.0,
             brush: ColorBrush(white),
             ..Default::default()
         }, None);
 
-        let text_edit_handles = vec![
-            text.add_text_edit("".to_string(), (10.0, 15.0), (200.0, 30.0), 0.0),
-            text.add_text_edit("Editable text 無限での座を含む全ての".to_string(), (300.0, 200.0), (400.0, 200.0), 0.0),
-            text.add_text_edit("Multi-line\ntext edit\nbox".to_string(), (10.0, 60.0), (200.0, 100.0), 0.0),
-            text.add_text_edit("Press Ctrl+Plus and Ctrl+Minus to adjust the size of the big text".to_string(), (470.0, 60.0), (200.0, 100.0), 0.0),
-            text.add_text_edit("Use Shift+Enter for newlines here".to_string(), (250.0, 60.0), (200.0, 100.0), 0.0),
-            text.add_text_edit("".to_string(), (250.0, 15.0), (250.0, 30.0), 0.0),
-        ];
+        // Create text boxes and get handles. Normally, the handle would be owned by a higher level struct representing a node in a GUI tree or something similar.
+        let single_line_input = text.add_text_edit("".to_string(), (10.0, 15.0), (200.0, 30.0), 0.0);
+        let editable_text_with_unicode = text.add_text_edit("Editable text 無限での座を含む全ての".to_string(), (300.0, 200.0), (400.0, 200.0), 0.0);
+        let _multiline_text_edit = text.add_text_edit("Multi-line\ntext edit\nbox".to_string(), (10.0, 60.0), (200.0, 100.0), 0.0);
+        let _help_text_edit = text.add_text_edit("Press Ctrl + Plus and Ctrl + Minus to adjust the size of the big text.".to_string(), (470.0, 60.0), (200.0, 100.0), 0.0);
+        let shift_enter_text_edit = text.add_text_edit("Use Shift+Enter for newlines here".to_string(), (250.0, 60.0), (200.0, 100.0), 0.0);
         
-        let text_box_handles = vec![
-            text.add_text_box("Clipped text".to_string(), (10.0, 230.0), (300.0, 50.0), 0.0),
-        ];
+        let clipped_text_box = text.add_text_box("Clipped text".to_string(), (10.0, 230.0), (300.0, 50.0), 0.0);
         
-        let static_text_box_handles = vec![
-            text.add_static_text_box("&'static str", (400.0, 500.0), (100.0, 50.0), 0.0),
-            text.add_static_text_box("Long static words, Long static words, Long static words, Long static words, ... ", (200.0, 400.0), (400.0, 150.0), 0.0),
-        ];
+        let justified_static_text = text.add_static_text_box("Long static words, Long static words, Long static words, Long static words, ... (justified btw) ", (200.0, 400.0), (400.0, 150.0), 0.0);
         
-        text.get_text_edit_mut(&text_edit_handles[0]).set_single_line(true);
-        text.get_text_edit_mut(&text_edit_handles[0]).set_placeholder("Single line input".to_string());
-        // text.get_text_edit_mut(&text_edit_handles[0]).set_style(&big_text_style_handle);
-        text.get_text_edit_mut(&text_edit_handles[1]).set_style(&big_text_style_handle);
-        text.get_text_edit_mut(&text_edit_handles[4]).set_newline_mode(NewlineMode::ShiftEnter);
-        text.get_text_edit_mut(&text_edit_handles[5]).set_single_line(true);
-        text.get_text_box_mut(&text_box_handles[0]).set_style(&big_text_style_handle);
+        // Use the handles to access and edit text boxes. Despite the verbosity, accessing a box through a handle is about as fast as indexing into a Vec. There is no hashing involved.
+        text.get_text_edit_mut(&single_line_input).set_single_line(true);
+        text.get_text_edit_mut(&single_line_input).set_placeholder("Single line input".to_string());
+        text.get_text_edit_mut(&editable_text_with_unicode).set_style(&big_text_style_handle);
+        text.get_text_edit_mut(&shift_enter_text_edit).set_newline_mode(NewlineMode::ShiftEnter);
         
-        let small_text_style_handle = text.add_style(TextStyle {
-            font_size: 24.0,
-            ..Default::default()
-        }, None);
-
-        text.get_text_box_mut(&text_box_handles[0]).set_style(&small_text_style_handle);
-        text.get_text_box_mut(&text_box_handles[0]).set_clip_rect(Some(parley::Rect {
+        text.get_text_box_mut(&clipped_text_box).set_style(&big_text_style_handle);
+        text.get_text_box_mut(&clipped_text_box).raw_text_mut();
+        
+        text.get_text_box_mut(&clipped_text_box).set_clip_rect(Some(parley::Rect {
             x0: 0.0,
             y0: 0.0,
             x1: 200.0,
@@ -104,8 +97,8 @@ impl State {
 
         text.get_text_style_mut(&big_text_style_handle).font_size = 32.0;
 
-        text.get_static_text_box_mut(&static_text_box_handles[1]).set_style(&big_text_style_handle);
-
+        text.get_static_text_box_mut(&justified_static_text).set_style(&big_text_style_handle);
+        text.get_static_text_box_mut(&justified_static_text).set_alignment(Alignment::Justify);
 
         let text_renderer = TextRenderer::new(&device, &queue, surface_config.format);
 
@@ -118,11 +111,9 @@ impl State {
             text_renderer,
             text,
 
-            text_boxes: text_box_handles,
-            text_edits: text_edit_handles,
-            static_text_boxes: static_text_box_handles,
-
-            small_text_style: small_text_style_handle,
+            single_line_input,
+            clipped_text_box,
+            justified_static_text,
             big_text_style: big_text_style_handle,
 
             modifiers: ModifiersState::default(),
@@ -191,8 +182,8 @@ impl State {
                                 }
                             }
                             "d" => {
-                                let is_disabled = self.text.get_text_edit(&self.text_edits[0]).disabled();
-                                self.text.set_text_edit_disabled(&self.text_edits[0], !is_disabled);
+                                let is_disabled = self.text.get_text_edit(&self.single_line_input).disabled();
+                                self.text.set_text_edit_disabled(&self.single_line_input, !is_disabled);
                             }
                             _ => {}
                         }
