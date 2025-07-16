@@ -11,6 +11,18 @@ const INSET: f32 = 2.0;
 
 use crate::*;
 
+// I love partial borrows!
+macro_rules! clear_placeholder {
+    ($self:expr) => {
+        if $self.showing_placeholder {
+            $self.text_box.text.clear();
+            $self.showing_placeholder = false;
+            $self.text_box.needs_relayout = true;
+            $self.text_box.selection.selection = Selection::zero();
+        }
+    };
+}
+
 /// Defines how newlines are entered in a text edit box.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NewlineMode {
@@ -739,14 +751,7 @@ impl TextEdit {
             _ => {}
         }
 
-        if let Some(placeholder) = &self.placeholder_text {
-            if self.text_box.text.as_str().is_empty() && !self.showing_placeholder {
-                self.text_box.text = placeholder.clone();
-                self.showing_placeholder = true;
-                self.text_box.needs_relayout = true;
-                self.text_box.selection.selection = Selection::zero();
-            }
-        }
+        self.restore_placeholder_if_any();
 
         if selection_decorations_changed(initial_selection, self.text_box.selection.selection, initial_show_cursor, self.show_cursor, !self.disabled) {
             result.set_decorations_changed();
@@ -809,11 +814,19 @@ impl TextEdit {
     }
 
     pub(crate) fn clear_placeholder(&mut self) {
-        if self.showing_placeholder {
-            self.text_box.text.clear();
-            self.showing_placeholder = false;
-            self.text_box.needs_relayout = true;
-            self.text_box.selection.selection = Selection::zero();
+        // I love partial borrows!
+        clear_placeholder!(self);
+    }
+
+    pub(crate) fn restore_placeholder_if_any(&mut self) {
+        if let Some(placeholder) = &self.placeholder_text {
+            if self.text_box.text.as_str().is_empty() && !self.showing_placeholder {
+                self.text_box.text.clear();
+                self.text_box.text.push_str(&placeholder);
+                self.showing_placeholder = true;
+                self.text_box.needs_relayout = true;
+                self.text_box.selection.selection = Selection::zero();
+            }
         }
     }
 
@@ -1023,26 +1036,44 @@ impl TextEdit {
     // }
 
     pub(crate) fn undo(&mut self) {
-        if ! self.is_composing() {
-            if let Some(op) = self.history.undo(&self.text_box.text) {
-                self
-                    .text_box.text
-                    .replace_range(op.range_to_clear.clone(), "");
-                self
-                    .text_box.text
-                    .insert_str(op.range_to_clear.start, op.text_to_restore);
+        if self.is_composing() {
+            return;
+        }
 
-                let prev_selection = op.prev_selection;
-                self.text_box.set_selection(prev_selection);
+        if let Some(op) = self.history.undo(&self.text_box.text) {
+
+            if ! op.text_to_restore.is_empty() {
+                clear_placeholder!(self);
             }
+
+            self
+                .text_box.text
+                .replace_range(op.range_to_clear.clone(), "");
+            self
+                .text_box.text
+                .insert_str(op.range_to_clear.start, op.text_to_restore);
+
+            let prev_selection = op.prev_selection;
+            self.text_box.set_selection(prev_selection);
         }
     }
 
     pub(crate) fn redo(&mut self) {
+        if self.is_composing() {
+            return;
+        }
+
         if let Some(op) = self.history.redo() {
             self
                 .text_box.text
                 .replace_range(op.range_to_clear.clone(), "");
+
+            if ! op.text_to_restore.is_empty() {
+                clear_placeholder!(self);
+            }
+
+            // todo: this insert_str is skipping the single-line newline conversion.
+            // This only matters if the text box becomes single-line between the insert and the redo, I guess.
             self
                 .text_box.text
                 .insert_str(op.range_to_clear.start, op.text_to_restore);
@@ -1124,7 +1155,7 @@ impl Ranges {
     }
 }
 
-/// The result of undoing of redoing a text replace operation.
+/// The result of undoing or redoing a text replace operation.
 #[derive(Debug, Clone)]
 struct TextRestore<'a> {
     /// A range into the original buffer that should be cleared.
