@@ -38,17 +38,17 @@ pub(crate) struct ContextlessTextRenderer {
     pub pipeline: RenderPipeline,
     pub atlas_size: u32,
     
-    pub(crate) cached_scaler: Option<CachedScaler>,
+    // pub(crate) cached_scaler: Option<CachedScaler>,
     
     pub(crate) vertex_buffer: Buffer,
     pub(crate) needs_gpu_sync: bool,
 }
 
-pub(crate) struct CachedScaler {
-    scaler: Scaler<'static>,
-    font_key: u64,
-    font_size: f32,
-}
+// pub(crate) struct CachedScaler {
+//     scaler: Scaler<'static>,
+//     font_key: u64,
+//     font_size: f32,
+// }
 
 pub(crate) struct AtlasPage<ImageType> {
     pub quads: Vec<Quad>,
@@ -538,29 +538,36 @@ impl ContextlessTextRenderer {
         let font_ref = FontRef::from_index(font.data.as_ref(), font.index as usize).unwrap();
         let font_key = font.data.id();
 
-        // Why is creating this struct so slow anyway?
-        // This optimization won't do anything if the font size changes a lot.
-        // It might be over.
-        // todo: feel bad about this
-        let need_new_scaler = self.cached_scaler.as_ref()
-            .map(|cached| cached.font_key != font_key || cached.font_size != font_size)
-            .unwrap_or(true);
+        // // Why is creating this struct so slow anyway?
+        // // This optimization won't do anything if the font size changes a lot.
+        // // It might be over.
+        // // todo: feel bad about this
+        // let need_new_scaler = self.cached_scaler.as_ref()
+        //     .map(|cached| cached.font_key != font_key || cached.font_size != font_size)
+        //     .unwrap_or(true);
 
-        if need_new_scaler {
-            let scaler = scale_cx
-                .builder(font_ref)
-                .size(font_size)
-                .hint(true)
-                .normalized_coords(run.normalized_coords())
-                .build();
+        // if need_new_scaler {
+        //     let scaler = scale_cx
+        //         .builder(font_ref)
+        //         .size(font_size)
+        //         .hint(true)
+        //         .normalized_coords(run.normalized_coords())
+        //         .build();
             
-            self.cached_scaler = Some(CachedScaler {
-                // SAFETY: I have no idea, but we reuse a scaler only if the font_key is the same, which should mean that the font data is still valid.
-                scaler: unsafe { std::mem::transmute(scaler) },
-                font_key,
-                font_size,
-            });
-        }
+        //     self.cached_scaler = Some(CachedScaler {
+        //         // SAFETY: I have no idea, but we reuse a scaler only if the font_key is the same, which should mean that the font data is still valid.
+        //         scaler: unsafe { std::mem::transmute(scaler) },
+        //         font_key,
+        //         font_size,
+        //     });
+        // }
+
+        let mut scaler = scale_cx
+            .builder(font_ref)
+            .size(font_size)
+            .hint(true)
+            .normalized_coords(run.normalized_coords())
+            .build();
 
         for glyph in glyph_run.glyphs() {
             let glyph_ctx = GlyphWithContext::new(glyph, run_x, run_y, font_key, font_size, style.brush);
@@ -579,7 +586,7 @@ impl ContextlessTextRenderer {
                     }
                 }
             } else {
-                if let Some((quad, stored_glyph)) = self.prepare_glyph_with_cached_scaler(&glyph_ctx) {
+                if let Some((quad, stored_glyph)) = self.prepare_glyph(&glyph_ctx, &mut scaler) {
                     if let Some(clipped_quad) = clip_quad(quad, left, top, clip_rect, fade) {
                         let page = stored_glyph.page as usize;
 
@@ -664,70 +671,70 @@ impl ContextlessTextRenderer {
         return (self.tmp_image.content, self.tmp_image.placement);
     }
 
-    /// Helper method to prepare glyph using the cached scaler
-    fn prepare_glyph_with_cached_scaler(&mut self, glyph: &GlyphWithContext) -> Option<(Quad, StoredGlyph)> {
-        if self.cached_scaler.is_none() {
-            return None;
-        }
+    // /// Helper method to prepare glyph using the cached scaler
+    // fn prepare_glyph_with_cached_scaler(&mut self, glyph: &GlyphWithContext) -> Option<(Quad, StoredGlyph)> {
+    //     if self.cached_scaler.is_none() {
+    //         return None;
+    //     }
 
-        let (content, placement) = self.render_glyph_with_cached_scaler(&glyph)?;
-        let size = placement.size();
+    //     let (content, placement) = self.render_glyph_with_cached_scaler(&glyph)?;
+    //     let size = placement.size();
         
-        // For some glyphs there's no image to store, like spaces.
-        if size.is_empty() {
-            self.glyph_cache.push(glyph.key(), None);
-            return None;
-        }
+    //     // For some glyphs there's no image to store, like spaces.
+    //     if size.is_empty() {
+    //         self.glyph_cache.push(glyph.key(), None);
+    //         return None;
+    //     }
         
-        let n_pages = match content {
-            Content::Mask => self.mask_atlas_pages.len(),
-            Content::Color => self.color_atlas_pages.len(),
-            Content::SubpixelMask => unreachable!(),
-        };
+    //     let n_pages = match content {
+    //         Content::Mask => self.mask_atlas_pages.len(),
+    //         Content::Color => self.color_atlas_pages.len(),
+    //         Content::SubpixelMask => unreachable!(),
+    //     };
         
-        // Try to allocate on existing pages
-        for page in 0..n_pages {
-            if let Some(alloc) = self.pack_rectangle(size, content, page) {
-                return self.store_glyph(glyph, size, &alloc, page, &placement, content);
-            }
+    //     // Try to allocate on existing pages
+    //     for page in 0..n_pages {
+    //         if let Some(alloc) = self.pack_rectangle(size, content, page) {
+    //             return self.store_glyph(glyph, size, &alloc, page, &placement, content);
+    //         }
             
-            // Try evicting glyphs from previous frames and retry
-            if self.needs_evicting(self.frame) {
-                self.evict_old_glyphs();
+    //         // Try evicting glyphs from previous frames and retry
+    //         if self.needs_evicting(self.frame) {
+    //             self.evict_old_glyphs();
                 
-                if let Some(alloc) = self.pack_rectangle(size, content, page) {
-                    return self.store_glyph(glyph, size, &alloc, page, &placement, content);
-                }
-            }
-        }
+    //             if let Some(alloc) = self.pack_rectangle(size, content, page) {
+    //                 return self.store_glyph(glyph, size, &alloc, page, &placement, content);
+    //             }
+    //         }
+    //     }
         
-        // Create a new page and try to allocate there
-        let new_page: usize = self.make_new_page(content);
-        if let Some(alloc) = self.pack_rectangle(size, content, new_page) {
-            return self.store_glyph(glyph, size, &alloc, new_page, &placement, content);
-        }
+    //     // Create a new page and try to allocate there
+    //     let new_page: usize = self.make_new_page(content);
+    //     if let Some(alloc) = self.pack_rectangle(size, content, new_page) {
+    //         return self.store_glyph(glyph, size, &alloc, new_page, &placement, content);
+    //     }
         
-        // Glyph is too large to fit even in a new empty page
-        self.glyph_cache.push(glyph.key(), None);
-        None
-    }
+    //     // Glyph is too large to fit even in a new empty page
+    //     self.glyph_cache.push(glyph.key(), None);
+    //     None
+    // }
 
-    /// Render a glyph using the cached scaler
-    fn render_glyph_with_cached_scaler(&mut self, glyph: &GlyphWithContext) -> Option<(Content, Placement)> {
-        if let Some(cached) = &mut self.cached_scaler {
-            self.tmp_image.clear();
-            Render::new(SOURCES)
-                .format(Format::Alpha)
-                .offset(glyph.frac_offset())
-                .render_into(&mut cached.scaler, glyph.glyph.id, &mut self.tmp_image);
-            Some((self.tmp_image.content, self.tmp_image.placement))
-        } else {
-            None
-        }
-    }
+    // /// Render a glyph using the cached scaler
+    // fn render_glyph_with_cached_scaler(&mut self, glyph: &GlyphWithContext) -> Option<(Content, Placement)> {
+    //     if let Some(cached) = &mut self.cached_scaler {
+    //         self.tmp_image.clear();
+    //         Render::new(SOURCES)
+    //             .format(Format::Alpha)
+    //             .offset(glyph.frac_offset())
+    //             .render_into(&mut cached.scaler, glyph.glyph.id, &mut self.tmp_image);
+    //         Some((self.tmp_image.content, self.tmp_image.placement))
+    //     } else {
+    //         None
+    //     }
+    // }
 
     /// Rasterizes the glyph in a texture atlas and returns a Quad that can be used to render it, or None if the glyph was just empty (like a space).
-    fn _prepare_glyph(&mut self, glyph: &GlyphWithContext, scaler: &mut Scaler) -> Option<(Quad, StoredGlyph)> {
+    fn prepare_glyph(&mut self, glyph: &GlyphWithContext, scaler: &mut Scaler) -> Option<(Quad, StoredGlyph)> {
         let (content, placement) = self._render_glyph(&glyph, scaler);
         let size = placement.size();
         

@@ -990,12 +990,13 @@ impl TextEdit {
         self.show_cursor = cursor.is_some();
 
         // Select the location indicated by the IME. If `cursor` is none, collapse the selection to
-        // a caret at the start of the preedit text. As `self.show_cursor` is `false`, it
-        // won't show up.
+        // a caret at the start of the preedit text.
+
         let cursor = cursor.unwrap_or((0, 0));
         self.text_box.set_selection(Selection::new(
-            self.text_box.cursor_at(start + cursor.0),
-            self.text_box.cursor_at(start + cursor.1),
+            // In parley, the layout is updated first, then the checked version is used. This should be fine too.
+            Cursor::from_byte_index_unchecked(start + cursor.0, Affinity::Downstream),
+            Cursor::from_byte_index_unchecked(start + cursor.1, Affinity::Downstream),
         ));
 
         self.text_box.needs_relayout = true;

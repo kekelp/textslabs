@@ -12,7 +12,7 @@
 //! 
 //! - Accessibility is supported in Parley itself but not in Parley2, because of my personal lack of familiarity with the subject.
 //! 
-//! - Parley2 currently uses the built-in Swash CPU rasterizer and a basic homemade atlas renderer to actually show the text on screen. The performance is acceptable but it is not as good as it could be. There is also a questionable bit of unsafe code to circumvent some performance problems in Swash. This might eventually be fixed by switching to the new "Vello Hybrid" renderer.
+//! - Parley2 currently uses the built-in Swash CPU rasterizer and a basic homemade atlas renderer to actually show the text on screen. The performance is acceptable but it is not as good as it could be. This might eventually be fixed by switching to the new "Vello Hybrid" renderer, or by solving the performance problems in Swash. 
 //! 
 //! - Parley itself has some limitations, but they will be probably fixed soon.
 //! 
