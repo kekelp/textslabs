@@ -35,7 +35,7 @@ struct State {
     clipped_text_box: TextBoxHandle,
     
     // Static text box with explicit name
-    justified_static_text: StaticTextBoxHandle,
+    justified_static_text: TextBoxHandle,
 
     big_text_style: StyleHandle,
     modifiers: ModifiersState,
@@ -77,7 +77,8 @@ impl State {
         
         let clipped_text_box = text.add_text_box("Clipped text".to_string(), (10.0, 340.0), (300.0, 50.0), 0.0);
         
-        let justified_static_text = text.add_static_text_box("Long static words, Long static words, Long static words, Long static words, ... (justified btw) ", (200.0, 400.0), (400.0, 150.0), 0.0);
+        // Using a &'static str here for this non-editable text box.
+        let justified_static_text = text.add_text_box("Long static words, Long static words, Long static words, Long static words, ... (justified btw) ", (200.0, 400.0), (400.0, 150.0), 0.0);
         
         // Use the handles to access and edit text boxes. Despite the verbosity, accessing a box through a handle is a very fast operation, basically just an array access. There is no hashing involved.
         text.get_text_edit_mut(&single_line_input).set_single_line(true);
@@ -86,7 +87,7 @@ impl State {
         text.get_text_edit_mut(&shift_enter_text_edit).set_newline_mode(NewlineMode::ShiftEnter);
         
         text.get_text_box_mut(&clipped_text_box).set_style(&big_text_style_handle);
-        text.get_text_box_mut(&clipped_text_box).raw_text_mut();
+        text.get_text_box_mut(&clipped_text_box).text_mut();
         
         text.get_text_box_mut(&clipped_text_box).set_clip_rect(Some(parley::Rect {
             x0: 0.0,
@@ -97,8 +98,8 @@ impl State {
 
         text.get_text_style_mut(&big_text_style_handle).font_size = 32.0;
 
-        text.get_static_text_box_mut(&justified_static_text).set_style(&big_text_style_handle);
-        text.get_static_text_box_mut(&justified_static_text).set_alignment(Alignment::Justify);
+        text.get_text_box_mut(&justified_static_text).set_style(&big_text_style_handle);
+        text.get_text_box_mut(&justified_static_text).set_alignment(Alignment::Justify);
 
         let text_renderer = TextRenderer::new(&device, &queue, surface_config.format);
 

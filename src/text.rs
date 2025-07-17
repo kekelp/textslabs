@@ -10,8 +10,7 @@ const MULTICLICK_TOLERANCE_SQUARED: f64 = 26.0;
 /// 
 /// For rendering, a [`TextRenderer`] is also needed.
 pub struct Text {
-    pub(crate) text_boxes: Slab<TextBox<String>>,
-    pub(crate) static_text_boxes: Slab<TextBox<&'static str>>,
+    pub(crate) text_boxes: Slab<TextBox>,
     pub(crate) text_edits: Slab<TextEdit>,
 
     pub(crate) styles: Slab<(TextStyle2, TextEditStyle, u64)>,
@@ -43,21 +42,12 @@ pub struct TextEditHandle {
 /// 
 /// Obtained when creating a text box with [`Text::add_text_box()`].
 /// 
-/// Use with [`Text::get_text_box()`] to get a reference to the corresponding [`TextBox<String>`]
+/// Use with [`Text::get_text_box()`] to get a reference to the corresponding [`TextBox`]
 #[derive(Debug)]
 pub struct TextBoxHandle {
     pub(crate) i: u32,
 }
 
-/// Handle for a static text box.
-/// 
-/// Obtained when creating a static text box with [`Text::add_static_text_box()`].
-/// 
-/// Use with [`Text::get_static_text_box()`] to get a reference to the corresponding [`TextBox<&'static str>`]
-#[derive(Debug)]
-pub struct StaticTextBoxHandle {
-    pub(crate) i: u32,
-}
 
 #[cfg(feature = "panic_on_handle_drop")]
 impl Drop for TextEditHandle {
@@ -85,18 +75,6 @@ impl Drop for TextBoxHandle {
     }
 }
 
-#[cfg(feature = "panic_on_handle_drop")]
-impl Drop for StaticTextBoxHandle {
-    fn drop(&mut self) {
-        panic!(
-            "StaticTextBoxHandle was dropped without being consumed! \
-            This means that the corresponding text box wasn't removed. To avoid leaking it, you should call Text::remove_static_text_box(handle). \
-            If you're intentionally leaking this static text box, you can use \
-            std::mem::forget(handle) to skip the handle's drop() call and avoid this panic. \
-            You can also disable this check by disabling the \"panic_on_handle_drop\" feature in Cargo.toml."
-        );
-    }
-}
 
 /// Handle for a text style. Use with Text methods to apply styles to text.
 pub struct StyleHandle {
@@ -134,12 +112,11 @@ impl MouseState {
     }
 }
 
-/// Enum that can represent any type of text box (text box, static text box, or text edit).
+/// Enum that can represent any type of text box (text box or text edit).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AnyBox {
     TextEdit(u32),
     TextBox(u32),
-    StaticTextBox(u32),
 }
 
 #[derive(Debug, Clone)]
@@ -186,7 +163,6 @@ impl Text {
 
         Self {
             text_boxes: Slab::with_capacity(10),
-            static_text_boxes: Slab::with_capacity(10),
             text_edits: Slab::with_capacity(10),
             styles,
             style_version_id_counter: 0,
@@ -210,27 +186,15 @@ impl Text {
     /// The handle can be used with [`Text::get_text_box()`] to get a reference to the [`TextBox`] that was added.
     /// 
     /// The [`TextBox`] must be manually removed by calling [`Text::remove_text_box()`].
+    /// 
+    /// `text` can be a `String`, a `&'static str`, or a `Cow<'static, str>`.
     #[must_use]
-    pub fn add_text_box(&mut self, text: String, pos: (f64, f64), size: (f32, f32), depth: f32) -> TextBoxHandle {
+    pub fn add_text_box(&mut self, text: impl Into<Cow<'static, str>>, pos: (f64, f64), size: (f32, f32), depth: f32) -> TextBoxHandle {
         let mut text_box = TextBox::new(text, pos, size, depth);
         text_box.last_frame_touched = self.current_frame;
         let i = self.text_boxes.insert(text_box) as u32;
         self.text_changed = true;
         TextBoxHandle { i }
-    }
-
-    /// Add a static text box and return a handle.
-    /// 
-    /// The handle can be used with [`Text::get_static_text_box()`] to get a reference to the [`TextBox`] that was added.
-    /// 
-    /// The [`TextBox`] must be manually removed by calling [`Text::remove_static_text_box()`].
-    #[must_use]
-    pub fn add_static_text_box(&mut self, text: &'static str, pos: (f64, f64), size: (f32, f32), depth: f32) -> StaticTextBoxHandle {
-        let mut text_box = TextBox::new(text, pos, size, depth);
-        text_box.last_frame_touched = self.current_frame;
-        let i = self.static_text_boxes.insert(text_box) as u32;
-        self.text_changed = true;
-        StaticTextBoxHandle { i }
     }
 
     /// Add a text edit and return a handle.
@@ -253,7 +217,7 @@ impl Text {
     /// `handle` is the handle that was returned when first creating the text box with [`Text::add_text_box()`].
     /// 
     /// This is a fast lookup operation that does not require any hashing.
-    pub fn get_text_box_mut(&mut self, handle: &TextBoxHandle) -> &mut TextBox<String> {
+    pub fn get_text_box_mut(&mut self, handle: &TextBoxHandle) -> &mut TextBox {
         self.text_changed = true;
         &mut self.text_boxes[handle.i as usize]
     }
@@ -263,28 +227,10 @@ impl Text {
     /// `handle` is the handle that was returned when first creating the text box with [`Text::add_text_box()`].
     ///    
     /// This is a fast lookup operation that does not require any hashing.
-    pub fn get_text_box(&self, handle: &TextBoxHandle) -> &TextBox<String> {
+    pub fn get_text_box(&self, handle: &TextBoxHandle) -> &TextBox {
         &self.text_boxes[handle.i as usize]
     }
 
-    /// Get a mutable reference to a static text box.
-    /// 
-    /// `handle` is the handle that was returned when first creating the static text box with [`Text::add_static_text_box()`].
-    ///    
-    /// This is a fast lookup operation that does not require any hashing.
-    pub fn get_static_text_box_mut(&mut self, handle: &StaticTextBoxHandle) -> &mut TextBox<&'static str> {
-        self.text_changed = true;
-        &mut self.static_text_boxes[handle.i as usize]
-    }
-
-    /// Get a reference to a static text box.
-    /// 
-    /// `handle` is the handle that was returned when first creating the static text box with [`Text::add_static_text_box()`].
-    ///    
-    /// This is a fast lookup operation that does not require any hashing.
-    pub fn get_static_text_box(&self, handle: &StaticTextBoxHandle) -> &TextBox<&'static str> {
-        &self.static_text_boxes[handle.i as usize]
-    }
 
     /// Get a mutable reference to a text edit.
     /// 
@@ -312,12 +258,6 @@ impl Text {
         return &self.text_boxes[handle.i as usize].layout
     }
 
-    /// Get the [`parley::Layout`] for a text box, recomputing it only if needed.
-    pub fn get_static_text_box_layout(&mut self, handle: &StaticTextBoxHandle) -> &Layout<ColorBrush> {
-        let static_text_box = &mut self.static_text_boxes[handle.i as usize];
-        refresh_static_text_box_layout(static_text_box, &self.styles);
-        return &self.static_text_boxes[handle.i as usize].layout
-    }
 
     /// Get the [`parley::Layout`] for a text edit box, recomputing it only if needed.
     pub fn get_text_edit_layout(&mut self, handle: &TextEditHandle) -> &Layout<ColorBrush> {
@@ -395,14 +335,6 @@ impl Text {
         }
     }
 
-    /// Refresh a text box, causing it to stay visible even if [`Text::advance_frame_and_hide_boxes()`] was called.
-    /// 
-    /// Part of the "declarative" interface.
-    pub fn refresh_static_text_box(&mut self, handle: &StaticTextBoxHandle) {
-        if let Some(text_box) = self.static_text_boxes.get_mut(handle.i as usize) {
-            text_box.last_frame_touched = self.current_frame;
-        }
-    }
 
     /// Refresh a text edit box, causing it to stay visible even if [`Text::advance_frame_and_hide_boxes()`] was called.
     /// 
@@ -436,13 +368,6 @@ impl Text {
                         true // Text box doesn't exist
                     }
                 }
-                AnyBox::StaticTextBox(i) => {
-                    if let Some(text_box) = self.static_text_boxes.get(i as usize) {
-                        text_box.last_frame_touched != self.current_frame && !text_box.can_hide
-                    } else {
-                        true // Text box doesn't exist
-                    }
-                }
                 AnyBox::TextEdit(i) => {
                     if let Some(text_edit) = self.text_edits.get(i as usize) {
                         text_edit.text_box.last_frame_touched != self.current_frame && !text_edit.text_box.can_hide
@@ -462,9 +387,6 @@ impl Text {
             text_box.last_frame_touched == self.current_frame || text_box.can_hide
         });
 
-        self.static_text_boxes.retain(|_, text_box| {
-            text_box.last_frame_touched == self.current_frame || text_box.can_hide
-        });
 
         self.text_edits.retain(|_, text_edit| {
             text_edit.text_box.last_frame_touched == self.current_frame || text_edit.text_box.can_hide
@@ -485,19 +407,6 @@ impl Text {
         std::mem::forget(handle);
     }
 
-    /// Remove a static text box.
-    /// 
-    /// `handle` is the handle that was returned when first creating the static text box with [`Text::add_static_text_box()`].
-    pub fn remove_static_text_box(&mut self, handle: StaticTextBoxHandle) {
-        self.text_changed = true;
-        if let Some(AnyBox::StaticTextBox(i)) = self.focused {
-            if i == handle.i {
-                self.focused = None;
-            }
-        }
-        self.static_text_boxes.remove(handle.i as usize);
-        std::mem::forget(handle);
-    }
 
     /// Remove a text edit.
     /// 
@@ -535,11 +444,6 @@ impl Text {
                 }
 
             }
-            for (_i, text_box) in self.static_text_boxes.iter_mut() {
-                if text_box.last_frame_touched == self.current_frame - 1 {
-                    self.text_changed = true;
-                }
-            }
         }
 
         if self.text_changed {
@@ -561,12 +465,6 @@ impl Text {
                     text_renderer.prepare_text_box_layout(text_box);
                 }            
             }
-            for (_i, text_box) in self.static_text_boxes.iter_mut() {
-                if !text_box.hidden() && text_box.last_frame_touched == self.current_frame {
-                    refresh_static_text_box_layout(text_box, &self.styles);
-                    text_renderer.prepare_text_box_layout(text_box);
-                }            
-            }
         }
 
         if self.decorations_changed || self.text_changed {
@@ -579,9 +477,6 @@ impl Text {
                     },
                     AnyBox::TextBox(i) => {
                         text_renderer.prepare_text_box_decorations(&self.text_boxes[i as usize], false);
-                    },
-                    AnyBox::StaticTextBox(i) => {
-                        text_renderer.prepare_text_box_decorations(&self.static_text_boxes[i as usize], false);
                     },
                 }
             }
@@ -643,7 +538,6 @@ impl Text {
         match text_box_id {
             AnyBox::TextEdit(i) => self.text_edits.get(*i as usize).map(|te| te.depth()).unwrap_or(f32::MAX),
             AnyBox::TextBox(i) => self.text_boxes.get(*i as usize).map(|tb| tb.depth()).unwrap_or(f32::MAX),
-            AnyBox::StaticTextBox(i) => self.static_text_boxes.get(*i as usize).map(|tb| tb.depth()).unwrap_or(f32::MAX),
         }
     }
 
@@ -682,11 +576,6 @@ impl Text {
         for (i, text_box) in self.text_boxes.iter_mut() {
             if !text_box.hidden && text_box.last_frame_touched == self.current_frame && text_box.hit_bounding_box(cursor_pos) {
                 self.mouse_hit_stack.push((AnyBox::TextBox(i as u32), text_box.depth()));
-            }
-        }
-        for (i, text_box) in self.static_text_boxes.iter_mut() {
-            if !text_box.hidden && text_box.last_frame_touched == self.current_frame && text_box.hit_bounding_box(cursor_pos) {
-                self.mouse_hit_stack.push((AnyBox::StaticTextBox(i as u32), text_box.depth()));
             }
         }
 
@@ -752,9 +641,6 @@ impl Text {
             AnyBox::TextBox(i) => {
                 self.text_boxes[i as usize].reset_selection();
             },
-            AnyBox::StaticTextBox(i) => {
-                self.static_text_boxes[i as usize].reset_selection();
-            },
         }
     }
     
@@ -773,15 +659,6 @@ impl Text {
             },
             AnyBox::TextBox(i) => {
                 let result = self.text_boxes[i as usize].handle_event(event, window, &self.input_state);
-                if result.text_changed {
-                    self.text_changed = true;
-                }
-                if result.decorations_changed {
-                    self.decorations_changed = true;
-                }
-            },
-            AnyBox::StaticTextBox(i) => {
-                let result = self.static_text_boxes[i as usize].handle_event(event, window, &self.input_state);
                 if result.text_changed {
                     self.text_changed = true;
                 }
@@ -830,10 +707,6 @@ impl Text {
                 let text_box = &mut self.text_boxes[i as usize];
                 refresh_text_box_layout(text_box, &mut self.styles);
             },
-            AnyBox::StaticTextBox(i) => {
-                let static_text_box = &mut self.static_text_boxes[i as usize];
-                refresh_static_text_box_layout(static_text_box, &mut self.styles);
-            },
         }
     }
 }
@@ -854,21 +727,15 @@ pub fn refresh_text_edit_layout(text_edit: &mut TextEdit, styles: &Slab<(TextSty
     }
 }
 
-pub fn refresh_text_box_layout(text_box: &mut TextBox<String>, styles: &Slab<(TextStyle2, TextEditStyle, u64)>) {
+pub fn refresh_text_box_layout(text_box: &mut TextBox, styles: &Slab<(TextStyle2, TextEditStyle, u64)>) {
     let (style, _edit_style, style_changed) = get_styles_for_element(text_box, styles);
     if text_box.needs_relayout || style_changed {
         text_box.rebuild_layout(style, None, false);
     }
 }
 
-pub fn refresh_static_text_box_layout(static_text_box: &mut TextBox<&'static str>, styles: &Slab<(TextStyle2, TextEditStyle, u64)>) {
-    let (style, _edit_style, style_changed) = get_styles_for_element(static_text_box, styles);
-    if static_text_box.needs_relayout || style_changed {
-        static_text_box.rebuild_layout(style, None, false);
-    }
-}
 
-fn get_styles_for_element<'a, T: AsRef<str>>(text_box: &mut TextBox<T>, styles: &'a Slab<(TextStyle2, TextEditStyle, u64)>) -> (&'a TextStyle2, &'a TextEditStyle, bool) {
+fn get_styles_for_element<'a>(text_box: &mut TextBox, styles: &'a Slab<(TextStyle2, TextEditStyle, u64)>) -> (&'a TextStyle2, &'a TextEditStyle, bool) {
     let style_handle = text_box.style.sneak_clone();
     let last_style_id = text_box.style_id;
     // todo: ABA problem here.

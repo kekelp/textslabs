@@ -71,8 +71,8 @@ struct DeclarativeGrid {
     text_renderer: TextRenderer,
     
     grid_handles: HashMap<(usize, usize), TextBoxHandle>,
-    desc_handle: StaticTextBoxHandle,
-    comment_handle: StaticTextBoxHandle,
+    desc_handle: TextBoxHandle,
+    comment_handle: TextBoxHandle,
     
     current_pattern: Pattern,
 }
@@ -102,23 +102,23 @@ impl DeclarativeGrid {
             ..Default::default()
         }, None);
         
-        let comment_handle = text.add_static_text_box(
+        let comment_handle = text.add_text_box(
             "This is a silly mostly AI-generated example to show how text boxes can be hidden or removed in a declarative style rather than imperative (or \"retained-mode\").",
             (50.0, 20.0),
             (700.0, 80.0),
             0.0,
         );
-        text.get_static_text_box_mut(&comment_handle).set_can_hide(true);
-        text.get_static_text_box_mut(&comment_handle).set_style(&comment_style);
+        text.get_text_box_mut(&comment_handle).set_can_hide(true);
+        text.get_text_box_mut(&comment_handle).set_style(&comment_style);
         
-        let desc_handle = text.add_static_text_box(
+        let desc_handle = text.add_text_box(
             "Use ← → to cycle patterns",
             (50.0, 550.0),
             (600.0, 40.0),
             0.0,
         );
-        text.get_static_text_box_mut(&desc_handle).set_can_hide(true);
-        text.get_static_text_box_mut(&desc_handle).set_style(&desc_style);
+        text.get_text_box_mut(&desc_handle).set_can_hide(true);
+        text.get_text_box_mut(&desc_handle).set_style(&desc_style);
         
         let mut grid_handles = HashMap::new();
         for row in 0..5 {
@@ -165,8 +165,8 @@ impl DeclarativeGrid {
             }
         }
         
-        self.text.refresh_static_text_box(&self.comment_handle);
-        self.text.refresh_static_text_box(&self.desc_handle);
+        self.text.refresh_text_box(&self.comment_handle);
+        self.text.refresh_text_box(&self.desc_handle);
     }
     
     fn render(&mut self, view: &TextureView, device: &Device, queue: &Queue) {

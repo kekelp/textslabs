@@ -15,7 +15,7 @@ use crate::*;
 macro_rules! clear_placeholder {
     ($self:expr) => {
         if $self.showing_placeholder {
-            $self.text_box.text.clear();
+            $self.text_box.text_mut().clear();
             $self.showing_placeholder = false;
             $self.text_box.needs_relayout = true;
             $self.text_box.selection.selection = Selection::zero();
@@ -135,7 +135,7 @@ pub(crate) fn selection_decorations_changed(initial_selection: Selection, new_se
 /// 
 /// Then, the handle can be used to get a reference to the `TextEdit` with [`Text::get_text_edit()`] or [`Text::get_text_edit_mut()`].
 pub struct TextEdit {
-    pub(crate) text_box: TextBox<String>,
+    pub(crate) text_box: TextBox,
     pub(crate) compose: Option<Range<usize>>,
     pub(crate) show_cursor: bool,
     pub(crate) start_time: Option<Instant>,
@@ -377,7 +377,7 @@ impl TextEdit {
     /// Programmatically set the text content of this text edit.
     /// This will replace all text and move the cursor to the end.
     pub fn set_text(&mut self, new_text: String) {
-        self.text_box.text = new_text;
+        self.text_box.text = new_text.into();
         self.text_box.needs_relayout = true;
         self.move_to_text_end();
         // Clear any composition state
@@ -392,7 +392,7 @@ impl TextEdit {
     pub fn set_placeholder(&mut self, placeholder: String) {
         self.placeholder_text = Some(placeholder.clone());
         if self.text_box.text.is_empty() || self.showing_placeholder {
-            self.text_box.text = placeholder;
+            self.text_box.text = placeholder.into();
             self.text_box.needs_relayout = true;
             self.showing_placeholder = true;
             self.text_box.reset_selection();
@@ -406,7 +406,7 @@ impl TextEdit {
 
     // todo: we could also pass a range to check only the newly inserted part.
     fn remove_newlines(&mut self) {
-        let removed = remove_newlines_inplace(&mut self.text_box.text);
+        let removed = remove_newlines_inplace(self.text_box.text_mut());
         if removed {
             self.text_box.needs_relayout = true;
         }
@@ -490,7 +490,7 @@ impl TextEdit {
 
     // Returns a mutable reference to the text box's text buffer.
     pub fn raw_text_mut(&mut self) -> &mut String {
-        self.text_box.raw_text_mut()
+        self.text_box.text_mut()
     }
 
     // Cursor blinking methods
@@ -792,7 +792,7 @@ impl TextEdit {
         self.history
             .record(&old_text, s, old_selection, new_range_start..new_range_end);
 
-        self.text_box.text.replace_range(range, s);
+        self.text_box.text_mut().replace_range(range, s);
         
         if self.single_line {
             self.remove_newlines();
@@ -830,9 +830,9 @@ impl TextEdit {
 
     pub(crate) fn restore_placeholder_if_any(&mut self) {
         if let Some(placeholder) = &self.placeholder_text {
-            if self.text_box.text.as_str().is_empty() && !self.showing_placeholder {
-                self.text_box.text.clear();
-                self.text_box.text.push_str(&placeholder);
+            if self.text_box.text.is_empty() && !self.showing_placeholder {
+                self.text_box.text_mut().clear();
+                self.text_box.text_mut().push_str(&placeholder);
                 self.showing_placeholder = true;
                 self.text_box.needs_relayout = true;
                 self.text_box.selection.selection = Selection::zero();
@@ -970,21 +970,23 @@ impl TextEdit {
         debug_assert!(cursor.map(|cursor| cursor.1 <= text.len()).unwrap_or(true));
 
         let start = if let Some(preedit_range) = &self.compose {
-            self.text_box.text.replace_range(preedit_range.clone(), text);
+            self.text_box.text_mut().replace_range(preedit_range.clone(), text);
             preedit_range.start
         } else {
+            let selection_start = self.text_box.selection.selection.text_range().start;
             if self.text_box.selection.selection.is_collapsed() {
-                self.text_box.text
-                    .insert_str(self.text_box.selection.selection.text_range().start, text);
+                self.text_box.text_mut()
+                    .insert_str(selection_start, text);
                 
                 if self.single_line {
                     self.remove_newlines();
                 }
             } else {
-                self.text_box.text
-                    .replace_range(self.text_box.selection.selection.text_range(), text);
+                let range = self.text_box.selection.selection.text_range();
+                self.text_box.text_mut()
+                    .replace_range(range, text);
             }
-            self.text_box.selection.selection.text_range().start
+            selection_start
         };
         self.compose = Some(start..start + text.len());
         self.show_cursor = cursor.is_some();
@@ -1007,11 +1009,11 @@ impl TextEdit {
     /// This removes the IME preedit text.
     pub(crate) fn clear_compose(&mut self) {
         if let Some(preedit_range) = self.compose.take() {
-            self.text_box.text.replace_range(preedit_range.clone(), "");
+            self.text_box.text_mut().replace_range(preedit_range.clone(), "");
             self.show_cursor = true;
 
-            let (index, affinity) = if preedit_range.start >= self.text_box.text.as_str().len() {
-                (self.text_box.text.as_str().len(), Affinity::Upstream)
+            let (index, affinity) = if preedit_range.start >= self.text_box.text.len() {
+                (self.text_box.text.len(), Affinity::Upstream)
             } else {
                 (preedit_range.start, Affinity::Downstream)
             };
@@ -1055,17 +1057,17 @@ impl TextEdit {
             return;
         }
 
-        if let Some(op) = self.history.undo(&self.text_box.text) {
+        if let Some(op) = self.history.undo(self.text_box.text_mut()) {
 
             if ! op.text_to_restore.is_empty() {
                 clear_placeholder!(self);
             }
 
             self
-                .text_box.text
+                .text_box.text_mut()
                 .replace_range(op.range_to_clear.clone(), "");
             self
-                .text_box.text
+                .text_box.text_mut()
                 .insert_str(op.range_to_clear.start, op.text_to_restore);
 
             let prev_selection = op.prev_selection;
@@ -1084,7 +1086,7 @@ impl TextEdit {
 
         if let Some(op) = self.history.redo() {
             self
-                .text_box.text
+                .text_box.text_mut()
                 .replace_range(op.range_to_clear.clone(), "");
 
             if ! op.text_to_restore.is_empty() {
@@ -1092,7 +1094,7 @@ impl TextEdit {
             }
 
             self
-                .text_box.text
+                .text_box.text_mut()
                 .insert_str(op.range_to_clear.start, op.text_to_restore);
 
             let end = op.range_to_clear.start + op.text_to_restore.len();
@@ -1110,13 +1112,13 @@ impl TextEdit {
         let range = self.text_box.selection.selection.text_range();
         let start = range.start;
         if self.text_box.selection.selection.is_collapsed() {
-            self.text_box.text.insert_str(start, s);
+            self.text_box.text_mut().insert_str(start, s);
             
             if self.single_line {
                 self.remove_newlines();
             }
         } else {
-            self.text_box.text.replace_range(range, s);
+            self.text_box.text_mut().replace_range(range, s);
         
         if self.single_line {
             self.remove_newlines();

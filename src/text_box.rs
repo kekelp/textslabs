@@ -45,11 +45,11 @@ pub fn with_clipboard<R>(f: impl FnOnce(&mut Clipboard) -> R) -> R {
 
 /// A text box.
 /// 
-/// This struct can't be created directly. Instead, use [`Text::add_text_box()`]/[`Text::add_static_text_box()`] to create one within [`Text`] and get a [`TextBoxHandle`]/[`StaticTextBoxHandle`] back.
+/// This struct can't be created directly. Instead, use [`Text::add_text_box()`] to create one within [`Text`] and get a [`TextBoxHandle`] back.
 /// 
-/// Then, the handle can be used to get a reference to the `TextBox` with [`Text::get_text_box()`]/[`Text::get_static_text_box()`], or the equivalent `mut` functions.
-pub struct TextBox<T: AsRef<str>> {
-    pub(crate) text: T,
+/// Then, the handle can be used to get a reference to the `TextBox` with [`Text::get_text_box()`], or the equivalent `mut` functions.
+pub struct TextBox {
+    pub(crate) text: Cow<'static, str>,
     pub(crate) style: StyleHandle,
     pub(crate) style_id: u64,
     pub(crate) layout: Layout<ColorBrush>,
@@ -99,10 +99,10 @@ impl SelectionState {
     }
 }
 
-impl<T: AsRef<str>> TextBox<T> {
-    pub(crate) fn new(text: T, pos: (f64, f64), size: (f32, f32), depth: f32) -> Self {
+impl TextBox {
+    pub(crate) fn new(text: impl Into<Cow<'static, str>>, pos: (f64, f64), size: (f32, f32), depth: f32) -> Self {
         Self {
-            text,
+            text: text.into(),
             style_id: 0,
             layout: Layout::new(),
             selectable: true,
@@ -155,7 +155,7 @@ impl<T: AsRef<str>> TextBox<T> {
                 ]);
             }
 
-            builder.push_text(&self.text.as_ref());
+            builder.push_text(&self.text);
 
             let (mut layout, _) = builder.build();
 
@@ -342,7 +342,7 @@ impl<T: AsRef<str>> TextBox<T> {
     /// that selection.
     pub fn selected_text(&self) -> Option<&str> {
         if !self.selection.selection.is_collapsed() {
-            self.text.as_ref().get(self.selection.selection.text_range())
+            self.text.get(self.selection.selection.text_range())
         } else {
             None
         }
@@ -366,15 +366,30 @@ impl<T: AsRef<str>> TextBox<T> {
 
     /// Returns the text in the text box.
     pub fn text(&self) -> &str {
-        &self.text.as_ref()
+        &self.text
     }
 
     // todo: just setting self.needs_relayout is probably not ok. what if the user calls this on a text edit box, and then a method like move_right()?
     // this could be solved if get_text_edit_mut() did a relayout if needed. 
-    /// Returns a mutable reference to the text box's text buffer.
-    pub fn raw_text_mut(&mut self) -> &mut T {
+    /// Returns a mutable reference to the text box's text buffer as a Cow.
+    /// This provides full access to the underlying storage type.
+    pub fn content_mut(&mut self) -> &mut Cow<'static, str> {
         self.needs_relayout = true;
         &mut self.text
+    }
+
+    /// Returns a mutable reference to the text as a String.
+    /// If the text is currently static, it will be converted to owned.
+    pub fn text_mut(&mut self) -> &mut String {
+        self.needs_relayout = true;
+        self.text.to_mut()
+    }
+
+    /// Set the text to a static string reference.
+    /// This is efficient for static strings and avoids allocation.
+    pub fn set_static(&mut self, text: &'static str) {
+        self.needs_relayout = true;
+        self.text = Cow::Borrowed(text);
     }
 
     /// Set the width of the layout.
@@ -429,8 +444,8 @@ impl<T: AsRef<str>> TextBox<T> {
     pub(crate) fn cursor_at(&self, index: usize) -> Cursor {
         // TODO: Do we need to be non-dirty?
         // FIXME: `Selection` should make this easier
-        if index >= self.text.as_ref().len() {
-            Cursor::from_byte_index(&self.layout, self.text.as_ref().len(), Affinity::Upstream)
+        if index >= self.text.len() {
+            Cursor::from_byte_index(&self.layout, self.text.len(), Affinity::Upstream)
         } else {
             Cursor::from_byte_index(&self.layout, index, Affinity::Downstream)
         }
@@ -445,22 +460,22 @@ impl<T: AsRef<str>> TextBox<T> {
             let focus = new_sel.focus();
             let cluster = focus.logical_clusters(&self.layout);
             let dbg = (
-                cluster[0].as_ref().map(|c| &self.text.as_ref()[c.text_range()]),
+                cluster[0].as_ref().map(|c| &self.text[c.text_range()]),
                 focus.index(),
                 focus.affinity(),
-                cluster[1].as_ref().map(|c| &self.text.as_ref()[c.text_range()]),
+                cluster[1].as_ref().map(|c| &self.text[c.text_range()]),
             );
             eprint!("{dbg:?}");
             let cluster = focus.visual_clusters(&self.layout);
             let dbg = (
-                cluster[0].as_ref().map(|c| &self.text.as_ref()[c.text_range()]),
+                cluster[0].as_ref().map(|c| &self.text[c.text_range()]),
                 cluster[0]
                     .as_ref()
                     .map(|c| if c.is_word_boundary() { " W" } else { "" })
                     .unwrap_or_default(),
                 focus.index(),
                 focus.affinity(),
-                cluster[1].as_ref().map(|c| &self.text.as_ref()[c.text_range()]),
+                cluster[1].as_ref().map(|c| &self.text[c.text_range()]),
                 cluster[1]
                     .as_ref()
                     .map(|c| if c.is_word_boundary() { " W" } else { "" })
@@ -520,7 +535,7 @@ impl<T: AsRef<str>> TextBox<T> {
     ///
     /// No-op if index is not a char boundary.
     pub(crate) fn move_to_byte(&mut self, index: usize) {
-        if self.text.as_ref().is_char_boundary(index) {
+        if self.text.is_char_boundary(index) {
             self.set_selection(self.cursor_at(index).into());
         }
     }
@@ -625,7 +640,7 @@ pub use parley::Rect;
 pub(crate) trait Ext1 {
     fn hit_bounding_box(&mut self, cursor_pos: (f64, f64)) -> bool;
 }
-impl<T: AsRef<str>> Ext1 for TextBox<T> {
+impl Ext1 for TextBox {
     fn hit_bounding_box(&mut self, cursor_pos: (f64, f64)) -> bool {
         let offset = (
             cursor_pos.0 as f64 - self.left,

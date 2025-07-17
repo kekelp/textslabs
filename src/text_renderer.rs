@@ -347,7 +347,7 @@ impl TextRenderer {
         self.text_renderer.needs_gpu_sync = true;
     }
 
-    pub fn prepare_text_box_layout<T: AsRef<str>>(&mut self, text_box: &mut TextBox<T>) {
+    pub fn prepare_text_box_layout(&mut self, text_box: &mut TextBox) {
         if text_box.hidden() {
             return;
         }
@@ -375,7 +375,7 @@ impl TextRenderer {
         self.text_renderer.needs_gpu_sync = true;
     }
 
-    pub fn prepare_text_box_decorations<T: AsRef<str>>(&mut self, text_box: &TextBox<T>, editable: bool) {
+    pub fn prepare_text_box_decorations(&mut self, text_box: &TextBox, editable: bool) {
         let (left, top) = text_box.pos();
         let (left, top) = (left as f32, top as f32);
         let clip_rect = text_box.clip_rect();
