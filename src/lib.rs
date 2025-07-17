@@ -33,8 +33,8 @@
 //! let mut text = Text::new();
 //! 
 //! // Add text boxes and get handles
-//! let handle = text.add_text_box("Hello".to_string(), (10.0, 10.0), (200.0, 50.0), 0.0);
-//! let edit_handle = text.add_text_edit("Type here".to_string(), (10.0, 70.0), (200.0, 30.0), 0.0);
+//! let handle = text.add_text_box("Hello", (10.0, 10.0), (200.0, 50.0), 0.0);
+//! let edit_handle = text.add_text_edit("Type here", (10.0, 70.0), (200.0, 30.0), 0.0);
 //! 
 //! // Use handles to access and modify the boxes
 //! text.get_text_box_mut(&handle).set_style(&my_style);

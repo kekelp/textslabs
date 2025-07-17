@@ -145,7 +145,7 @@ pub struct TextEdit {
     pub(crate) newline_mode: NewlineMode,
     pub(crate) disabled: bool,
     pub(crate) showing_placeholder: bool,
-    pub(crate) placeholder_text: Option<String>,
+    pub(crate) placeholder_text: Option<Cow<'static, str>>,
 }
 
 impl TextEdit {
@@ -389,10 +389,11 @@ impl TextEdit {
     }
 
     /// Set placeholder text that will be shown when the text edit is empty
-    pub fn set_placeholder(&mut self, placeholder: String) {
-        self.placeholder_text = Some(placeholder.clone());
+    pub fn set_placeholder<T: Into<Cow<'static, str>>>(&mut self, placeholder: T) {
+        let placeholder_cow = placeholder.into();
+        self.placeholder_text = Some(placeholder_cow.clone());
         if self.text_box.text.is_empty() || self.showing_placeholder {
-            self.text_box.text = placeholder.into();
+            self.text_box.text = placeholder_cow;
             self.text_box.needs_relayout = true;
             self.showing_placeholder = true;
             self.text_box.reset_selection();
