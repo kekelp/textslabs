@@ -305,12 +305,8 @@ impl ContextlessTextRenderer {
             return;
         }
 
-        queue.write_buffer(&self.params_buffer, 0, unsafe {
-            std::slice::from_raw_parts(
-                &self.params as *const Params as *const u8,
-                mem::size_of::<Params>(),
-            )
-        });
+        let bytes: &[u8] = bytemuck::cast_slice(std::slice::from_ref(&self.params));
+        queue.write_buffer(&self.params_buffer, 0, bytes);
 
         // Calculate total number of quads across all pages plus decorations
         let total_quads = self.mask_atlas_pages.iter().map(|p| p.quads.len()).sum::<usize>()

@@ -301,7 +301,7 @@ impl Default for ColorBrush {
 }
 
 #[repr(C)]
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Pod, Zeroable)]
 pub(crate) struct Params {
     /// The width of the screen in pixels.
     pub screen_resolution_width: f32,
