@@ -320,6 +320,15 @@ impl TextEdit {
     pub fn set_clip_rect(&mut self, clip_rect: Option<parley::Rect>) {
         self.text_box.set_clip_rect(clip_rect)
     }
+    pub fn set_clip_rect_with_fadeout(&mut self, clip_rect: Option<parley::Rect>, fadeout_clipping: bool) {
+        self.text_box.set_clip_rect_with_fadeout(clip_rect, fadeout_clipping)
+    }
+    pub fn set_fadeout_clipping(&mut self, fadeout_clipping: bool) {
+        self.text_box.set_fadeout_clipping(fadeout_clipping)
+    }
+    pub fn fadeout_clipping(&self) -> bool {
+        self.text_box.fadeout_clipping()
+    }
 
     pub fn set_style(&mut self, style: &StyleHandle) {
         self.text_box.style = StyleHandle { i: style.i };
@@ -395,13 +404,11 @@ impl TextEdit {
         self.showing_placeholder
     }
 
+    // todo: we could also pass a range to check only the newly inserted part.
     fn remove_newlines(&mut self) {
-        let text_with_spaces = self.text_box.text.replace('\n', " ").replace('\r', " ");
-        if text_with_spaces != self.text_box.text {
-            self.text_box.text = text_with_spaces;
+        let removed = remove_newlines_inplace(&mut self.text_box.text);
+        if removed {
             self.text_box.needs_relayout = true;
-            // Reset selection to end of text
-            self.move_to_text_end();
         }
     }
 
@@ -786,6 +793,10 @@ impl TextEdit {
             .record(&old_text, s, old_selection, new_range_start..new_range_end);
 
         self.text_box.text.replace_range(range, s);
+        
+        if self.single_line {
+            self.remove_newlines();
+        }
     }
 
     fn replace_selection_and_record(&mut self, s: &str) {
@@ -965,6 +976,10 @@ impl TextEdit {
             if self.text_box.selection.selection.is_collapsed() {
                 self.text_box.text
                     .insert_str(self.text_box.selection.selection.text_range().start, text);
+                
+                if self.single_line {
+                    self.remove_newlines();
+                }
             } else {
                 self.text_box.text
                     .replace_range(self.text_box.selection.selection.text_range(), text);
@@ -1054,6 +1069,10 @@ impl TextEdit {
 
             let prev_selection = op.prev_selection;
             self.text_box.set_selection(prev_selection);
+            
+            if self.single_line {
+                self.remove_newlines();
+            }
         }
     }
 
@@ -1079,6 +1098,10 @@ impl TextEdit {
 
             // In parley, the layout is updated first, then the checked version is used. This should be fine too.
             self.text_box.selection.selection = Cursor::from_byte_index_unchecked(end, Affinity::Upstream).into();
+            
+            if self.single_line {
+                self.remove_newlines();
+            }
         }
     }
 
@@ -1087,8 +1110,16 @@ impl TextEdit {
         let start = range.start;
         if self.text_box.selection.selection.is_collapsed() {
             self.text_box.text.insert_str(start, s);
+            
+            if self.single_line {
+                self.remove_newlines();
+            }
         } else {
             self.text_box.text.replace_range(range, s);
+        
+        if self.single_line {
+            self.remove_newlines();
+        }
         }
 
         let index = start.saturating_add(s.len());
@@ -1336,4 +1367,18 @@ impl TextEditHistory {
             text_to_restore: &self.redo_text[old_text],
         })
     }
+}
+
+/// Replace newlines with spaces in-place. This probably doesn't allocate.
+fn remove_newlines_inplace(text: &mut String) -> bool {
+    let mut changed = false;
+    for i in 0..text.len() {
+        let b = text.as_bytes()[i];
+        if b == b'\n' || b == b'\r' {
+            text.replace_range(i..=i, " ");
+            changed = true;
+        }
+    }
+
+    return changed;
 }

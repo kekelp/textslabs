@@ -64,6 +64,8 @@ pub struct TextBox<T: AsRef<str>> {
     pub(crate) alignment: Alignment,
     pub(crate) scale: f32,
     pub(crate) clip_rect: Option<parley::Rect>,
+    // todo: the current implementation fadeout can't fade glyphs that get very close to the clip rect edge, but without touching it. Should just switch to passing the whole clip rect to the shader and doing all the math there.
+    pub(crate) fadeout_clipping: bool,
     
     pub(crate) selectable: bool,
 
@@ -116,6 +118,7 @@ impl<T: AsRef<str>> TextBox<T> {
             alignment: Default::default(),
             scale: Default::default(),
             clip_rect: None,
+            fadeout_clipping: false,
             hidden: false,
             last_frame_touched: 0,
             can_hide: false,
@@ -280,8 +283,18 @@ impl<T: AsRef<str>> TextBox<T> {
     pub fn set_clip_rect(&mut self, clip_rect: Option<parley::Rect>) {
         self.clip_rect = clip_rect;
     }
+    pub fn set_clip_rect_with_fadeout(&mut self, clip_rect: Option<parley::Rect>, fadeout_clipping: bool) {
+        self.clip_rect = clip_rect;
+        self.fadeout_clipping = fadeout_clipping;
+    }
+    pub fn set_fadeout_clipping(&mut self, fadeout_clipping: bool) {
+        self.fadeout_clipping = fadeout_clipping;
+    }
     pub fn clip_rect(&self) -> Option<parley::Rect> {
         self.clip_rect
+    }
+    pub fn fadeout_clipping(&self) -> bool {
+        self.fadeout_clipping
     }
 
     pub fn set_hidden(&mut self, hidden: bool) {

@@ -602,6 +602,10 @@ impl Text {
     pub fn handle_event(&mut self, event: &WindowEvent, window: &Window) {
         self.input_state.handle_event(event);
 
+        if let WindowEvent::Resized(_) = event {
+            self.text_changed = true;
+        }
+
         if let WindowEvent::MouseInput { state, button, .. } = event {
             if state.is_pressed() && *button == MouseButton::Left {
                 let new_focus = self.find_topmost_at_pos(self.input_state.mouse.cursor_pos);

@@ -1,12 +1,8 @@
 use crate::*;
 
 // Flag bit constants
-const FLAG_CONTENT_TYPE_MASK: u32 = 0x0F;  // Bits 0-3
-const FLAG_FADE_EDGES_SHIFT: u32 = 4;      // Bits 4-7 for fade edges
-const FLAG_FADE_LEFT: u32 = 1 << (FLAG_FADE_EDGES_SHIFT + 0);   // Bit 4
-const FLAG_FADE_RIGHT: u32 = 1 << (FLAG_FADE_EDGES_SHIFT + 1);  // Bit 5  
-const FLAG_FADE_TOP: u32 = 1 << (FLAG_FADE_EDGES_SHIFT + 2);    // Bit 6
-const FLAG_FADE_BOTTOM: u32 = 1 << (FLAG_FADE_EDGES_SHIFT + 3); // Bit 7
+const FLAG_CONTENT_TYPE_MASK: u32 = 0x0F;
+const FLAG_FADE_EDGES_SHIFT: u32 = 4;
 
 fn pack_flags(content_type: u32, fade_edges: u32) -> u32 {
     (content_type & FLAG_CONTENT_TYPE_MASK) | 
@@ -213,7 +209,7 @@ fn make_quad(glyph: &GlyphWithContext, stored_glyph: &StoredGlyph) -> Quad {
     };
 }
 
-fn clip_quad(quad: Quad, left: f32, top: f32, clip_rect: Option<parley::Rect>) -> Option<Quad> {
+fn clip_quad(quad: Quad, left: f32, top: f32, clip_rect: Option<parley::Rect>, fade: bool) -> Option<Quad> {
     let mut quad = quad;
 
     if let Some(clip) = clip_rect {
@@ -252,12 +248,14 @@ fn clip_quad(quad: Quad, left: f32, top: f32, clip_rect: Option<parley::Rect>) -
         // Extract content type from existing flags
         let content_type = quad.flags & FLAG_CONTENT_TYPE_MASK;
         
-        // Build fade edges bitmask
+        // Build fade edges bitmask (only if fade is enabled)
         let mut fade_edges = 0u32;
-        if quad_x0 < clip_x0 { fade_edges |= 1; }
-        if quad_x1 > clip_x1 { fade_edges |= 2; }
-        if quad_y0 < clip_y0 { fade_edges |= 4; }
-        if quad_y1 > clip_y1 { fade_edges |= 8; }
+        if fade {
+            if quad_x0 < clip_x0 { fade_edges |= 1; }
+            if quad_x1 > clip_x1 { fade_edges |= 2; }
+            if quad_y0 < clip_y0 { fade_edges |= 4; }
+            if quad_y1 > clip_y1 { fade_edges |= 8; }
+        }
         
         quad.pos = [clipped_x0, clipped_y0];
         quad.dim = [(clipped_x1 - clipped_x0) as u16, (clipped_y1 - clipped_y0) as u16];
@@ -344,8 +342,8 @@ impl TextRenderer {
         self.text_renderer.clear_decorations();
     }
 
-    pub fn prepare_layout(&mut self, layout: &Layout<ColorBrush>, left: f32, top: f32, clip_rect: Option<parley::Rect>) {
-        self.text_renderer.prepare_layout(layout, &mut self.scale_cx, left, top, clip_rect);
+    pub fn prepare_layout(&mut self, layout: &Layout<ColorBrush>, left: f32, top: f32, clip_rect: Option<parley::Rect>, fade: bool) {
+        self.text_renderer.prepare_layout(layout, &mut self.scale_cx, left, top, clip_rect, fade);
         self.text_renderer.needs_gpu_sync = true;
     }
 
@@ -357,8 +355,9 @@ impl TextRenderer {
         let (left, top) = text_box.pos();
         let (left, top) = (left as f32, top as f32);
         let clip_rect = text_box.clip_rect();
+        let fade = text_box.fadeout_clipping();
 
-        self.text_renderer.prepare_layout(&text_box.layout, &mut self.scale_cx, left, top, clip_rect);
+        self.text_renderer.prepare_layout(&text_box.layout, &mut self.scale_cx, left, top, clip_rect, fade);
         self.text_renderer.needs_gpu_sync = true;
     }
 
@@ -370,8 +369,9 @@ impl TextRenderer {
         let (left, top) = text_edit.pos();
         let (left, top) = (left as f32, top as f32);
         let clip_rect = text_edit.clip_rect();
+        let fade = text_edit.fadeout_clipping();
 
-        self.text_renderer.prepare_layout(&text_edit.text_box.layout, &mut self.scale_cx, left, top, clip_rect);
+        self.text_renderer.prepare_layout(&text_edit.text_box.layout, &mut self.scale_cx, left, top, clip_rect, fade);
         self.text_renderer.needs_gpu_sync = true;
     }
 
@@ -505,12 +505,12 @@ impl ContextlessTextRenderer {
     }
 
 
-    fn prepare_layout(&mut self, layout: &Layout<ColorBrush>, scale_cx: &mut ScaleContext, left: f32, top: f32, clip_rect: Option<parley::Rect>) {
+    fn prepare_layout(&mut self, layout: &Layout<ColorBrush>, scale_cx: &mut ScaleContext, left: f32, top: f32, clip_rect: Option<parley::Rect>, fade: bool) {
         for line in layout.lines() {
             for item in line.items() {
                 match item {
                     PositionedLayoutItem::GlyphRun(glyph_run) => {
-                        self.prepare_glyph_run(&glyph_run, scale_cx, left, top, clip_rect);
+                        self.prepare_glyph_run(&glyph_run, scale_cx, left, top, clip_rect, fade);
                     }
                     PositionedLayoutItem::InlineBox(_inline_box) => {}
                 }
@@ -524,7 +524,8 @@ impl ContextlessTextRenderer {
         scale_cx: &mut ScaleContext,
         left: f32,
         top: f32,
-        clip_rect: Option<parley::Rect>
+        clip_rect: Option<parley::Rect>,
+        fade: bool
     ) {
         let mut run_x = left + glyph_run.offset();
         let run_y = top + glyph_run.baseline();
@@ -567,7 +568,7 @@ impl ContextlessTextRenderer {
             if let Some(stored_glyph) = self.glyph_cache.get(&glyph_ctx.key()) {
                 if let Some(stored_glyph) = stored_glyph {
                     let quad = make_quad(&glyph_ctx, stored_glyph);
-                    if let Some(clipped_quad) = clip_quad(quad, left, top, clip_rect) {
+                    if let Some(clipped_quad) = clip_quad(quad, left, top, clip_rect, fade) {
                         let page = stored_glyph.page as usize;
 
                         match stored_glyph.content_type {
@@ -579,7 +580,7 @@ impl ContextlessTextRenderer {
                 }
             } else {
                 if let Some((quad, stored_glyph)) = self.prepare_glyph_with_cached_scaler(&glyph_ctx) {
-                    if let Some(clipped_quad) = clip_quad(quad, left, top, clip_rect) {
+                    if let Some(clipped_quad) = clip_quad(quad, left, top, clip_rect, fade) {
                         let page = stored_glyph.page as usize;
 
                         match stored_glyph.content_type {
