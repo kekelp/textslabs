@@ -146,6 +146,7 @@ pub struct TextEdit {
     pub(crate) disabled: bool,
     pub(crate) showing_placeholder: bool,
     pub(crate) placeholder_text: Option<Cow<'static, str>>,
+    pub(crate) should_follow_cursor: bool,
 }
 
 impl TextEdit {
@@ -164,6 +165,7 @@ impl TextEdit {
             disabled: false,
             showing_placeholder: false,
             placeholder_text: None,
+            should_follow_cursor: false,
         }
     }
 
@@ -344,6 +346,17 @@ impl TextEdit {
     }
     pub fn scroll_offset(&self) -> f32 {
         self.text_box.scroll_offset()
+    }
+
+    /// Updates scroll offset to ensure cursor is visible after layout refresh
+    /// Should be called after layout is fresh. Returns true if the scroll offset changed.
+    pub fn update_scroll_after_layout(&mut self) -> bool {
+        if self.should_follow_cursor {
+            self.should_follow_cursor = false;
+            self.update_scroll_to_cursor()
+        } else {
+            false
+        }
     }
 
     /// Updates scroll offset to ensure cursor is visible for single-line edits
@@ -617,7 +630,6 @@ impl TextEdit {
         let initial_show_cursor = self.show_cursor;
         
         let mut result = TextEventResult::new();
-        let mut should_follow_cursor = false;
 
         let showing_placeholder = self.showing_placeholder;
         if ! self.showing_placeholder {
@@ -678,7 +690,7 @@ impl TextEdit {
                 match &event.logical_key {
                     Key::Named(NamedKey::ArrowLeft) => {
                         if !shift && ! self.showing_placeholder {
-                            should_follow_cursor = true;
+                            self.should_follow_cursor = true;
                             if action_mod {
                                 self.text_box.move_word_left();
                             } else {
@@ -688,7 +700,7 @@ impl TextEdit {
                     }
                     Key::Named(NamedKey::ArrowRight) => {
                         if !shift && ! self.showing_placeholder {
-                            should_follow_cursor = true;
+                            self.should_follow_cursor = true;
                             if action_mod {
                                 self.text_box.move_word_right();
                             } else {
@@ -698,7 +710,7 @@ impl TextEdit {
                     }
                     Key::Named(NamedKey::ArrowUp) => {
                         if !shift && ! self.showing_placeholder {
-                            should_follow_cursor = true;
+                            self.should_follow_cursor = true;
                             if self.single_line {
                                 self.text_box.move_to_text_start();
                             } else {
@@ -708,7 +720,7 @@ impl TextEdit {
                     }
                     Key::Named(NamedKey::ArrowDown) => {
                         if !shift && ! self.showing_placeholder {
-                            should_follow_cursor = true;
+                            self.should_follow_cursor = true;
                             if self.single_line {
                                 self.text_box.move_to_text_end();
                             } else {
@@ -718,7 +730,7 @@ impl TextEdit {
                     }
                     Key::Named(NamedKey::Home) => {
                         if !shift && ! self.showing_placeholder {
-                            should_follow_cursor = true;
+                            self.should_follow_cursor = true;
                             if action_mod {
                                 self.text_box.move_to_text_start();
                             } else {
@@ -728,7 +740,7 @@ impl TextEdit {
                     }
                     Key::Named(NamedKey::End) => {
                         if !shift && ! self.showing_placeholder {
-                            should_follow_cursor = true;
+                            self.should_follow_cursor = true;
                             if action_mod {
                                 self.text_box.move_to_text_end();
                             } else {
@@ -789,7 +801,7 @@ impl TextEdit {
                 if ! self.showing_placeholder {
                     match phase {
                         Started => {
-                            should_follow_cursor = true;
+                            self.should_follow_cursor = true;
                             let cursor_pos = (
                                 location.x - self.text_box.left as f64,
                                 location.y - self.text_box.top as f64,
@@ -797,11 +809,11 @@ impl TextEdit {
                             self.text_box.move_to_point(cursor_pos.0 as f32, cursor_pos.1 as f32);
                         }
                         Cancelled => {
-                            should_follow_cursor = true;
+                            self.should_follow_cursor = true;
                             self.text_box.collapse_selection();
                         }
                         Moved => {
-                            should_follow_cursor = true;
+                            self.should_follow_cursor = true;
                             self.text_box.extend_selection_to_point(
                                 location.x as f32 - INSET,
                                 location.y as f32 - INSET,
@@ -819,7 +831,7 @@ impl TextEdit {
                 if self.showing_placeholder {
                     self.clear_placeholder()
                 }
-                should_follow_cursor = true;
+                self.should_follow_cursor = true;
                 self.insert_or_replace_selection(&text);
                 result.set_text_changed();
             }
@@ -827,7 +839,7 @@ impl TextEdit {
                 if self.showing_placeholder {
                     self.clear_placeholder()
                 }
-                should_follow_cursor = true;
+                self.should_follow_cursor = true;
                 if text.is_empty() {
                     self.clear_compose();
                     result.set_text_changed();
@@ -870,10 +882,8 @@ impl TextEdit {
             result.set_decorations_changed();
         }
 
-        if should_follow_cursor || result.text_changed {
-            if self.update_scroll_to_cursor() {
-                result.set_text_changed();
-            }
+        if result.text_changed {
+            self.should_follow_cursor = true;
         }
 
         return result;

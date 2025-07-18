@@ -513,6 +513,13 @@ impl Text {
             self.refresh_anybox_layout(focused);
             self.handle_focused_event(focused, event, window);
             self.refresh_anybox_layout(focused);
+            
+            // todo: if we fix the layout thing, this can be done inside.
+            if let AnyBox::TextEdit(i) = focused {
+                if self.text_edits[i as usize].update_scroll_after_layout() {
+                    self.text_changed = true;
+                }
+            }
         }
     }
 
@@ -561,6 +568,12 @@ impl Text {
             self.refresh_anybox_layout(focused);
             self.handle_focused_event(focused, event, window);
             self.refresh_anybox_layout(focused);
+            
+            if let AnyBox::TextEdit(i) = focused {
+                if self.text_edits[i as usize].update_scroll_after_layout() {
+                    self.text_changed = true;
+                }
+            }
         }
     }
 
