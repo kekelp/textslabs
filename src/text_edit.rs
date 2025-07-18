@@ -150,8 +150,10 @@ pub struct TextEdit {
 
 impl TextEdit {
     pub fn new(text: String, pos: (f64, f64), size: (f32, f32), depth: f32) -> Self {
+        let mut text_box = TextBox::new(text, pos, size, depth);
+        text_box.set_auto_clip(true);
         Self {
-            text_box: TextBox::new(text, pos, size, depth),
+            text_box,
             compose: Default::default(),
             show_cursor: true,
             start_time: Default::default(),
@@ -328,6 +330,13 @@ impl TextEdit {
     }
     pub fn fadeout_clipping(&self) -> bool {
         self.text_box.fadeout_clipping()
+    }
+
+    pub fn set_auto_clip(&mut self, auto_clip: bool) {
+        self.text_box.set_auto_clip(auto_clip)
+    }
+    pub fn auto_clip(&self) -> bool {
+        self.text_box.auto_clip()
     }
 
     pub fn set_style(&mut self, style: &StyleHandle) {

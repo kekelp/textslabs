@@ -160,4 +160,4 @@ use wgpu::{
 };
 use swash::zeno::Placement;
 
-pub use parley::{FontWeight, FontStyle, LineHeight, FontStack, Alignment, AlignmentOptions};
+pub use parley::{FontWeight, FontStyle, LineHeight, FontStack, Alignment, AlignmentOptions, OverflowWrap};

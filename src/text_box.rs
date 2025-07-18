@@ -66,6 +66,7 @@ pub struct TextBox {
     pub(crate) clip_rect: Option<parley::Rect>,
     // todo: the current implementation fadeout can't fade glyphs that get very close to the clip rect edge, but without touching it. Should just switch to passing the whole clip rect to the shader and doing all the math there.
     pub(crate) fadeout_clipping: bool,
+    pub(crate) auto_clip: bool,
     
     pub(crate) selectable: bool,
 
@@ -79,6 +80,7 @@ pub(crate) fn original_default_style() -> TextStyle2 {
     TextStyle2 { 
         brush: ColorBrush([255,255,255,255]),
         font_size: 24.0,
+        overflow_wrap: OverflowWrap::Anywhere,
         ..Default::default()
     } 
 }
@@ -119,6 +121,7 @@ impl TextBox {
             scale: Default::default(),
             clip_rect: None,
             fadeout_clipping: false,
+            auto_clip: false,
             hidden: false,
             last_frame_touched: 0,
             can_hide: false,
@@ -295,6 +298,47 @@ impl TextBox {
     }
     pub fn fadeout_clipping(&self) -> bool {
         self.fadeout_clipping
+    }
+
+    pub fn set_auto_clip(&mut self, auto_clip: bool) {
+        self.auto_clip = auto_clip;
+    }
+    pub fn auto_clip(&self) -> bool {
+        self.auto_clip
+    }
+
+    /// Computes the effective clip rectangle, combining auto-clipping with explicit clip_rect
+    pub fn effective_clip_rect(&self) -> Option<parley::Rect> {
+        let auto_clip_rect = if self.auto_clip {
+            Some(parley::Rect {
+                x0: 0.0,
+                y0: 0.0,
+                x1: self.max_advance as f64,
+                y1: self.height as f64,
+            })
+        } else {
+            None
+        };
+
+        match (auto_clip_rect, self.clip_rect) {
+            (None, None) => None,
+            (Some(auto), None) => Some(auto),
+            (None, Some(explicit)) => Some(explicit),
+            (Some(auto), Some(explicit)) => {
+                // Intersect the rectangles
+                let x0 = auto.x0.max(explicit.x0);
+                let y0 = auto.y0.max(explicit.y0);
+                let x1 = auto.x1.min(explicit.x1);
+                let y1 = auto.y1.min(explicit.y1);
+                
+                if x0 < x1 && y0 < y1 {
+                    Some(parley::Rect { x0, y0, x1, y1 })
+                } else {
+                    // No intersection - empty rectangle
+                    Some(parley::Rect { x0: 0.0, y0: 0.0, x1: 0.0, y1: 0.0 })
+                }
+            }
+        }
     }
 
     pub fn set_hidden(&mut self, hidden: bool) {

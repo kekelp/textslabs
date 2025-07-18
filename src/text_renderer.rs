@@ -354,7 +354,7 @@ impl TextRenderer {
                 
         let (left, top) = text_box.pos();
         let (left, top) = (left as f32, top as f32);
-        let clip_rect = text_box.clip_rect();
+        let clip_rect = text_box.effective_clip_rect();
         let fade = text_box.fadeout_clipping();
 
         self.text_renderer.prepare_layout(&text_box.layout, &mut self.scale_cx, left, top, clip_rect, fade);
@@ -368,7 +368,7 @@ impl TextRenderer {
                 
         let (left, top) = text_edit.pos();
         let (left, top) = (left as f32, top as f32);
-        let clip_rect = text_edit.clip_rect();
+        let clip_rect = text_edit.text_box.effective_clip_rect();
         let fade = text_edit.fadeout_clipping();
 
         self.text_renderer.prepare_layout(&text_edit.text_box.layout, &mut self.scale_cx, left, top, clip_rect, fade);
@@ -378,7 +378,7 @@ impl TextRenderer {
     pub fn prepare_text_box_decorations(&mut self, text_box: &TextBox, editable: bool) {
         let (left, top) = text_box.pos();
         let (left, top) = (left as f32, top as f32);
-        let clip_rect = text_box.clip_rect();
+        let clip_rect = text_box.effective_clip_rect();
 
         let selection_color = 0x33_33_ff_aa;
         let cursor_color = 0xee_ee_ee_ff;
