@@ -67,6 +67,7 @@ pub struct TextBox {
     // todo: the current implementation fadeout can't fade glyphs that get very close to the clip rect edge, but without touching it. Should just switch to passing the whole clip rect to the shader and doing all the math there.
     pub(crate) fadeout_clipping: bool,
     pub(crate) auto_clip: bool,
+    pub(crate) scroll_offset: f32,
     
     pub(crate) selectable: bool,
 
@@ -122,6 +123,7 @@ impl TextBox {
             clip_rect: None,
             fadeout_clipping: false,
             auto_clip: false,
+            scroll_offset: 0.0,
             hidden: false,
             last_frame_touched: 0,
             can_hide: false,
@@ -307,13 +309,20 @@ impl TextBox {
         self.auto_clip
     }
 
+    pub fn set_scroll_offset(&mut self, offset: f32) {
+        self.scroll_offset = offset;
+    }
+    pub fn scroll_offset(&self) -> f32 {
+        self.scroll_offset
+    }
+
     /// Computes the effective clip rectangle, combining auto-clipping with explicit clip_rect
     pub fn effective_clip_rect(&self) -> Option<parley::Rect> {
         let auto_clip_rect = if self.auto_clip {
             Some(parley::Rect {
-                x0: 0.0,
+                x0: self.scroll_offset as f64,
                 y0: 0.0,
-                x1: self.max_advance as f64,
+                x1: (self.scroll_offset + self.max_advance) as f64,
                 y1: self.height as f64,
             })
         } else {

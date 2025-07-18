@@ -339,6 +339,68 @@ impl TextEdit {
         self.text_box.auto_clip()
     }
 
+    pub fn set_scroll_offset(&mut self, offset: f32) {
+        self.text_box.set_scroll_offset(offset);
+    }
+    pub fn scroll_offset(&self) -> f32 {
+        self.text_box.scroll_offset()
+    }
+
+    /// Updates scroll offset to ensure cursor is visible for single-line edits
+    /// Returns true if the scroll offset changed
+    pub fn update_scroll_to_cursor(&mut self) -> bool {
+        if !self.single_line {
+            return false;
+        }
+
+        if let Some(cursor_rect) = self.cursor_geometry(1.0) {
+            let text_width = self.text_box.max_advance;
+            let cursor_x = cursor_rect.x0 as f32;
+            let current_scroll = self.text_box.scroll_offset;
+            
+            // Get the total text width to check if we're overflowing
+            let total_text_width = self.text_box.layout.full_width();
+            
+            // Calculate visible range
+            let visible_start = current_scroll;
+            let visible_end = current_scroll + text_width;
+            
+            // Add padding to keep cursor comfortably visible
+            let padding = 10.0;
+            
+            let mut new_scroll = current_scroll;
+            
+            // Special case: if cursor is at the end and text is overflowing
+            let cursor_at_end = cursor_x >= total_text_width - 2.0; // Allow small tolerance for cursor width
+            
+            if cursor_at_end && total_text_width > text_width {
+                // Keep cursor at the right edge when backspacing from end
+                new_scroll = total_text_width - text_width + padding;
+            } else if cursor_x < visible_start + padding {
+                // Cursor is too far left, scroll left
+                new_scroll = (cursor_x - padding).max(0.0);
+            } else if cursor_x > visible_end - padding {
+                // Cursor is too far right, scroll right
+                new_scroll = cursor_x - text_width + padding;
+            }
+            
+            // Ensure scroll offset doesn't go negative
+            new_scroll = new_scroll.max(0.0);
+            
+            // If text fits entirely, reset scroll to zero
+            if total_text_width <= text_width {
+                new_scroll = 0.0;
+            }
+            
+            // Check if we actually changed the scroll offset
+            if (new_scroll - current_scroll).abs() > 0.1 {
+                self.text_box.scroll_offset = new_scroll;
+                return true;
+            }
+        }
+        false
+    }
+
     pub fn set_style(&mut self, style: &StyleHandle) {
         self.text_box.style = StyleHandle { i: style.i };
     }
@@ -777,6 +839,12 @@ impl TextEdit {
 
         if selection_decorations_changed(initial_selection, self.text_box.selection.selection, initial_show_cursor, self.show_cursor, !self.disabled) {
             result.set_decorations_changed();
+        }
+
+        // Update scroll to keep cursor visible for single-line edits
+        if self.update_scroll_to_cursor() {
+            // If scroll offset changed, we need to mark text as changed for re-rendering
+            result.set_text_changed();
         }
 
         return result;
