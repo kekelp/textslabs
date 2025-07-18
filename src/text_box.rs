@@ -147,54 +147,17 @@ impl TextBox {
         single_line: bool,
     ) {
         with_text_cx(|layout_cx, font_cx| {
-            let mut builder = layout_cx.ranged_builder(font_cx, &self.text, 1.0, true);
+            let mut builder = layout_cx.tree_builder(font_cx, 1.0, true, style);
 
-
-            // todo: the ranged builder doesn't really work with styles, only with properties, so we need this bunch of code, apparently.
-            // the tree builder doesn't work properly (when text is empty, the line metrics are all zero => invisible cursor) 
-            builder.push_default(StyleProperty::FontStack(style.font_stack.clone()));
-            builder.push_default(StyleProperty::FontSize(style.font_size));
-            builder.push_default(StyleProperty::FontWidth(style.font_width));
-            builder.push_default(StyleProperty::FontStyle(style.font_style));
-            builder.push_default(StyleProperty::FontWeight(style.font_weight));
-            builder.push_default(StyleProperty::FontVariations(style.font_variations.clone()));
-            builder.push_default(StyleProperty::FontFeatures(style.font_features.clone()));
-            if let Some(locale) = style.locale {
-                builder.push_default(StyleProperty::Locale(Some(locale)));
-            }
-            builder.push_default(StyleProperty::Brush(style.brush.clone()));
-            builder.push_default(StyleProperty::Underline(style.has_underline));
-            if let Some(offset) = style.underline_offset {
-                builder.push_default(StyleProperty::UnderlineOffset(Some(offset)));
-            }
-            if let Some(size) = style.underline_size {
-                builder.push_default(StyleProperty::UnderlineSize(Some(size)));
-            }
-            if let Some(brush) = &style.underline_brush {
-                builder.push_default(StyleProperty::UnderlineBrush(Some(brush.clone())));
-            }
-            builder.push_default(StyleProperty::Strikethrough(style.has_strikethrough));
-            if let Some(offset) = style.strikethrough_offset {
-                builder.push_default(StyleProperty::StrikethroughOffset(Some(offset)));
-            }
-            if let Some(size) = style.strikethrough_size {
-                builder.push_default(StyleProperty::StrikethroughSize(Some(size)));
-            }
-            if let Some(brush) = &style.strikethrough_brush {
-                builder.push_default(StyleProperty::StrikethroughBrush(Some(brush.clone())));
-            }
-            builder.push_default(StyleProperty::LineHeight(style.line_height));
-            builder.push_default(StyleProperty::WordSpacing(style.word_spacing));
-            builder.push_default(StyleProperty::LetterSpacing(style.letter_spacing));
-            builder.push_default(StyleProperty::WordBreak(style.word_break));
-            builder.push_default(StyleProperty::OverflowWrap(style.overflow_wrap));
-            
-            // Handle color override
             if let Some(color_override) = color_override {
-                builder.push_default(StyleProperty::Brush(color_override));
+                builder.push_style_modification_span(&[
+                    StyleProperty::Brush(color_override)
+                ]);
             }
 
-            let mut layout = builder.build(&self.text);
+            builder.push_text(&self.text);
+
+            let (mut layout, _) = builder.build();
 
             if ! single_line {
                 layout.break_all_lines(Some(self.max_advance));
