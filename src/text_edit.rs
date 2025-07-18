@@ -617,6 +617,7 @@ impl TextEdit {
         let initial_show_cursor = self.show_cursor;
         
         let mut result = TextEventResult::new();
+        let mut should_follow_cursor = false;
 
         let showing_placeholder = self.showing_placeholder;
         if ! self.showing_placeholder {
@@ -628,7 +629,6 @@ impl TextEdit {
                 if !event.state.is_pressed() {
                     return result;
                 }
-                // self.cursor_reset();
                 #[allow(unused)]
                 let mods_state = input_state.modifiers.state();
                 let shift = mods_state.shift_key();
@@ -678,6 +678,7 @@ impl TextEdit {
                 match &event.logical_key {
                     Key::Named(NamedKey::ArrowLeft) => {
                         if !shift && ! self.showing_placeholder {
+                            should_follow_cursor = true;
                             if action_mod {
                                 self.text_box.move_word_left();
                             } else {
@@ -686,7 +687,8 @@ impl TextEdit {
                         }
                     }
                     Key::Named(NamedKey::ArrowRight) => {
-                        if !shift && ! self.showing_placeholder {                            
+                        if !shift && ! self.showing_placeholder {
+                            should_follow_cursor = true;
                             if action_mod {
                                 self.text_box.move_word_right();
                             } else {
@@ -696,8 +698,8 @@ impl TextEdit {
                     }
                     Key::Named(NamedKey::ArrowUp) => {
                         if !shift && ! self.showing_placeholder {
+                            should_follow_cursor = true;
                             if self.single_line {
-                                // In single line mode, up arrow moves to beginning of text
                                 self.text_box.move_to_text_start();
                             } else {
                                 self.text_box.move_up();
@@ -706,8 +708,8 @@ impl TextEdit {
                     }
                     Key::Named(NamedKey::ArrowDown) => {
                         if !shift && ! self.showing_placeholder {
+                            should_follow_cursor = true;
                             if self.single_line {
-                                // In single line mode, down arrow moves to end of text
                                 self.text_box.move_to_text_end();
                             } else {
                                 self.text_box.move_down();
@@ -716,6 +718,7 @@ impl TextEdit {
                     }
                     Key::Named(NamedKey::Home) => {
                         if !shift && ! self.showing_placeholder {
+                            should_follow_cursor = true;
                             if action_mod {
                                 self.text_box.move_to_text_start();
                             } else {
@@ -725,6 +728,7 @@ impl TextEdit {
                     }
                     Key::Named(NamedKey::End) => {
                         if !shift && ! self.showing_placeholder {
+                            should_follow_cursor = true;
                             if action_mod {
                                 self.text_box.move_to_text_end();
                             } else {
@@ -785,19 +789,19 @@ impl TextEdit {
                 if ! self.showing_placeholder {
                     match phase {
                         Started => {
-                            // todo: use left and top. I can't test this though
+                            should_follow_cursor = true;
                             let cursor_pos = (
                                 location.x - self.text_box.left as f64,
                                 location.y - self.text_box.top as f64,
                             );
-                            // TODO: start a timer to convert to a SelectWordAtPoint
                             self.text_box.move_to_point(cursor_pos.0 as f32, cursor_pos.1 as f32);
                         }
                         Cancelled => {
+                            should_follow_cursor = true;
                             self.text_box.collapse_selection();
                         }
                         Moved => {
-                            // TODO: cancel SelectWordAtPoint timer
+                            should_follow_cursor = true;
                             self.text_box.extend_selection_to_point(
                                 location.x as f32 - INSET,
                                 location.y as f32 - INSET,
@@ -815,6 +819,7 @@ impl TextEdit {
                 if self.showing_placeholder {
                     self.clear_placeholder()
                 }
+                should_follow_cursor = true;
                 self.insert_or_replace_selection(&text);
                 result.set_text_changed();
             }
@@ -822,14 +827,38 @@ impl TextEdit {
                 if self.showing_placeholder {
                     self.clear_placeholder()
                 }
+                should_follow_cursor = true;
                 if text.is_empty() {
                     self.clear_compose();
                     result.set_text_changed();
                 } else {
                     self.set_compose(&text, *cursor);
                     result.set_text_changed();
-                    // todo: no idea if it's correct to call this here.
                     self.set_ime_cursor_area(window);
+                }
+            }
+            WindowEvent::MouseWheel { delta, .. } if self.single_line => {
+                let cursor_pos = input_state.mouse.cursor_pos;
+                if self.text_box.hit_full_rect(cursor_pos) {
+                    let scroll_amount = match delta {
+                        winit::event::MouseScrollDelta::LineDelta(x, _y) => x * 30.0,
+                        winit::event::MouseScrollDelta::PixelDelta(pos) => pos.x as f32,
+                    };
+                    
+                    if scroll_amount.abs() > 0.1 {
+                        let old_scroll = self.text_box.scroll_offset;
+                        let new_scroll = old_scroll - scroll_amount;
+                        
+                        let total_text_width = self.text_box.layout.full_width();
+                        let text_width = self.text_box.max_advance;
+                        let max_scroll = (total_text_width - text_width).max(0.0);
+                        let new_scroll = new_scroll.clamp(0.0, max_scroll);
+                        
+                        if (new_scroll - old_scroll).abs() > 0.1 {
+                            self.text_box.scroll_offset = new_scroll;
+                            result.set_text_changed();
+                        }
+                    }
                 }
             }
             _ => {}
@@ -841,10 +870,10 @@ impl TextEdit {
             result.set_decorations_changed();
         }
 
-        // Update scroll to keep cursor visible for single-line edits
-        if self.update_scroll_to_cursor() {
-            // If scroll offset changed, we need to mark text as changed for re-rendering
-            result.set_text_changed();
+        if should_follow_cursor || result.text_changed {
+            if self.update_scroll_to_cursor() {
+                result.set_text_changed();
+            }
         }
 
         return result;
