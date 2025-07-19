@@ -7,6 +7,7 @@ use winit::{
     event::{Ime, Touch, WindowEvent}, keyboard::{Key, NamedKey}, platform::modifier_supplement::KeyEventExtModifierSupplement, window::Window
 };
 
+pub(crate) const CURSOR_WIDTH: f32 = 3.0;
 const INSET: f32 = 2.0;
 
 use crate::*;
@@ -1271,7 +1272,8 @@ impl<'a> TextEdit<'a> {
             } else if cursor_x > visible_end - margin {
                 // Cursor is too far right, scroll right
                 let new_scroll = cursor_x - text_width + margin;
-                let max_scroll = (total_text_width - text_width).max(0.0);
+                // Reserve space for cursor width to keep the cursor visible
+                let max_scroll = (total_text_width - text_width + CURSOR_WIDTH).max(0.0);
                 let new_scroll = new_scroll.min(max_scroll);
                 if (new_scroll - current_scroll).abs() > 0.5 {
                     self.text_box.set_scroll_offset(new_scroll);

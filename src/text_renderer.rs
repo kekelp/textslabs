@@ -398,7 +398,7 @@ impl TextRenderer {
         
         let show_cursor = editable && text_box.selection().is_collapsed(); 
         if show_cursor {
-            let size = 3.0;
+            let size = CURSOR_WIDTH;
             let cursor_rect = text_box.selection().focus().geometry(&text_box.inner.layout, size);
             self.text_renderer.add_selection_rect(cursor_rect, content_left, top, cursor_color, clip_rect);
         }
