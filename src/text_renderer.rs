@@ -403,7 +403,7 @@ impl TextRenderer {
         if show_cursor {
             let size = CURSOR_WIDTH;
             let cursor_rect = text_box.selection().focus().geometry(&text_box.inner.layout, size);
-            self.text_renderer.add_selection_rect(cursor_rect, content_left, top, cursor_color, clip_rect);
+            self.text_renderer.add_selection_rect(cursor_rect, content_left, content_top, cursor_color, clip_rect);
         }
         self.text_renderer.needs_gpu_sync = true;
     }

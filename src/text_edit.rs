@@ -514,6 +514,30 @@ impl<'a> TextEdit<'a> {
                     }
                 }
             }
+            WindowEvent::MouseWheel { delta, .. } if !self.inner.single_line => {
+                let cursor_pos = input_state.mouse.cursor_pos;
+                if self.text_box.hit_full_rect(cursor_pos) {
+                    let scroll_amount = match delta {
+                        winit::event::MouseScrollDelta::LineDelta(_x, y) => y * 30.0,
+                        winit::event::MouseScrollDelta::PixelDelta(pos) => pos.y as f32,
+                    };
+                    
+                    if scroll_amount.abs() > 0.1 {
+                        let old_scroll = self.text_box.inner.scroll_offset.1;
+                        let new_scroll = old_scroll - scroll_amount;
+                        
+                        let total_text_height = self.text_box.inner.layout.height();
+                        let text_height = self.text_box.inner.height;
+                        let max_scroll = (total_text_height - text_height).max(0.0).round();
+                        let new_scroll = new_scroll.clamp(0.0, max_scroll).round();
+                        
+                        if (new_scroll - old_scroll).abs() > 0.1 {
+                            self.text_box.inner.scroll_offset.1 = new_scroll;
+                            manually_scrolled = true;
+                        }
+                    }
+                }
+            }
             _ => {}
         }
 
@@ -537,6 +561,7 @@ impl<'a> TextEdit<'a> {
 
         if manually_scrolled {
             result.text_changed = true;
+            result.decorations_changed = true;
         }
 
 
@@ -1233,45 +1258,78 @@ impl<'a> TextEdit<'a> {
         self.text_box.set_scroll_offset(offset);
     }
     
-    /// Updates scroll offset to ensure cursor is visible for single-line edits
+    /// Updates scroll offset to ensure cursor is visible
     /// Returns true if the scroll offset changed
     pub fn update_scroll_to_cursor(&mut self) -> bool {
-        if !self.inner.single_line {
-            return false;
-        }
-
         if let Some(cursor_rect) = self.cursor_geometry(1.0) {
-            let text_width = self.text_box.inner.max_advance;
-            let cursor_x = cursor_rect.x0 as f32;
-            let current_scroll = self.text_box.scroll_offset().0;
-            
-            // Get the total text width to check if we're overflowing
-            let total_text_width = self.text_box.inner.layout.full_width();
-            
-            // Calculate visible range
-            let visible_start = current_scroll;
-            let visible_end = current_scroll + text_width;
-            
-            // Margin for cursor visibility - small buffer zone
-            let margin = text_width * 0.05; // 5% margin
-            
-            // Check if cursor is outside visible range
-            if cursor_x < visible_start + margin {
-                // Cursor is too far left, scroll left
-                let new_scroll = (cursor_x - margin).max(0.0).round();
-                if (new_scroll - current_scroll).abs() > 0.5 {
-                    self.text_box.set_scroll_offset((new_scroll, 0.0));
-                    return true;
+            if self.inner.single_line {
+                // Horizontal scrolling for single-line edits
+                let text_width = self.text_box.inner.max_advance;
+                let cursor_x = cursor_rect.x0 as f32;
+                let current_scroll = self.text_box.scroll_offset().0;
+                
+                // Get the total text width to check if we're overflowing
+                let total_text_width = self.text_box.inner.layout.full_width();
+                
+                // Calculate visible range
+                let visible_start = current_scroll;
+                let visible_end = current_scroll + text_width;
+                
+                // Margin for cursor visibility - small buffer zone
+                let margin = text_width * 0.05; // 5% margin
+                
+                // Check if cursor is outside visible range
+                if cursor_x < visible_start + margin {
+                    // Cursor is too far left, scroll left
+                    let new_scroll = (cursor_x - margin).max(0.0).round();
+                    if (new_scroll - current_scroll).abs() > 0.5 {
+                        self.text_box.set_scroll_offset((new_scroll, 0.0));
+                        return true;
+                    }
+                } else if cursor_x > visible_end - margin {
+                    // Cursor is too far right, scroll right
+                    let new_scroll = cursor_x - text_width + margin;
+                    // Reserve space for cursor width to keep the cursor visible
+                    let max_scroll = (total_text_width - text_width + CURSOR_WIDTH).max(0.0).round();
+                    let new_scroll = new_scroll.min(max_scroll).round();
+                    if (new_scroll - current_scroll).abs() > 0.5 {
+                        self.text_box.set_scroll_offset((new_scroll, 0.0));
+                        return true;
+                    }
                 }
-            } else if cursor_x > visible_end - margin {
-                // Cursor is too far right, scroll right
-                let new_scroll = cursor_x - text_width + margin;
-                // Reserve space for cursor width to keep the cursor visible
-                let max_scroll = (total_text_width - text_width + CURSOR_WIDTH).max(0.0).round();
-                let new_scroll = new_scroll.min(max_scroll).round();
-                if (new_scroll - current_scroll).abs() > 0.5 {
-                    self.text_box.set_scroll_offset((new_scroll, 0.0));
-                    return true;
+            } else {
+                // Vertical scrolling for multi-line edits
+                let text_height = self.text_box.inner.height;
+                let cursor_y = cursor_rect.y0 as f32;
+                let current_scroll = self.text_box.scroll_offset().1;
+                
+                // Get the total text height to check if we're overflowing
+                let total_text_height = self.text_box.inner.layout.height();
+                
+                // Calculate visible range
+                let visible_start = current_scroll;
+                let visible_end = current_scroll + text_height;
+                
+                // Margin for cursor visibility - small buffer zone
+                let margin = text_height * 0.05; // 5% margin
+                
+                // Check if cursor is outside visible range
+                if cursor_y < visible_start + margin {
+                    // Cursor is too far up, scroll up
+                    let new_scroll = (cursor_y - margin).max(0.0).round();
+                    if (new_scroll - current_scroll).abs() > 0.5 {
+                        self.text_box.set_scroll_offset((0.0, new_scroll));
+                        return true;
+                    }
+                } else if cursor_y > visible_end - margin {
+                    // Cursor is too far down, scroll down
+                    let new_scroll = cursor_y - text_height + margin;
+                    let max_scroll = (total_text_height - text_height).max(0.0).round();
+                    let new_scroll = new_scroll.min(max_scroll).round();
+                    if (new_scroll - current_scroll).abs() > 0.5 {
+                        self.text_box.set_scroll_offset((0.0, new_scroll));
+                        return true;
+                    }
                 }
             }
         }

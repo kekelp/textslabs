@@ -170,6 +170,35 @@ impl<'a> TextBox<'a> {
 
         self.handle_event_no_edit_inner(event, input_state, false);
 
+        // Handle mouse wheel scrolling for multi-line text boxes with auto_clip
+        if let WindowEvent::MouseWheel { delta, .. } = event {
+            if self.inner.auto_clip {
+                let cursor_pos = input_state.mouse.cursor_pos;
+                if self.hit_full_rect(cursor_pos) {
+                    let scroll_amount = match delta {
+                        winit::event::MouseScrollDelta::LineDelta(_x, y) => y * 30.0,
+                        winit::event::MouseScrollDelta::PixelDelta(pos) => pos.y as f32,
+                    };
+                    
+                    if scroll_amount.abs() > 0.1 {
+                        let old_scroll = self.inner.scroll_offset.1;
+                        let new_scroll = old_scroll - scroll_amount;
+                        
+                        self.refresh_layout();
+                        let total_text_height = self.inner.layout.height();
+                        let text_height = self.inner.height;
+                        let max_scroll = (total_text_height - text_height).max(0.0).round();
+                        let new_scroll = new_scroll.clamp(0.0, max_scroll).round();
+                        
+                        if (new_scroll - old_scroll).abs() > 0.1 {
+                            self.inner.scroll_offset.1 = new_scroll;
+                            result.text_changed = true;
+                        }
+                    }
+                }
+            }
+        }
+
         if selection_decorations_changed(initial_selection, self.inner.selection.selection, false, false, false) {
             {
                 let this = &mut result;
