@@ -8,7 +8,6 @@ use winit::{
 };
 
 pub(crate) const CURSOR_WIDTH: f32 = 3.0;
-const INSET: f32 = 2.0;
 
 use crate::*;
 
@@ -505,7 +504,7 @@ impl<'a> TextEdit<'a> {
                         
                         let total_text_width = self.text_box.inner.layout.full_width();
                         let text_width = self.text_box.inner.max_advance;
-                        let max_scroll = (total_text_width - text_width).max(0.0);
+                        let max_scroll = (total_text_width - text_width).max(0.0).round() + CURSOR_WIDTH;
                         let new_scroll = new_scroll.clamp(0.0, max_scroll).round();
                         
                         if (new_scroll - old_scroll).abs() > 0.1 {
@@ -1259,7 +1258,7 @@ impl<'a> TextEdit<'a> {
             // Check if cursor is outside visible range
             if cursor_x < visible_start + margin {
                 // Cursor is too far left, scroll left
-                let new_scroll = (cursor_x - margin).max(0.0);
+                let new_scroll = (cursor_x - margin).max(0.0).round();
                 if (new_scroll - current_scroll).abs() > 0.5 {
                     self.text_box.set_scroll_offset(new_scroll);
                     return true;
@@ -1268,8 +1267,8 @@ impl<'a> TextEdit<'a> {
                 // Cursor is too far right, scroll right
                 let new_scroll = cursor_x - text_width + margin;
                 // Reserve space for cursor width to keep the cursor visible
-                let max_scroll = (total_text_width - text_width + CURSOR_WIDTH).max(0.0);
-                let new_scroll = new_scroll.min(max_scroll);
+                let max_scroll = (total_text_width - text_width + CURSOR_WIDTH).max(0.0).round();
+                let new_scroll = new_scroll.min(max_scroll).round();
                 if (new_scroll - current_scroll).abs() > 0.5 {
                     self.text_box.set_scroll_offset(new_scroll);
                     return true;
