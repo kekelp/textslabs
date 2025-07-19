@@ -498,17 +498,11 @@ impl<'a> TextEdit<'a> {
                         winit::event::MouseScrollDelta::PixelDelta(pos) => pos.x as f32,
                     };
                     
-                    if scroll_amount.abs() > 0.1 {
+                    if scroll_amount != 0.0 {
                         let old_scroll = self.text_box.inner.scroll_offset.0;
                         let new_scroll = old_scroll - scroll_amount;
                         
-                        let total_text_width = self.text_box.inner.layout.full_width();
-                        let text_width = self.text_box.inner.max_advance;
-                        let max_scroll = (total_text_width - text_width).max(0.0).round() + CURSOR_WIDTH;
-                        let new_scroll = new_scroll.clamp(0.0, max_scroll).round();
-                        
-                        if (new_scroll - old_scroll).abs() > 0.1 {
-                            self.text_box.inner.scroll_offset.0 = new_scroll;
+                        if self.apply_horizontal_scroll(new_scroll) {
                             manually_scrolled = true;
                         }
                     }
@@ -1264,6 +1258,23 @@ impl<'a> TextEdit<'a> {
         self.text_box.set_scroll_offset(offset);
     }
     
+    /// Apply horizontal scroll with bounds checking and precision handling
+    /// Returns true if scroll offset was changed
+    fn apply_horizontal_scroll(&mut self, new_scroll: f32) -> bool {
+        let old_scroll = self.text_box.inner.scroll_offset.0;
+        let total_text_width = self.text_box.inner.layout.full_width();
+        let text_width = self.text_box.inner.max_advance;
+        let max_scroll = (total_text_width - text_width).max(0.0).round() + CURSOR_WIDTH;
+        let clamped_scroll = new_scroll.clamp(0.0, max_scroll).round();
+        
+        if clamped_scroll != old_scroll {
+            self.text_box.inner.scroll_offset.0 = clamped_scroll;
+            true
+        } else {
+            false
+        }
+    }
+
     /// Updates scroll offset to ensure cursor is visible
     /// Returns true if the scroll offset changed
     pub fn update_scroll_to_cursor(&mut self) -> bool {
@@ -1274,35 +1285,22 @@ impl<'a> TextEdit<'a> {
                 let cursor_left = cursor_rect.x0 as f32;
                 let cursor_right = cursor_rect.x1 as f32;
                 let current_scroll = self.text_box.scroll_offset().0;
-                
-                // Get the total text width to check if we're overflowing
                 let total_text_width = self.text_box.inner.layout.full_width();
+                let max_scroll = (total_text_width - text_width).max(0.0).round() + CURSOR_WIDTH;
                 
-                // Calculate visible range
+                // Sticky max scroll: if we're at max scroll, try to stay there
+                if current_scroll >= max_scroll {
+                    return self.apply_horizontal_scroll(max_scroll);
+                }
+                
                 let visible_start = current_scroll;
-                let visible_end = current_scroll + text_width;
-                
-                // Margin for cursor visibility - small buffer zone
-                let margin = text_width * 0.05; // 5% margin
-                
-                // Check if cursor is outside visible range
-                if cursor_left < visible_start + margin {
-                    // Cursor left is too far left, scroll left
-                    let new_scroll = (cursor_left - margin).max(0.0).round();
-                    if (new_scroll - current_scroll).abs() > 0.5 {
-                        self.text_box.set_scroll_offset((new_scroll, 0.0));
-                        return true;
-                    }
-                } else if cursor_right > visible_end - margin {
-                    // Cursor right is too far right, scroll right
-                    let new_scroll = cursor_right - text_width + margin;
-                    // Reserve space for cursor width to keep the cursor visible
-                    let max_scroll = (total_text_width - text_width + CURSOR_WIDTH).max(0.0).round();
-                    let new_scroll = new_scroll.min(max_scroll).round();
-                    if (new_scroll - current_scroll).abs() > 0.5 {
-                        self.text_box.set_scroll_offset((new_scroll, 0.0));
-                        return true;
-                    }
+                let visible_end = current_scroll + text_width;                
+                if cursor_left < visible_start {
+                    // Cursor left is too far left, scroll to show cursor fully at left edge
+                    return self.apply_horizontal_scroll((cursor_left).max(0.0));
+                } else if cursor_right > visible_end {
+                    // Cursor right is too far right, scroll to show cursor fully at right edge
+                    return self.apply_horizontal_scroll(cursor_right - text_width);
                 }
             } else {
                 // Vertical scrolling for multi-line edits
