@@ -392,7 +392,17 @@ impl<'a> TextBox<'a> {
             None
         };
 
-        match (auto_clip_rect, self.inner.clip_rect) {
+
+        let clip_rect = self.inner.clip_rect.map(|explicit| {
+            parley::Rect {
+                x0: explicit.x0 + self.inner.scroll_offset.0 as f64,
+                y0: explicit.y0 + self.inner.scroll_offset.1 as f64,
+                x1: explicit.x1 + self.inner.scroll_offset.0 as f64,
+                y1: explicit.y1 + self.inner.scroll_offset.1 as f64,
+            }
+        });
+
+        match (auto_clip_rect, clip_rect) {
             (None, None) => None,
             (Some(auto), None) => Some(auto),
             (None, Some(explicit)) => Some(explicit),
