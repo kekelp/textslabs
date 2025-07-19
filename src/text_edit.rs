@@ -554,7 +554,6 @@ impl<'a> TextEdit<'a> {
     //     }
     // }
 
-    // --- MARK: Forced relayout ---
     /// Insert at cursor, or replace selection.
     fn replace_range_and_record(&mut self, range: Range<usize>, old_selection: Selection, s: &str) {
         let old_text = &self.text_box.text()[range.clone()];
@@ -586,7 +585,6 @@ impl<'a> TextEdit<'a> {
         self.replace_selection(s);
     }
 
-    // --- MARK: Forced relayout ---
     /// Insert at cursor, or replace selection.
     pub(crate) fn insert_or_replace_selection(&mut self, s: &str) {
         assert!(!self.is_composing());
@@ -607,7 +605,7 @@ impl<'a> TextEdit<'a> {
                 self.text_box.text_mut().clear();
                 self.text_box.text_mut().push_str(&placeholder);
                 self.inner.showing_placeholder = true;
-                self.text_box.inner.needs_relayout = true;
+                self.refresh_layout();
                 self.text_box.set_selection(Selection::zero());
             }
         }
@@ -635,15 +633,14 @@ impl<'a> TextEdit<'a> {
                 .and_then(|range| (!range.is_empty()).then_some(range))
             {
                 self.replace_range_and_record(range, self.text_box.selection(), "");
-                // seems ok to not do the relayout immediately
-                self.text_box.inner.needs_relayout = true;
+                self.refresh_layout();
             }
         } else {
             self.delete_selection();
         }
     }
 
-    /// Delete the selection or up to the next word boundary (typical ‘ctrl + delete’ behavior).
+    /// Delete the selection or up to the next word boundary (typical 'ctrl + delete' behavior).
     pub(crate) fn delete_word(&mut self) {
         assert!(!self.is_composing());
 
@@ -653,10 +650,9 @@ impl<'a> TextEdit<'a> {
             let end = focus.next_logical_word(&self.text_box.layout()).index();
             if self.text_box.text().get(start..end).is_some() {
                 self.replace_range_and_record(start..end, self.text_box.selection(), "");
-                // seems ok to not do the relayout immediately
-                self.text_box.inner.needs_relayout = true;
+                self.refresh_layout();
                 self.text_box.set_selection(
-                    Cursor::from_byte_index(&self.text_box.layout(), start, Affinity::Downstream).into(),
+                    Cursor::from_byte_index(&self.text_box.inner.layout, start, Affinity::Downstream).into(),
                 );
             }
         } else {
@@ -693,10 +689,9 @@ impl<'a> TextEdit<'a> {
                     start
                 };
                 self.replace_range_and_record(start..end, self.text_box.selection(), "");
-                // seems ok to not do the relayout immediately
-                self.text_box.inner.needs_relayout = true;
+                self.refresh_layout();
                 self.text_box.set_selection(
-                    Cursor::from_byte_index(&self.text_box.layout(), start, Affinity::Downstream).into(),
+                    Cursor::from_byte_index(&self.text_box.inner.layout, start, Affinity::Downstream).into(),
                 );
             }
         } else {
@@ -704,7 +699,7 @@ impl<'a> TextEdit<'a> {
         }
     }
 
-    /// Delete the selection or back to the previous word boundary (typical ‘ctrl + backspace’ behavior).
+    /// Delete the selection or back to the previous word boundary (typical 'ctrl + backspace' behavior).
     pub(crate) fn backdelete_word(&mut self) {
         assert!(!self.is_composing());
 
@@ -714,10 +709,9 @@ impl<'a> TextEdit<'a> {
             let start = focus.previous_logical_word(&self.text_box.layout()).index();
             if self.text_box.text().get(start..end).is_some() {
                 self.replace_range_and_record(start..end, self.text_box.selection(), "");
-                // seems ok to not do the relayout immediately
-                self.text_box.inner.needs_relayout = true;
+                self.refresh_layout();
                 self.text_box.set_selection(
-                    Cursor::from_byte_index(&self.text_box.layout(), start, Affinity::Downstream).into(),
+                    Cursor::from_byte_index(&self.text_box.inner.layout, start, Affinity::Downstream).into(),
                 );
             }
         } else {
@@ -770,8 +764,8 @@ impl<'a> TextEdit<'a> {
         let cursor = cursor.unwrap_or((0, 0));
         self.text_box.set_selection(Selection::new(
             // In parley, the layout is updated first, then the checked version is used. This should be fine too.
-            Cursor::from_byte_index_unchecked(start + cursor.0, Affinity::Downstream),
-            Cursor::from_byte_index_unchecked(start + cursor.1, Affinity::Downstream),
+            Cursor::from_byte_index(&self.text_box.inner.layout, start + cursor.0, Affinity::Downstream),
+            Cursor::from_byte_index(&self.text_box.inner.layout, start + cursor.1, Affinity::Downstream),
         ));
 
         self.text_box.inner.needs_relayout = true;
@@ -791,8 +785,8 @@ impl<'a> TextEdit<'a> {
                 (preedit_range.start, Affinity::Downstream)
             };
 
-            // In parley, the layout is updated first, then the checked version is used. This should be fine too.
-            self.text_box.inner.selection.selection = Cursor::from_byte_index_unchecked(index, affinity).into();
+            self.refresh_layout();
+            self.text_box.inner.selection.selection = Cursor::from_byte_index(&self.text_box.inner.layout, index, affinity).into();
         }
     }
 
@@ -872,8 +866,8 @@ impl<'a> TextEdit<'a> {
 
             let end = op.range_to_clear.start + op.text_to_restore.len();
 
-            // In parley, the layout is updated first, then the checked version is used. This should be fine too.
-            self.text_box.inner.selection.selection = Cursor::from_byte_index_unchecked(end, Affinity::Upstream).into();
+            self.refresh_layout();
+            self.text_box.inner.selection.selection = Cursor::from_byte_index(&self.text_box.inner.layout, end, Affinity::Upstream).into();
             
             if self.inner.single_line {
                 self.remove_newlines();
@@ -905,8 +899,9 @@ impl<'a> TextEdit<'a> {
             Affinity::Upstream
         };
 
-        // In parley, the layout is updated first, then the checked version is used. This should be fine too.
-        self.text_box.inner.selection.selection = Cursor::from_byte_index_unchecked(index, affinity).into();
+        // With the new setup, we can do refresh_layout here and use the checked from_byte_index functions. However, the check is still completely useless, all it does is turn a potential explicit panic into a silent failure.
+        self.refresh_layout();
+        self.text_box.inner.selection.selection = Cursor::from_byte_index(&self.text_box.inner.layout, index, affinity).into();
     }
 
 }

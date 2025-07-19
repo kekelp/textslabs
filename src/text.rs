@@ -235,14 +235,6 @@ impl Text {
         self.get_full_text_edit(handle)
     }
 
-    /// Get the [`parley::Layout`] for a text box, recomputing it only if needed.
-    pub fn get_text_box_layout(&mut self, handle: &TextBoxHandle) -> &Layout<ColorBrush> {
-        let text_box = &mut self.text_boxes[handle.i as usize];
-        refresh_text_box_layout(text_box, &self.styles);
-        return &self.text_boxes[handle.i as usize].layout
-    }
-
-
     #[must_use]
     pub fn add_style(&mut self, text_style: TextStyle2, text_edit_style: Option<TextEditStyle>) -> StyleHandle {
         let text_edit_style = text_edit_style.unwrap_or_default();
@@ -500,9 +492,7 @@ impl Text {
 
         if let Some(focused) = self.focused {
             // todo remove
-            self.refresh_anybox_layout(focused);
             self.handle_focused_event(focused, event, window);
-            self.refresh_anybox_layout(focused);
         }
     }
 
@@ -548,9 +538,7 @@ impl Text {
         }
 
         if let Some(focused) = self.focused {
-            self.refresh_anybox_layout(focused);
             self.handle_focused_event(focused, event, window);
-            self.refresh_anybox_layout(focused);
         }
     }
 
@@ -712,37 +700,6 @@ impl Text {
         let style = &mut self.styles[style_handle.i as usize].0;
         TextBox { inner: text_box_inner, style }
     }
-    
-    /// Get the text content of a text box.
-    /// 
-    /// `handle` is the handle that was returned when first creating the text box with [`Text::add_text_box()`].
-    /// 
-    /// This is a fast lookup operation that does not require any hashing.
-    pub fn get_text_box_text(&self, handle: &TextBoxHandle) -> &str {
-        &self.text_boxes[handle.i as usize].text
-    }
-    
-    /// Get the text content of a text edit.
-    /// 
-    /// `handle` is the handle that was returned when first creating the text edit with [`Text::add_text_edit()`].
-    /// 
-    /// This is a fast lookup operation that does not require any hashing.
-    pub fn get_text_edit_text(&self, handle: &TextEditHandle) -> &str {
-        &self.text_edits[handle.i as usize].1.text
-    }
-
-    pub(crate) fn refresh_anybox_layout(&mut self, handle: AnyBox) {
-        match handle {
-            AnyBox::TextEdit(i) => {
-                let (text_edit, text_box) = &mut self.text_edits[i as usize];
-                refresh_text_edit_layout(text_edit, text_box, &mut self.styles);
-            },
-            AnyBox::TextBox(i) => {
-                let text_box = &mut self.text_boxes[i as usize];
-                refresh_text_box_layout(text_box, &mut self.styles);
-            },
-        }
-    }
 
     pub(crate) fn get_full_text_box(&mut self, i: &TextBoxHandle) -> TextBox<'_> {
         get_full_text_box_free(&mut self.text_boxes, &mut self.styles, i)
@@ -774,38 +731,4 @@ pub(crate) fn get_full_text_edit_free<'a>(
     let (style, edit_style, _) = &mut styles[text_box_inner.style.i as usize];
     let text_box = TextBox { inner: text_box_inner, style };
     TextEdit { inner: text_edit_inner, edit_style, text_box }
-}
-
-pub(crate) fn refresh_text_edit_layout(text_edit: &mut TextEditInner, text_box: &mut TextBoxInner, styles: &Slab<(TextStyle2, TextEditStyle, u64)>) {
-    let (style, edit_style, style_changed) = get_styles_for_element(text_box, styles);
-
-    let color_override = if text_edit.disabled {
-        Some(edit_style.disabled_text_color)
-    } else if text_edit.showing_placeholder {
-        Some(edit_style.placeholder_text_color)
-    } else {
-        None
-    };
-
-    if text_box.needs_relayout || style_changed {
-        TextBox { inner: text_box, style: &style }.rebuild_layout(color_override, text_edit.single_line);
-    }
-}
-
-pub(crate) fn refresh_text_box_layout(text_box: &mut TextBoxInner, styles: &Slab<(TextStyle2, TextEditStyle, u64)>) {
-    let (style, _edit_style, style_changed) = get_styles_for_element(text_box, styles);
-    if text_box.needs_relayout || style_changed {
-        TextBox { inner: text_box, style: &style }.rebuild_layout(None, false);
-    }
-}
-
-
-fn get_styles_for_element<'a>(text_box: &mut TextBoxInner, styles: &'a Slab<(TextStyle2, TextEditStyle, u64)>) -> (&'a TextStyle2, &'a TextEditStyle, bool) {
-    let style_handle = text_box.style;
-    let last_style_id = text_box.style_id;
-    // todo: ABA problem here.
-    let (text_style, text_edit_style, id) = styles.get(style_handle.i as usize).unwrap_or(&styles[DEFAULT_STYLE_HANDLE.i as usize]);
-    let changed = last_style_id != *id;
-    text_box.style_id = *id;
-    (text_style, text_edit_style, changed)
 }

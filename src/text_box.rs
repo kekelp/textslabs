@@ -415,15 +415,15 @@ impl<'a> TextBox<'a> {
             self.inner.layout = layout;
             self.inner.needs_relayout = false;
             
-
+            // todo: does this do anything?
             self.inner.selection.selection = self.inner.selection.selection.refresh(&self.inner.layout);
         });
     }
 
 
 
-    // todo: just setting self.inner.needs_relayout is probably not ok. what if the user calls this on a text edit box, and then a method like move_right()?
-    // this could be solved if get_text_edit_mut() did a relayout if needed. 
+    // Note: This used to be a problem when TextEdit couldn't call refresh_layout() directly.
+    // Now that TextEdit has access to refresh_layout(), this is no longer an issue. 
     /// Returns a mutable reference to the text box's text buffer as a Cow.
     /// This provides full access to the underlying storage type.
 
@@ -481,18 +481,6 @@ impl<'a> TextBox<'a> {
     //     self.inner.accessibility_unchecked(update, node, next_node_id, x_offset, y_offset);
     //     Some(())
     // }
-
-    // --- MARK: Internal Helpers ---
-    /// Make a cursor at a given byte index.
-    pub(crate) fn cursor_at(&self, index: usize) -> Cursor {
-        // TODO: Do we need to be non-dirty?
-        // FIXME: `Selection` should make this easier
-        if index >= self.inner.text.len() {
-            Cursor::from_byte_index(&self.inner.layout, self.inner.text.len(), Affinity::Upstream)
-        } else {
-            Cursor::from_byte_index(&self.inner.layout, index, Affinity::Downstream)
-        }
-    }
 
     /// Update the selection, and nudge the `Generation` if something other than `h_pos` changed.
     pub(crate) fn set_selection(&mut self, new_sel: Selection) {
@@ -665,8 +653,8 @@ impl<'a> TextBox<'a> {
         self.inner.selection.extend_selection_to_point(&self.inner.layout, x, y);
     }
 
-    pub(crate) fn layout(&self) -> &Layout<ColorBrush> {
-        // todo: refresh?
+    pub(crate) fn layout(&mut self) -> &Layout<ColorBrush> {
+        self.refresh_layout();
         &self.inner.layout
     }
 
@@ -674,10 +662,6 @@ impl<'a> TextBox<'a> {
         if self.inner.needs_relayout {
             self.rebuild_layout(None, false);
         }
-    }
-
-    pub(crate) fn force_refresh_layout(&mut self) {
-        self.rebuild_layout(None, false);
     }
 }
 
