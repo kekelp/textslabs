@@ -10,8 +10,8 @@ const MULTICLICK_TOLERANCE_SQUARED: f64 = 26.0;
 /// 
 /// For rendering, a [`TextRenderer`] is also needed.
 pub struct Text {
-    pub(crate) text_boxes: Slab<TextBox>,
-    pub(crate) text_edits: Slab<TextEdit>,
+    pub(crate) text_boxes: Slab<TextBoxInner>,
+    pub(crate) text_edits: Slab<(TextEditInner, TextBoxInner)>,
 
     pub(crate) styles: Slab<(TextStyle2, TextEditStyle, u64)>,
     pub(crate) style_version_id_counter: u64,
@@ -77,10 +77,12 @@ impl Drop for TextBoxHandle {
 
 
 /// Handle for a text style. Use with Text methods to apply styles to text.
+#[derive(Debug, Clone, Copy)]
 pub struct StyleHandle {
     pub(crate) i: u32,
 }
 impl StyleHandle {
+    #[allow(dead_code)]
     pub(crate) fn sneak_clone(&self) -> Self {
         Self { i: self.i }
     }
@@ -190,7 +192,7 @@ impl Text {
     /// `text` can be a `String`, a `&'static str`, or a `Cow<'static, str>`.
     #[must_use]
     pub fn add_text_box(&mut self, text: impl Into<Cow<'static, str>>, pos: (f64, f64), size: (f32, f32), depth: f32) -> TextBoxHandle {
-        let mut text_box = TextBox::new(text, pos, size, depth);
+        let mut text_box = TextBoxInner::new(text, pos, size, depth);
         text_box.last_frame_touched = self.current_frame;
         let i = self.text_boxes.insert(text_box) as u32;
         self.text_changed = true;
@@ -204,32 +206,14 @@ impl Text {
     /// The [`TextEdit`] must be manually removed by calling [`Text::remove_text_edit()`].
     #[must_use]
     pub fn add_text_edit(&mut self, text: String, pos: (f64, f64), size: (f32, f32), depth: f32) -> TextEditHandle {
-        let mut text_edit = TextEdit::new(text, pos, size, depth);
-        text_edit.text_box.last_frame_touched = self.current_frame;
-        let i = self.text_edits.insert(text_edit) as u32;
+        let (text_edit, mut text_box) = TextEditInner::new(text, pos, size, depth);
+        text_box.last_frame_touched = self.current_frame;
+        let i = self.text_edits.insert((text_edit, text_box)) as u32;
         self.text_changed = true;
         TextEditHandle { i }
     }
 
 
-    /// Get a mutable reference to a text box.
-    /// 
-    /// `handle` is the handle that was returned when first creating the text box with [`Text::add_text_box()`].
-    /// 
-    /// This is a fast lookup operation that does not require any hashing.
-    pub fn get_text_box_mut(&mut self, handle: &TextBoxHandle) -> &mut TextBox {
-        self.text_changed = true;
-        &mut self.text_boxes[handle.i as usize]
-    }
-
-    /// Get a reference to a text box.
-    /// 
-    /// `handle` is the handle that was returned when first creating the text box with [`Text::add_text_box()`].
-    ///    
-    /// This is a fast lookup operation that does not require any hashing.
-    pub fn get_text_box(&self, handle: &TextBoxHandle) -> &TextBox {
-        &self.text_boxes[handle.i as usize]
-    }
 
 
     /// Get a mutable reference to a text edit.
@@ -237,9 +221,9 @@ impl Text {
     /// `handle` is the handle that was returned when first creating the text edit with [`Text::add_text_edit()`] or similar functions.
     ///    
     /// This is a fast lookup operation that does not require any hashing.
-    pub fn get_text_edit_mut(&mut self, handle: &TextEditHandle) -> &mut TextEdit {
+    pub fn get_text_edit_mut(&mut self, handle: &TextEditHandle) -> TextEdit {
         self.text_changed = true;
-        &mut self.text_edits[handle.i as usize]
+        self.get_full_text_edit(handle)
     }
 
     /// Get a reference to a text edit.
@@ -247,8 +231,8 @@ impl Text {
     /// `handle` is the handle that was returned when first creating the text edit with [`Text::add_text_edit()`] or similar functions.
     ///    
     /// This is a fast lookup operation that does not require any hashing.
-    pub fn get_text_edit(&self, handle: &TextEditHandle) -> &TextEdit {
-        &self.text_edits[handle.i as usize]
+    pub fn get_text_edit(&mut self, handle: &TextEditHandle) -> TextEdit {
+        self.get_full_text_edit(handle)
     }
 
     /// Get the [`parley::Layout`] for a text box, recomputing it only if needed.
@@ -258,13 +242,6 @@ impl Text {
         return &self.text_boxes[handle.i as usize].layout
     }
 
-
-    /// Get the [`parley::Layout`] for a text edit box, recomputing it only if needed.
-    pub fn get_text_edit_layout(&mut self, handle: &TextEditHandle) -> &Layout<ColorBrush> {
-        let text_edit = &mut self.text_edits[handle.i as usize];
-        refresh_text_edit_layout(text_edit, &self.styles);
-        return &self.text_edits[handle.i as usize].text_box.layout
-    }
 
     #[must_use]
     pub fn add_style(&mut self, text_style: TextStyle2, text_edit_style: Option<TextEditStyle>) -> StyleHandle {
@@ -340,8 +317,8 @@ impl Text {
     /// 
     /// Part of the "declarative" interface.
     pub fn refresh_text_edit(&mut self, handle: &TextEditHandle) {
-        if let Some(text_edit) = self.text_edits.get_mut(handle.i as usize) {
-            text_edit.text_box.last_frame_touched = self.current_frame;
+        if let Some((_text_edit, text_box)) = self.text_edits.get_mut(handle.i as usize) {
+            text_box.last_frame_touched = self.current_frame;
         }
     }
 
@@ -369,8 +346,8 @@ impl Text {
                     }
                 }
                 AnyBox::TextEdit(i) => {
-                    if let Some(text_edit) = self.text_edits.get(i as usize) {
-                        text_edit.text_box.last_frame_touched != self.current_frame && !text_edit.text_box.can_hide
+                    if let Some((_text_edit, text_box)) = self.text_edits.get(i as usize) {
+                        text_box.last_frame_touched != self.current_frame && !text_box.can_hide
                     } else {
                         true // Text edit doesn't exist
                     }
@@ -388,8 +365,8 @@ impl Text {
         });
 
 
-        self.text_edits.retain(|_, text_edit| {
-            text_edit.text_box.last_frame_touched == self.current_frame || text_edit.text_box.can_hide
+        self.text_edits.retain(|_, (_text_edit, text_box)| {
+            text_box.last_frame_touched == self.current_frame || text_box.can_hide
         });
     }
 
@@ -433,8 +410,8 @@ impl Text {
 
         if ! self.text_changed && self.using_frame_based_visibility {
             // see if any text boxes were just hidden
-            for (_i, text_edit) in self.text_edits.iter_mut() {
-                if text_edit.text_box.last_frame_touched == self.current_frame - 1 {
+            for (_i, (_text_edit, text_box)) in self.text_edits.iter_mut() {
+                if text_box.last_frame_touched == self.current_frame - 1 {
                     self.text_changed = true;
                 }
             }
@@ -452,18 +429,28 @@ impl Text {
             text_renderer.clear_decorations_only();
         }
 
+        let current_frame = self.current_frame;
         if self.text_changed {
-            for (_i, text_edit) in self.text_edits.iter_mut() {
-                if !text_edit.hidden() && text_edit.text_box.last_frame_touched == self.current_frame {
-                    refresh_text_edit_layout(text_edit, &self.styles);
-                    text_renderer.prepare_text_edit_layout(text_edit);
+            // todo: figure out some other way to cheat partial borrowing
+
+            for i in 0..self.text_edits.capacity() {
+                if self.text_edits.contains(i) {
+                    let handle = TextEditHandle { i: i as u32 };
+                    let mut text_edit = self.get_full_text_edit(&handle);
+                    if !text_edit.hidden() && text_edit.text_box.inner.last_frame_touched == current_frame {
+                        text_renderer.prepare_text_edit_layout(&mut text_edit);
+                    }
                 }
             }
-            for (_i, text_box) in self.text_boxes.iter_mut() {
-                if !text_box.hidden() && text_box.last_frame_touched == self.current_frame {
-                    refresh_text_box_layout(text_box, &self.styles);
-                    text_renderer.prepare_text_box_layout(text_box);
-                }            
+
+            for i in 0..self.text_boxes.capacity() {
+                if self.text_boxes.contains(i) {
+                    let handle = TextBoxHandle { i: i as u32 };
+                    let mut text_edit = self.get_full_text_box(&handle);
+                    if !text_edit.hidden() && text_edit.inner.last_frame_touched == current_frame {
+                        text_renderer.prepare_text_box_layout(&mut text_edit);
+                    }
+                }
             }
         }
 
@@ -471,12 +458,14 @@ impl Text {
             if let Some(focused) = self.focused {
                 match focused {
                     AnyBox::TextEdit(i) => {
-                        if ! &self.text_edits[i as usize].disabled() {
-                            text_renderer.prepare_text_box_decorations(&self.text_edits[i as usize].text_box, true);
-                        }
+                        let handle = TextEditHandle { i: i as u32 };
+                        let text_edit = self.get_full_text_edit(&handle);
+                        text_renderer.prepare_text_box_decorations(&text_edit.text_box, true);
                     },
                     AnyBox::TextBox(i) => {
-                        text_renderer.prepare_text_box_decorations(&self.text_boxes[i as usize], false);
+                        let handle = TextBoxHandle { i: i as u32 };
+                        let text_box = self.get_full_text_box(&handle);
+                        text_renderer.prepare_text_box_decorations(&text_box, true);
                     },
                 }
             }
@@ -510,16 +499,10 @@ impl Text {
         }
 
         if let Some(focused) = self.focused {
+            // todo remove
             self.refresh_anybox_layout(focused);
             self.handle_focused_event(focused, event, window);
             self.refresh_anybox_layout(focused);
-            
-            // todo: if we fix the layout thing, this can be done inside.
-            if let AnyBox::TextEdit(i) = focused {
-                if self.text_edits[i as usize].update_scroll_after_layout() {
-                    self.text_changed = true;
-                }
-            }
         }
     }
 
@@ -543,8 +526,8 @@ impl Text {
     /// Used for comparing depths when integrating with other objects that might occlude text boxs.
     pub fn get_text_box_depth(&self, text_box_id: &AnyBox) -> f32 {
         match text_box_id {
-            AnyBox::TextEdit(i) => self.text_edits.get(*i as usize).map(|te| te.depth()).unwrap_or(f32::MAX),
-            AnyBox::TextBox(i) => self.text_boxes.get(*i as usize).map(|tb| tb.depth()).unwrap_or(f32::MAX),
+            AnyBox::TextEdit(i) => self.text_edits.get(*i as usize).map(|(_te, tb)| tb.depth).unwrap_or(f32::MAX),
+            AnyBox::TextBox(i) => self.text_boxes.get(*i as usize).map(|tb| tb.depth).unwrap_or(f32::MAX),
         }
     }
 
@@ -564,16 +547,10 @@ impl Text {
             }
         }
 
-        if let Some(focused) = self.focused {    
+        if let Some(focused) = self.focused {
             self.refresh_anybox_layout(focused);
             self.handle_focused_event(focused, event, window);
             self.refresh_anybox_layout(focused);
-            
-            if let AnyBox::TextEdit(i) = focused {
-                if self.text_edits[i as usize].update_scroll_after_layout() {
-                    self.text_changed = true;
-                }
-            }
         }
     }
 
@@ -581,14 +558,14 @@ impl Text {
         self.mouse_hit_stack.clear();
 
         // Find all text widgets at this position
-        for (i, text_edit) in self.text_edits.iter_mut() {
-            if !text_edit.text_box.hidden && text_edit.text_box.last_frame_touched == self.current_frame && text_edit.text_box.hit_full_rect(cursor_pos) {
-                self.mouse_hit_stack.push((AnyBox::TextEdit(i as u32), text_edit.depth()));
+        for (i, (_text_edit, text_box)) in self.text_edits.iter_mut() {
+            if !text_box.hidden && text_box.last_frame_touched == self.current_frame && text_box.hit_full_rect(cursor_pos) {
+                self.mouse_hit_stack.push((AnyBox::TextEdit(i as u32), text_box.depth));
             }
         }
         for (i, text_box) in self.text_boxes.iter_mut() {
             if !text_box.hidden && text_box.last_frame_touched == self.current_frame && text_box.hit_bounding_box(cursor_pos) {
-                self.mouse_hit_stack.push((AnyBox::TextBox(i as u32), text_box.depth()));
+                self.mouse_hit_stack.push((AnyBox::TextBox(i as u32), text_box.depth));
             }
         }
 
@@ -648,11 +625,15 @@ impl Text {
     fn remove_focus(&mut self, old_focus: AnyBox) {
         match old_focus {
             AnyBox::TextEdit(i) => {
-                self.text_edits[i as usize].text_box.reset_selection();
-                self.text_edits[i as usize].show_cursor = false;
+                let handle = TextEditHandle { i: i as u32 };
+                let mut text_edit = self.get_full_text_edit(&handle);
+                text_edit.text_box.reset_selection();
+                text_edit.inner.show_cursor = false;
             },
             AnyBox::TextBox(i) => {
-                self.text_boxes[i as usize].reset_selection();
+                let handle = TextBoxHandle { i: i as u32 };
+                let mut text_box = self.get_full_text_box(&handle);
+                text_box.reset_selection();
             },
         }
     }
@@ -660,18 +641,22 @@ impl Text {
     fn handle_focused_event(&mut self, focused: AnyBox, event: &WindowEvent, window: &Window) {
         match focused {
             AnyBox::TextEdit(i) => {
-                let result = self.text_edits[i as usize].handle_event(event, window, &self.input_state);
+                let handle = TextEditHandle { i: i as u32 };
+                let mut text_edit = get_full_text_edit_free(&mut self.text_edits, &mut self.styles, &handle);
+
+                let result = text_edit.handle_event(event, window, &self.input_state);
                 if result.text_changed {
                     self.text_changed = true;
-                    // todo: move this inside
-                    self.text_edits[i as usize].text_box.needs_relayout = true;
                 }
                 if result.decorations_changed {
                     self.decorations_changed = true;
                 }
             },
             AnyBox::TextBox(i) => {
-                let result = self.text_boxes[i as usize].handle_event(event, window, &self.input_state);
+                let handle = TextBoxHandle { i: i as u32 };
+                let mut text_box = get_full_text_box_free(&mut self.text_boxes, &mut self.styles, &handle);
+
+                let result = text_box.handle_event(event, window, &self.input_state);
                 if result.text_changed {
                     self.text_changed = true;
                 }
@@ -686,11 +671,12 @@ impl Text {
     /// 
     /// When disabled, the text edit will not respond to events and will be rendered with greyed out text.
     pub fn set_text_edit_disabled(&mut self, handle: &TextEditHandle, disabled: bool) {
-        self.get_text_edit_mut(handle).set_disabled(disabled);
+        let text_edit_inner = &mut self.text_edits[handle.i as usize].0;
+        text_edit_inner.disabled = disabled;
         if disabled {
             if let Some(AnyBox::TextEdit(e)) = self.focused {
                 if e == handle.i {
-                    self.get_text_edit_mut(handle).text_box.reset_selection();
+                    self.get_full_text_edit(&handle).text_box.reset_selection();
                     self.focused = None;
                 }
             }
@@ -703,18 +689,53 @@ impl Text {
         self.text_changed
     }
 
-    /// Programmatically set the text content of a text edit.
-    /// This will replace all text and move the cursor to the end.
-    pub fn set_text_edit_text(&mut self, handle: &TextEditHandle, new_text: String) {
-        self.get_text_edit_mut(handle).set_text(new_text);
-        self.text_changed = true;
+    /// Get a mutable reference to a text box wrapped with its style.
+    /// 
+    /// `handle` is the handle that was returned when first creating the text box with [`Text::add_text_box()`].
+    /// 
+    /// This is a fast lookup operation that does not require any hashing.
+    pub fn get_text_box_mut(&mut self, handle: &TextBoxHandle) -> TextBox {
+        let text_box_inner = &mut self.text_boxes[handle.i as usize];
+        let style_handle = text_box_inner.style;
+        let style = &mut self.styles[style_handle.i as usize].0;
+        TextBox { inner: text_box_inner, style }
+    }
+
+    /// Get a mutable reference to a text box wrapped with its style.
+    /// 
+    /// `handle` is the handle that was returned when first creating the text box with [`Text::add_text_box()`].
+    /// 
+    /// This is a fast lookup operation that does not require any hashing.
+    pub fn get_text_box(&mut self, handle: &TextBoxHandle) -> TextBox {
+        let text_box_inner = &mut self.text_boxes[handle.i as usize];
+        let style_handle = text_box_inner.style;
+        let style = &mut self.styles[style_handle.i as usize].0;
+        TextBox { inner: text_box_inner, style }
+    }
+    
+    /// Get the text content of a text box.
+    /// 
+    /// `handle` is the handle that was returned when first creating the text box with [`Text::add_text_box()`].
+    /// 
+    /// This is a fast lookup operation that does not require any hashing.
+    pub fn get_text_box_text(&self, handle: &TextBoxHandle) -> &str {
+        &self.text_boxes[handle.i as usize].text
+    }
+    
+    /// Get the text content of a text edit.
+    /// 
+    /// `handle` is the handle that was returned when first creating the text edit with [`Text::add_text_edit()`].
+    /// 
+    /// This is a fast lookup operation that does not require any hashing.
+    pub fn get_text_edit_text(&self, handle: &TextEditHandle) -> &str {
+        &self.text_edits[handle.i as usize].1.text
     }
 
     pub(crate) fn refresh_anybox_layout(&mut self, handle: AnyBox) {
         match handle {
             AnyBox::TextEdit(i) => {
-                let text_edit = &mut self.text_edits[i as usize];
-                refresh_text_edit_layout(text_edit, &mut self.styles);
+                let (text_edit, text_box) = &mut self.text_edits[i as usize];
+                refresh_text_edit_layout(text_edit, text_box, &mut self.styles);
             },
             AnyBox::TextBox(i) => {
                 let text_box = &mut self.text_boxes[i as usize];
@@ -722,10 +743,41 @@ impl Text {
             },
         }
     }
+
+    pub(crate) fn get_full_text_box(&mut self, i: &TextBoxHandle) -> TextBox<'_> {
+        get_full_text_box_free(&mut self.text_boxes, &mut self.styles, i)
+    }
+
+    pub(crate) fn get_full_text_edit(&mut self, i: &TextEditHandle) -> TextEdit<'_> {
+        get_full_text_edit_free(&mut self.text_edits, &mut self.styles, i)
+    }
 }
 
-pub fn refresh_text_edit_layout(text_edit: &mut TextEdit, styles: &Slab<(TextStyle2, TextEditStyle, u64)>) {
-    let (style, edit_style, style_changed) = get_styles_for_element(&mut text_edit.text_box, &styles);
+// I LOVE PARTIAL BORROWS!
+pub(crate) fn get_full_text_box_free<'a>(
+    text_boxes: &'a mut Slab<TextBoxInner>,
+    styles: &'a mut Slab<(TextStyle2, TextEditStyle, u64)>,
+    i: &TextBoxHandle,
+) -> TextBox<'a> {
+    let text_box_inner = &mut text_boxes[i.i as usize];
+    let style = &mut styles[text_box_inner.style.i as usize].0;
+    TextBox { inner: text_box_inner, style }
+}
+
+// I LOVE PARTIAL BORROWS!
+pub(crate) fn get_full_text_edit_free<'a>(
+    text_edits: &'a mut Slab<(TextEditInner, TextBoxInner)>,
+    styles: &'a mut Slab<(TextStyle2, TextEditStyle, u64)>,
+    i: &TextEditHandle,
+) -> TextEdit<'a> {
+    let (text_edit_inner, text_box_inner) = text_edits.get_mut(i.i as usize).unwrap();
+    let (style, edit_style, _) = &mut styles[text_box_inner.style.i as usize];
+    let text_box = TextBox { inner: text_box_inner, style };
+    TextEdit { inner: text_edit_inner, edit_style, text_box }
+}
+
+pub(crate) fn refresh_text_edit_layout(text_edit: &mut TextEditInner, text_box: &mut TextBoxInner, styles: &Slab<(TextStyle2, TextEditStyle, u64)>) {
+    let (style, edit_style, style_changed) = get_styles_for_element(text_box, styles);
 
     let color_override = if text_edit.disabled {
         Some(edit_style.disabled_text_color)
@@ -735,21 +787,21 @@ pub fn refresh_text_edit_layout(text_edit: &mut TextEdit, styles: &Slab<(TextSty
         None
     };
 
-    if text_edit.text_box.needs_relayout || style_changed {
-        text_edit.text_box.rebuild_layout(style, color_override, text_edit.single_line);
+    if text_box.needs_relayout || style_changed {
+        TextBox { inner: text_box, style: &style }.rebuild_layout(color_override, text_edit.single_line);
     }
 }
 
-pub fn refresh_text_box_layout(text_box: &mut TextBox, styles: &Slab<(TextStyle2, TextEditStyle, u64)>) {
+pub(crate) fn refresh_text_box_layout(text_box: &mut TextBoxInner, styles: &Slab<(TextStyle2, TextEditStyle, u64)>) {
     let (style, _edit_style, style_changed) = get_styles_for_element(text_box, styles);
     if text_box.needs_relayout || style_changed {
-        text_box.rebuild_layout(style, None, false);
+        TextBox { inner: text_box, style: &style }.rebuild_layout(None, false);
     }
 }
 
 
-fn get_styles_for_element<'a>(text_box: &mut TextBox, styles: &'a Slab<(TextStyle2, TextEditStyle, u64)>) -> (&'a TextStyle2, &'a TextEditStyle, bool) {
-    let style_handle = text_box.style.sneak_clone();
+fn get_styles_for_element<'a>(text_box: &mut TextBoxInner, styles: &'a Slab<(TextStyle2, TextEditStyle, u64)>) -> (&'a TextStyle2, &'a TextEditStyle, bool) {
+    let style_handle = text_box.style;
     let last_style_id = text_box.style_id;
     // todo: ABA problem here.
     let (text_style, text_edit_style, id) = styles.get(style_handle.i as usize).unwrap_or(&styles[DEFAULT_STYLE_HANDLE.i as usize]);

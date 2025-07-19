@@ -6,7 +6,7 @@ use winit::{
 };
 use arboard::Clipboard;
 
-use parley::{Affinity, Alignment, AlignmentOptions, Selection};
+use parley::{Affinity, Alignment, Selection};
 
 use crate::*;
 
@@ -43,12 +43,8 @@ pub fn with_clipboard<R>(f: impl FnOnce(&mut Clipboard) -> R) -> R {
     res
 }
 
-/// A text box.
-/// 
-/// This struct can't be created directly. Instead, use [`Text::add_text_box()`] to create one within [`Text`] and get a [`TextBoxHandle`] back.
-/// 
-/// Then, the handle can be used to get a reference to the `TextBox` with [`Text::get_text_box()`], or the equivalent `mut` functions.
-pub struct TextBox {
+
+pub(crate) struct TextBoxInner {
     pub(crate) text: Cow<'static, str>,
     pub(crate) style: StyleHandle,
     pub(crate) style_id: u64,
@@ -74,8 +70,18 @@ pub struct TextBox {
     pub(crate) hidden: bool,
     pub(crate) last_frame_touched: u64,
     pub(crate) can_hide: bool,
-
 }
+
+/// A struct representing a text box.
+/// 
+/// This struct can't be created directly. Instead, use [`Text::add_text_box()`] to create one within [`Text`] and get a [`TextBoxHandle`] back.
+/// 
+/// Then, the handle can be used to get a reference to the `TextBox` with [`Text::get_text_box()`], or the equivalent `mut` functions.
+pub struct TextBox<'a> {
+    pub(crate) inner: &'a mut TextBoxInner,
+    pub(crate) style: &'a TextStyle2,
+}
+
 
 pub(crate) fn original_default_style() -> TextStyle2 { 
     TextStyle2 { 
@@ -102,7 +108,7 @@ impl SelectionState {
     }
 }
 
-impl TextBox {
+impl TextBoxInner {
     pub(crate) fn new(text: impl Into<Cow<'static, str>>, pos: (f64, f64), size: (f32, f32), depth: f32) -> Self {
         Self {
             text: text.into(),
@@ -143,79 +149,52 @@ impl TextBox {
             && offset.1 < self.height as f64;
 
         return hit;
+    }    
+}
+
+impl<'a> TextBox<'a> {
+    #[must_use]
+    pub(crate) fn hit_full_rect(&self, cursor_pos: (f64, f64)) -> bool {
+        self.inner.hit_full_rect(cursor_pos)
     }
 
-    pub(crate) fn rebuild_layout(
-        &mut self,
-        style: &TextStyle2,
-        color_override: Option<ColorBrush>,
-        single_line: bool,
-    ) {
-        with_text_cx(|layout_cx, font_cx| {
-            let mut builder = layout_cx.tree_builder(font_cx, 1.0, true, style);
-
-            if let Some(color_override) = color_override {
-                builder.push_style_modification_span(&[
-                    StyleProperty::Brush(color_override)
-                ]);
-            }
-
-            builder.push_text(&self.text);
-
-            let (mut layout, _) = builder.build();
-
-            if ! single_line {
-                layout.break_all_lines(Some(self.max_advance));
-                layout.align(
-                    Some(self.max_advance),
-                    self.alignment,
-                    AlignmentOptions::default(),
-                );
-            } else {
-                layout.break_all_lines(None);
-            }
-
-            self.layout = layout;
-            self.needs_relayout = false;
-            
-
-            self.selection.selection = self.selection.selection.refresh(&self.layout);
-        });
-    }
 
     pub(crate) fn handle_event(&mut self, event: &WindowEvent, _window: &Window, input_state: &TextInputState) -> TextEventResult {
-        if self.hidden {
-            return TextEventResult::new();
+        if self.inner.hidden {
+            return TextEventResult::nothing();
         }
         
-        let initial_selection = self.selection.selection;
+        let initial_selection = self.inner.selection.selection;
         
-        let mut result = TextEventResult::new();
+        let mut result = TextEventResult::nothing();
 
         self.handle_event_no_edit_inner(event, input_state, false);
 
-        if selection_decorations_changed(initial_selection, self.selection.selection, false, false, false) {
-            result.set_decorations_changed();
+        if selection_decorations_changed(initial_selection, self.inner.selection.selection, false, false, false) {
+            {
+                let this = &mut result;
+                this.decorations_changed = true;
+            };
         }
 
         return result;
     }
 
     pub(crate) fn handle_event_no_edit_inner(&mut self, event: &WindowEvent, input_state: &TextInputState, edit_showing_placeholder: bool) {
-        if self.hidden {
+        if self.inner.hidden {
             return;
         }
-        if !self.selectable {
+        if !self.inner.selectable {
             self.reset_selection();
             return;
         }
         
-        self.selection.handle_event(
+        self.inner.selection.handle_event(
             event,
             input_state,
-            &self.layout,
-            self.left as f32,
-            self.top as f32,
+            &self.inner.layout,
+            self.inner.left as f32,
+            self.inner.top as f32,
             edit_showing_placeholder
         );
         
@@ -243,14 +222,7 @@ impl TextBox {
                                         }
                                     })
                                 }
-                                "a" => {
-                                    self.selection.selection = Selection::from_byte_index(
-                                        &self.layout,
-                                        0_usize,
-                                        Affinity::default(),
-                                    )
-                                    .move_lines(&self.layout, isize::MAX, true);
-                                }
+                                "a" => self.select_all(),
                                 _ => (),
                             }
                         }
@@ -263,73 +235,128 @@ impl TextBox {
     }
 
     pub(crate) fn reset_selection(&mut self) {
-        self.set_selection(self.selection.selection.collapse());
+        self.set_selection(self.inner.selection.selection.collapse());
     }
 
-    pub fn set_style(&mut self, style: &StyleHandle) {
-        self.style = StyleHandle { i: style.i };
+    pub fn hidden(&self) -> bool {
+        self.inner.hidden
     }
 
-    pub fn set_selectable(&mut self, value: bool) {
-        self.selectable = value;
-    }
-    pub fn selectable(&self) -> bool {
-        self.selectable
-    }
-
-
-    pub fn set_depth(&mut self, value: f32) {
-        self.depth = value;
-    }
     pub fn depth(&self) -> f32 {
-        self.depth
+        self.inner.depth
     }
 
-    pub fn set_clip_rect(&mut self, clip_rect: Option<parley::Rect>) {
-        self.clip_rect = clip_rect;
+    pub fn text(&self) -> &str {
+        &self.inner.text
     }
-    pub fn set_clip_rect_with_fadeout(&mut self, clip_rect: Option<parley::Rect>, fadeout_clipping: bool) {
-        self.clip_rect = clip_rect;
-        self.fadeout_clipping = fadeout_clipping;
+
+    pub fn text_mut(&mut self) -> &mut String {
+        self.inner.needs_relayout = true;
+        self.inner.text.to_mut()
     }
-    pub fn set_fadeout_clipping(&mut self, fadeout_clipping: bool) {
-        self.fadeout_clipping = fadeout_clipping;
+
+    pub fn pos(&self) -> (f64, f64) {
+        (self.inner.left, self.inner.top)
     }
+
     pub fn clip_rect(&self) -> Option<parley::Rect> {
-        self.clip_rect
+        self.inner.clip_rect
     }
+
     pub fn fadeout_clipping(&self) -> bool {
-        self.fadeout_clipping
+        self.inner.fadeout_clipping
+    }
+
+    pub fn auto_clip(&self) -> bool {
+        self.inner.auto_clip
     }
 
     pub fn set_auto_clip(&mut self, auto_clip: bool) {
-        self.auto_clip = auto_clip;
+        self.inner.auto_clip = auto_clip;
     }
-    pub fn auto_clip(&self) -> bool {
-        self.auto_clip
+
+    pub fn selected_text(&self) -> Option<&str> {
+        if !self.inner.selection.selection.is_collapsed() {
+            self.inner.text.get(self.inner.selection.selection.text_range())
+        } else {
+            None
+        }
+    }
+
+    pub fn selection(&self) -> Selection {
+        self.inner.selection.selection
+    }
+
+    pub fn scroll_offset(&self) -> f32 {
+        self.inner.scroll_offset
+    }
+
+    pub fn selection_geometry(&self) -> Vec<(Rect, usize)> {
+        self.inner.selection.selection.geometry(&self.inner.layout)
+    }
+
+    pub fn selection_geometry_with(&self, f: impl FnMut(Rect, usize)) {
+        self.inner.selection.selection.geometry_with(&self.inner.layout, f);
+    }
+
+    pub fn set_pos(&mut self, pos: (f64, f64)) {
+        (self.inner.left, self.inner.top) = pos;
+    }
+
+    pub fn can_hide(&mut self) -> bool {
+        self.inner.can_hide
+    }
+
+    pub fn set_can_hide(&mut self, can_hide: bool) {
+        self.inner.can_hide = can_hide;
+    }
+
+    pub(crate) fn set_hidden(&mut self, hidden: bool) {
+        if self.inner.hidden != hidden {
+            self.inner.hidden = hidden;
+
+            if hidden {
+                self.reset_selection();
+            }
+        }
+    }
+
+    pub fn set_depth(&mut self, depth: f32) {
+        self.inner.depth = depth;
+    }
+
+    pub fn set_clip_rect(&mut self, clip_rect: Option<parley::Rect>) {
+        self.inner.clip_rect = clip_rect;
+    }
+
+    pub fn set_fadeout_clipping(&mut self, fadeout_clipping: bool) {
+        self.inner.fadeout_clipping = fadeout_clipping;
     }
 
     pub fn set_scroll_offset(&mut self, offset: f32) {
-        self.scroll_offset = offset;
+        self.inner.scroll_offset = offset;
     }
-    pub fn scroll_offset(&self) -> f32 {
-        self.scroll_offset
+
+    // todo: this isn't very good, it remains borrowed with the wrong style
+    pub fn set_style(&mut self, style: &StyleHandle) {
+        self.inner.style = style.sneak_clone();
+        self.inner.needs_relayout = true;
     }
 
     /// Computes the effective clip rectangle, combining auto-clipping with explicit clip_rect
     pub fn effective_clip_rect(&self) -> Option<parley::Rect> {
-        let auto_clip_rect = if self.auto_clip {
+        let auto_clip_rect = if self.inner.auto_clip {
             Some(parley::Rect {
-                x0: self.scroll_offset as f64,
+                x0: self.inner.scroll_offset as f64,
                 y0: 0.0,
-                x1: (self.scroll_offset + self.max_advance) as f64,
-                y1: self.height as f64,
+                x1: (self.inner.scroll_offset + self.inner.max_advance) as f64,
+                y1: self.inner.height as f64,
             })
         } else {
             None
         };
 
-        match (auto_clip_rect, self.clip_rect) {
+        match (auto_clip_rect, self.inner.clip_rect) {
             (None, None) => None,
             (Some(auto), None) => Some(auto),
             (None, Some(explicit)) => Some(explicit),
@@ -350,122 +377,85 @@ impl TextBox {
         }
     }
 
-    pub fn set_hidden(&mut self, hidden: bool) {
-        if self.hidden != hidden {
-            self.hidden = hidden;
 
-            if hidden {
-                self.reset_selection();
+
+    pub(crate) fn rebuild_layout(
+        &mut self,
+        color_override: Option<ColorBrush>,
+        single_line: bool,
+    ) {
+        if !self.inner.needs_relayout {
+            return;
+        }
+
+        with_text_cx(|layout_cx, font_cx| {
+            let mut builder = layout_cx.tree_builder(font_cx, 1.0, true, self.style);
+
+            if let Some(color_override) = color_override {
+                builder.push_style_modification_span(&[
+                    StyleProperty::Brush(color_override)
+                ]);
             }
-        }
-    }
-    pub fn hidden(&self) -> bool {
-        self.hidden
+
+            builder.push_text(&self.inner.text);
+
+            let (mut layout, _) = builder.build();
+
+            if ! single_line {
+                layout.break_all_lines(Some(self.inner.max_advance));
+                layout.align(
+                    Some(self.inner.max_advance),
+                    self.inner.alignment,
+                    AlignmentOptions::default(),
+                );
+            } else {
+                layout.break_all_lines(None);
+            }
+
+            self.inner.layout = layout;
+            self.inner.needs_relayout = false;
+            
+
+            self.inner.selection.selection = self.inner.selection.selection.refresh(&self.inner.layout);
+        });
     }
 
-    pub fn set_can_hide(&mut self, can_hide: bool) {
-        self.can_hide = can_hide;
-    }
-    pub fn can_hide(&self) -> bool {
-        self.can_hide
-    }
-
-    pub fn selection(&self) -> &Selection {
-        &self.selection.selection
-    }
-
-    pub fn pos(&self) -> (f64, f64) {
-        (self.left, self.top)
-    }
-
-    pub fn set_pos(&mut self, pos: (f64, f64)) {
-        (self.left, self.top) = pos;
-    }
 
 
-    /// Borrow the current selection. The indices returned by functions
-    /// such as [`Selection::text_range()`] refer to the raw text text,
-    /// including the IME preedit region, which can be accessed via
-    /// [`PlainEditor::raw_text()`].
-    pub fn raw_selection(&self) -> &Selection {
-        &self.selection.selection
-    }
-
-    /// If the current selection is not collapsed, returns the text content of
-    /// that selection.
-    pub fn selected_text(&self) -> Option<&str> {
-        if !self.selection.selection.is_collapsed() {
-            self.text.get(self.selection.selection.text_range())
-        } else {
-            None
-        }
-    }
-
-    /// Get rectangles, and their corresponding line indices, representing the selected portions of
-    /// text.
-    pub fn selection_geometry(&self) -> Vec<(Rect, usize)> {
-        // We do not check `self.show_cursor` here, as the IME handling code collapses the
-        // selection to a caret in that case.
-        self.selection.selection.geometry(&self.layout)
-    }
-
-    /// Invoke a callback with each rectangle representing the selected portions of text, and the
-    /// indices of the lines to which they belong.
-    pub fn selection_geometry_with(&self, f: impl FnMut(Rect, usize)) {
-        // We do not check `self.show_cursor` here, as the IME handling code collapses the
-        // selection to a caret in that case.
-        self.selection.selection.geometry_with(&self.layout, f);
-    }
-
-    /// Returns the text in the text box.
-    pub fn text(&self) -> &str {
-        &self.text
-    }
-
-    // todo: just setting self.needs_relayout is probably not ok. what if the user calls this on a text edit box, and then a method like move_right()?
+    // todo: just setting self.inner.needs_relayout is probably not ok. what if the user calls this on a text edit box, and then a method like move_right()?
     // this could be solved if get_text_edit_mut() did a relayout if needed. 
     /// Returns a mutable reference to the text box's text buffer as a Cow.
     /// This provides full access to the underlying storage type.
-    pub fn content_mut(&mut self) -> &mut Cow<'static, str> {
-        self.needs_relayout = true;
-        &mut self.text
-    }
 
-    /// Returns a mutable reference to the text as a String.
-    /// If the text is currently static, it will be converted to owned.
-    pub fn text_mut(&mut self) -> &mut String {
-        self.needs_relayout = true;
-        self.text.to_mut()
-    }
 
     /// Set the text to a static string reference.
     /// This is efficient for static strings and avoids allocation.
     pub fn set_static(&mut self, text: &'static str) {
-        self.needs_relayout = true;
-        self.text = Cow::Borrowed(text);
+        self.inner.needs_relayout = true;
+        self.inner.text = Cow::Borrowed(text);
     }
 
     /// Set the width of the layout.
     pub fn set_size(&mut self, size: (f32, f32)) {
-        let relayout = (self.width != Some(size.0)) || (self.height != size.1) || (self.max_advance != size.0);
-        self.width = Some(size.0);
-        self.height = size.1;
-        self.max_advance = size.0;
+        let relayout = (self.inner.width != Some(size.0)) || (self.inner.height != size.1) || (self.inner.max_advance != size.0);
+        self.inner.width = Some(size.0);
+        self.inner.height = size.1;
+        self.inner.max_advance = size.0;
         if relayout {
-            self.needs_relayout = true;
+            self.inner.needs_relayout = true;
         }
     }
 
     /// Set the alignment of the layout.
     pub fn set_alignment(&mut self, alignment: Alignment) {
-        self.alignment = alignment;
-        self.needs_relayout = true;
+        self.inner.alignment = alignment;
+        self.inner.needs_relayout = true;
     }
 
     /// Set the scale for the layout.
     pub fn set_scale(&mut self, scale: f32) {
-        self.scale = scale;
-        self.needs_relayout = true;
+        self.inner.scale = scale;
+        self.inner.needs_relayout = true;
     }
 
     // #[cfg(feature = "accesskit")]
@@ -485,10 +475,10 @@ impl TextBox {
     //     x_offset: f64,
     //     y_offset: f64,
     // ) -> Option<()> {
-    //     if self.needs_relayout {
+    //     if self.inner.needs_relayout {
     //         return None;
     //     }
-    //     self.accessibility_unchecked(update, node, next_node_id, x_offset, y_offset);
+    //     self.inner.accessibility_unchecked(update, node, next_node_id, x_offset, y_offset);
     //     Some(())
     // }
 
@@ -497,10 +487,10 @@ impl TextBox {
     pub(crate) fn cursor_at(&self, index: usize) -> Cursor {
         // TODO: Do we need to be non-dirty?
         // FIXME: `Selection` should make this easier
-        if index >= self.text.len() {
-            Cursor::from_byte_index(&self.layout, self.text.len(), Affinity::Upstream)
+        if index >= self.inner.text.len() {
+            Cursor::from_byte_index(&self.inner.layout, self.inner.text.len(), Affinity::Upstream)
         } else {
-            Cursor::from_byte_index(&self.layout, index, Affinity::Downstream)
+            Cursor::from_byte_index(&self.inner.layout, index, Affinity::Downstream)
         }
     }
 
@@ -511,24 +501,24 @@ impl TextBox {
         #[allow(clippy::print_stderr)] // reason = "unreachable debug code"
         if false {
             let focus = new_sel.focus();
-            let cluster = focus.logical_clusters(&self.layout);
+            let cluster = focus.logical_clusters(&self.inner.layout);
             let dbg = (
-                cluster[0].as_ref().map(|c| &self.text[c.text_range()]),
+                cluster[0].as_ref().map(|c| &self.inner.text[c.text_range()]),
                 focus.index(),
                 focus.affinity(),
-                cluster[1].as_ref().map(|c| &self.text[c.text_range()]),
+                cluster[1].as_ref().map(|c| &self.inner.text[c.text_range()]),
             );
             eprint!("{dbg:?}");
-            let cluster = focus.visual_clusters(&self.layout);
+            let cluster = focus.visual_clusters(&self.inner.layout);
             let dbg = (
-                cluster[0].as_ref().map(|c| &self.text[c.text_range()]),
+                cluster[0].as_ref().map(|c| &self.inner.text[c.text_range()]),
                 cluster[0]
                     .as_ref()
                     .map(|c| if c.is_word_boundary() { " W" } else { "" })
                     .unwrap_or_default(),
                 focus.index(),
                 focus.affinity(),
-                cluster[1].as_ref().map(|c| &self.text[c.text_range()]),
+                cluster[1].as_ref().map(|c| &self.inner.text[c.text_range()]),
                 cluster[1]
                     .as_ref()
                     .map(|c| if c.is_word_boundary() { " W" } else { "" })
@@ -536,7 +526,7 @@ impl TextBox {
             );
             eprintln!(" | visual: {dbg:?}");
         }
-        self.selection.selection = new_sel;
+        self.inner.selection.selection = new_sel;
     }
 
     // #[cfg(feature = "accesskit")]
@@ -555,19 +545,19 @@ impl TextBox {
     //     x_offset: f64,
     //     y_offset: f64,
     // ) {
-    //     self.layout_access.build_nodes(
-    //         &self.text,
-    //         &self.layout,
+    //     self.inner.layout_access.build_nodes(
+    //         &self.inner.text,
+    //         &self.inner.layout,
     //         update,
     //         node,
     //         next_node_id,
     //         x_offset,
     //         y_offset,
     //     );
-    //     if self.show_cursor {
+    //     if self.inner.show_cursor {
     //         if let Some(selection) = self
     //             .selection
-    //             .to_access_selection(&self.layout, &self.layout_access)
+    //             .to_access_selection(&self.inner.layout, &self.inner.layout_access)
     //         {
     //             node.set_text_selection(selection);
     //         }
@@ -581,93 +571,84 @@ impl TextBox {
     // --- MARK: Cursor Movement ---
     /// Move the cursor to the cluster boundary nearest this point in the layout.
     pub(crate) fn move_to_point(&mut self, x: f32, y: f32) {
-        self.set_selection(Selection::from_point(&self.layout, x, y));
-    }
-
-    /// Move the cursor to a byte index.
-    ///
-    /// No-op if index is not a char boundary.
-    pub(crate) fn move_to_byte(&mut self, index: usize) {
-        if self.text.is_char_boundary(index) {
-            self.set_selection(self.cursor_at(index).into());
-        }
+        self.set_selection(Selection::from_point(&self.inner.layout, x, y));
     }
 
     /// Move the cursor to the start of the text.
     pub(crate) fn move_to_text_start(&mut self) {
         self.set_selection(
-            self.selection
+            self.inner.selection
                 .selection
-                .move_lines(&self.layout, isize::MIN, false),
+                .move_lines(&self.inner.layout, isize::MIN, false),
         );
     }
 
     /// Move the cursor to the start of the physical line.
     pub(crate) fn move_to_line_start(&mut self) {
-        self.set_selection(self.selection.selection.line_start(&self.layout, false));
+        self.set_selection(self.inner.selection.selection.line_start(&self.inner.layout, false));
     }
 
     /// Move the cursor to the end of the text.
     pub(crate) fn move_to_text_end(&mut self) {
         self.set_selection(
-            self.selection
+            self.inner.selection
                 .selection
-                .move_lines(&self.layout, isize::MAX, false),
+                .move_lines(&self.inner.layout, isize::MAX, false),
         );
     }
 
     /// Move the cursor to the end of the physical line.
     pub(crate) fn move_to_line_end(&mut self) {
-        self.set_selection(self.selection.selection.line_end(&self.layout, false));
+        self.set_selection(self.inner.selection.selection.line_end(&self.inner.layout, false));
     }
 
     /// Move up to the closest physical cluster boundary on the previous line, preserving the horizontal position for repeated movements.
     pub(crate) fn move_up(&mut self) {
-        self.set_selection(self.selection.selection.previous_line(&self.layout, false));
+        self.set_selection(self.inner.selection.selection.previous_line(&self.inner.layout, false));
     }
 
     /// Move down to the closest physical cluster boundary on the next line, preserving the horizontal position for repeated movements.
     pub(crate) fn move_down(&mut self) {
-        self.set_selection(self.selection.selection.next_line(&self.layout, false));
+        self.set_selection(self.inner.selection.selection.next_line(&self.inner.layout, false));
     }
 
     /// Move to the next cluster left in visual order.
     pub(crate) fn move_left(&mut self) {
         self.set_selection(
-            self.selection
+            self.inner.selection
                 .selection
-                .previous_visual(&self.layout, false),
+                .previous_visual(&self.inner.layout, false),
         );
     }
 
     /// Move to the next cluster right in visual order.
     pub(crate) fn move_right(&mut self) {
-        self.set_selection(self.selection.selection.next_visual(&self.layout, false));
+        self.set_selection(self.inner.selection.selection.next_visual(&self.inner.layout, false));
     }
 
     /// Move to the next word boundary left.
     pub(crate) fn move_word_left(&mut self) {
         self.set_selection(
-            self.selection
+            self.inner.selection
                 .selection
-                .previous_visual_word(&self.layout, false),
+                .previous_visual_word(&self.inner.layout, false),
         );
     }
 
     /// Move to the next word boundary right.
     pub(crate) fn move_word_right(&mut self) {
         self.set_selection(
-            self.selection
+            self.inner.selection
                 .selection
-                .next_visual_word(&self.layout, false),
+                .next_visual_word(&self.inner.layout, false),
         );
     }
 
     /// Select the whole text.
     pub(crate) fn select_all(&mut self) {
         self.set_selection(
-            Selection::from_byte_index(&self.layout, 0_usize, Affinity::default()).move_lines(
-                &self.layout,
+            Selection::from_byte_index(&self.inner.layout, 0_usize, Affinity::default()).move_lines(
+                &self.inner.layout,
                 isize::MAX,
                 true,
             ),
@@ -676,14 +657,28 @@ impl TextBox {
 
     /// Collapse selection into caret.
     pub(crate) fn collapse_selection(&mut self) {
-        self.set_selection(self.selection.selection.collapse());
+        self.set_selection(self.inner.selection.selection.collapse());
     }
 
     /// Move the selection focus point to the cluster boundary closest to point.
     pub(crate) fn extend_selection_to_point(&mut self, x: f32, y: f32) {
-        self.selection.extend_selection_to_point(&self.layout, x, y);
+        self.inner.selection.extend_selection_to_point(&self.inner.layout, x, y);
     }
 
+    pub(crate) fn layout(&self) -> &Layout<ColorBrush> {
+        // todo: refresh?
+        &self.inner.layout
+    }
+
+    pub(crate) fn refresh_layout(&mut self) {
+        if self.inner.needs_relayout {
+            self.rebuild_layout(None, false);
+        }
+    }
+
+    pub(crate) fn force_refresh_layout(&mut self) {
+        self.rebuild_layout(None, false);
+    }
 }
 
 
@@ -693,19 +688,19 @@ pub use parley::Rect;
 pub(crate) trait Ext1 {
     fn hit_bounding_box(&mut self, cursor_pos: (f64, f64)) -> bool;
 }
-impl Ext1 for TextBox {
+impl<'a> Ext1 for TextBox<'a> {
     fn hit_bounding_box(&mut self, cursor_pos: (f64, f64)) -> bool {
         let offset = (
-            cursor_pos.0 as f64 - self.left,
-            cursor_pos.1 as f64 - self.top,
+            cursor_pos.0 as f64 - self.inner.left,
+            cursor_pos.1 as f64 - self.inner.top,
         );
 
         // todo: does this need to refresh layout? if yes, also need to set the stupid thread local style
-        assert!(!self.needs_relayout);
+        assert!(!self.inner.needs_relayout);
         let hit = offset.0 > -X_TOLERANCE
-            && offset.0 < self.layout.full_width() as f64 + X_TOLERANCE
+            && offset.0 < self.inner.layout.full_width() as f64 + X_TOLERANCE
             && offset.1 > 0.0
-            && offset.1 < self.layout.height() as f64;
+            && offset.1 < self.inner.layout.height() as f64;
 
         return hit;
     }
@@ -913,3 +908,22 @@ impl SelectionState {
         self.selection = self.selection.next_visual_word(layout, true);
     }
 }
+
+impl Ext1 for TextBoxInner {
+    fn hit_bounding_box(&mut self, cursor_pos: (f64, f64)) -> bool {
+        let offset = (
+            cursor_pos.0 as f64 - self.left,
+            cursor_pos.1 as f64 - self.top,
+        );
+
+        // todo: does this need to refresh layout? if yes, also need to set the stupid thread local style
+        assert!(!self.needs_relayout);
+        let hit = offset.0 > -X_TOLERANCE
+            && offset.0 < self.layout.full_width() as f64 + X_TOLERANCE
+            && offset.1 > 0.0
+            && offset.1 < self.layout.height() as f64;
+
+        return hit;
+    }
+}
+
