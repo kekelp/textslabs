@@ -506,7 +506,7 @@ impl<'a> TextEdit<'a> {
                         let total_text_width = self.text_box.inner.layout.full_width();
                         let text_width = self.text_box.inner.max_advance;
                         let max_scroll = (total_text_width - text_width).max(0.0);
-                        let new_scroll = new_scroll.clamp(0.0, max_scroll);
+                        let new_scroll = new_scroll.clamp(0.0, max_scroll).round();
                         
                         if (new_scroll - old_scroll).abs() > 0.1 {
                             self.text_box.inner.scroll_offset = new_scroll;
