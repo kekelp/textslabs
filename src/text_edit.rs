@@ -447,7 +447,7 @@ impl<'a> TextEdit<'a> {
                     match phase {
                         Started => {
                             let cursor_pos = (
-                                location.x - self.text_box.inner.left as f64,
+                                location.x - self.text_box.inner.left as f64 + self.text_box.inner.scroll_offset as f64,
                                 location.y - self.text_box.inner.top as f64,
                             );
                             self.text_box.move_to_point(cursor_pos.0 as f32, cursor_pos.1 as f32);
@@ -457,8 +457,8 @@ impl<'a> TextEdit<'a> {
                         }
                         Moved => {
                             self.text_box.extend_selection_to_point(
-                                location.x as f32 - INSET,
-                                location.y as f32 - INSET,
+                                location.x as f32 - self.text_box.inner.left as f32 + self.text_box.inner.scroll_offset,
+                                location.y as f32 - self.text_box.inner.top as f32,
                             );
                         }
                         Ended => (),

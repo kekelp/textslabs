@@ -195,6 +195,7 @@ impl<'a> TextBox<'a> {
             &self.inner.layout,
             self.inner.left as f32,
             self.inner.top as f32,
+            self.inner.scroll_offset,
             edit_showing_placeholder
         );
         
@@ -698,6 +699,7 @@ impl SelectionState {
         layout: &Layout<ColorBrush>,
         left: f32,
         top: f32,
+        scroll_offset_x: f32,
         edit_showing_placeholder: bool
     ) {
         if edit_showing_placeholder {
@@ -715,7 +717,7 @@ impl SelectionState {
                 // macOS seems to generate a spurious move after selecting word?
                 if input_state.mouse.pointer_down {
                     let cursor_pos = (
-                        cursor_pos.0 - left as f32,
+                        cursor_pos.0 - left as f32 + scroll_offset_x,
                         cursor_pos.1 - top as f32,
                     );
                     self.extend_selection_to_point(
@@ -730,7 +732,7 @@ impl SelectionState {
                 if *button == winit::event::MouseButton::Left {
 
                     let cursor_pos = (
-                        input_state.mouse.cursor_pos.0 as f32 - left,
+                        input_state.mouse.cursor_pos.0 as f32 - left + scroll_offset_x,
                         input_state.mouse.cursor_pos.1 as f32 - top,
                     );
 
