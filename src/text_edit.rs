@@ -1265,7 +1265,8 @@ impl<'a> TextEdit<'a> {
             if self.inner.single_line {
                 // Horizontal scrolling for single-line edits
                 let text_width = self.text_box.inner.max_advance;
-                let cursor_x = cursor_rect.x0 as f32;
+                let cursor_left = cursor_rect.x0 as f32;
+                let cursor_right = cursor_rect.x1 as f32;
                 let current_scroll = self.text_box.scroll_offset().0;
                 
                 // Get the total text width to check if we're overflowing
@@ -1279,16 +1280,16 @@ impl<'a> TextEdit<'a> {
                 let margin = text_width * 0.05; // 5% margin
                 
                 // Check if cursor is outside visible range
-                if cursor_x < visible_start + margin {
-                    // Cursor is too far left, scroll left
-                    let new_scroll = (cursor_x - margin).max(0.0).round();
+                if cursor_left < visible_start + margin {
+                    // Cursor left is too far left, scroll left
+                    let new_scroll = (cursor_left - margin).max(0.0).round();
                     if (new_scroll - current_scroll).abs() > 0.5 {
                         self.text_box.set_scroll_offset((new_scroll, 0.0));
                         return true;
                     }
-                } else if cursor_x > visible_end - margin {
-                    // Cursor is too far right, scroll right
-                    let new_scroll = cursor_x - text_width + margin;
+                } else if cursor_right > visible_end - margin {
+                    // Cursor right is too far right, scroll right
+                    let new_scroll = cursor_right - text_width + margin;
                     // Reserve space for cursor width to keep the cursor visible
                     let max_scroll = (total_text_width - text_width + CURSOR_WIDTH).max(0.0).round();
                     let new_scroll = new_scroll.min(max_scroll).round();
@@ -1300,7 +1301,8 @@ impl<'a> TextEdit<'a> {
             } else {
                 // Vertical scrolling for multi-line edits
                 let text_height = self.text_box.inner.height;
-                let cursor_y = cursor_rect.y0 as f32;
+                let cursor_top = cursor_rect.y0 as f32;
+                let cursor_bottom = cursor_rect.y1 as f32;
                 let current_scroll = self.text_box.scroll_offset().1;
                 
                 // Get the total text height to check if we're overflowing
@@ -1314,16 +1316,16 @@ impl<'a> TextEdit<'a> {
                 let margin = text_height * 0.05; // 5% margin
                 
                 // Check if cursor is outside visible range
-                if cursor_y < visible_start + margin {
-                    // Cursor is too far up, scroll up
-                    let new_scroll = (cursor_y - margin).max(0.0).round();
+                if cursor_top < visible_start + margin {
+                    // Cursor top is too far up, scroll up
+                    let new_scroll = (cursor_top - margin).max(0.0).round();
                     if (new_scroll - current_scroll).abs() > 0.5 {
                         self.text_box.set_scroll_offset((0.0, new_scroll));
                         return true;
                     }
-                } else if cursor_y > visible_end - margin {
-                    // Cursor is too far down, scroll down
-                    let new_scroll = cursor_y - text_height + margin;
+                } else if cursor_bottom > visible_end - margin {
+                    // Cursor bottom is too far down, scroll down
+                    let new_scroll = cursor_bottom - text_height + margin;
                     let max_scroll = (total_text_height - text_height).max(0.0).round();
                     let new_scroll = new_scroll.min(max_scroll).round();
                     if (new_scroll - current_scroll).abs() > 0.5 {
