@@ -358,9 +358,10 @@ impl TextRenderer {
         let clip_rect = text_box.effective_clip_rect();
         let fade = text_box.fadeout_clipping();
 
-        let content_left = left - text_box.scroll_offset();
+        let content_left = left - text_box.scroll_offset().0;
+        let content_top = top - text_box.scroll_offset().1;
 
-        self.text_renderer.prepare_layout(&text_box.inner.layout, &mut self.scale_cx, content_left, top, clip_rect, fade);
+        self.text_renderer.prepare_layout(&text_box.inner.layout, &mut self.scale_cx, content_left, content_top, clip_rect, fade);
         self.text_renderer.needs_gpu_sync = true;
     }
 
@@ -376,9 +377,10 @@ impl TextRenderer {
         let clip_rect = text_edit.text_box.effective_clip_rect();
         let fade = text_edit.fadeout_clipping();
 
-        let content_left = left - text_edit.scroll_offset();
+        let content_left = left - text_edit.scroll_offset().0;
+        let content_top = top - text_edit.scroll_offset().1;
 
-        self.text_renderer.prepare_layout(&text_edit.text_box.inner.layout, &mut self.scale_cx, content_left, top, clip_rect, fade);
+        self.text_renderer.prepare_layout(&text_edit.text_box.inner.layout, &mut self.scale_cx, content_left, content_top, clip_rect, fade);
         self.text_renderer.needs_gpu_sync = true;
     }
 
@@ -387,13 +389,14 @@ impl TextRenderer {
         let (left, top) = (left as f32, top as f32);
         let clip_rect = text_box.effective_clip_rect();
 
-        let content_left = left - text_box.scroll_offset();
+        let content_left = left - text_box.scroll_offset().0;
+        let content_top = top - text_box.scroll_offset().1;
 
         let selection_color = 0x33_33_ff_aa;
         let cursor_color = 0xee_ee_ee_ff;
 
         text_box.selection().geometry_with(&text_box.inner.layout, |rect, _line_i| {
-            self.text_renderer.add_selection_rect(rect, content_left, top, selection_color, clip_rect);
+            self.text_renderer.add_selection_rect(rect, content_left, content_top, selection_color, clip_rect);
         });
         
         let show_cursor = editable && text_box.selection().is_collapsed(); 

@@ -446,8 +446,8 @@ impl<'a> TextEdit<'a> {
                     match phase {
                         Started => {
                             let cursor_pos = (
-                                location.x - self.text_box.inner.left as f64 + self.text_box.inner.scroll_offset as f64,
-                                location.y - self.text_box.inner.top as f64,
+                                location.x - self.text_box.inner.left as f64 + self.text_box.inner.scroll_offset.0 as f64,
+                                location.y - self.text_box.inner.top as f64 + self.text_box.inner.scroll_offset.1 as f64,
                             );
                             self.text_box.move_to_point(cursor_pos.0 as f32, cursor_pos.1 as f32);
                         }
@@ -456,8 +456,8 @@ impl<'a> TextEdit<'a> {
                         }
                         Moved => {
                             self.text_box.extend_selection_to_point(
-                                location.x as f32 - self.text_box.inner.left as f32 + self.text_box.inner.scroll_offset,
-                                location.y as f32 - self.text_box.inner.top as f32,
+                                location.x as f32 - self.text_box.inner.left as f32 + self.text_box.inner.scroll_offset.0,
+                                location.y as f32 - self.text_box.inner.top as f32 + self.text_box.inner.scroll_offset.1,
                             );
                         }
                         Ended => (),
@@ -499,7 +499,7 @@ impl<'a> TextEdit<'a> {
                     };
                     
                     if scroll_amount.abs() > 0.1 {
-                        let old_scroll = self.text_box.inner.scroll_offset;
+                        let old_scroll = self.text_box.inner.scroll_offset.0;
                         let new_scroll = old_scroll - scroll_amount;
                         
                         let total_text_width = self.text_box.inner.layout.full_width();
@@ -508,7 +508,7 @@ impl<'a> TextEdit<'a> {
                         let new_scroll = new_scroll.clamp(0.0, max_scroll).round();
                         
                         if (new_scroll - old_scroll).abs() > 0.1 {
-                            self.text_box.inner.scroll_offset = new_scroll;
+                            self.text_box.inner.scroll_offset.0 = new_scroll;
                             manually_scrolled = true;
                         }
                     }
@@ -1200,7 +1200,7 @@ impl<'a> TextEdit<'a> {
         self.text_box.auto_clip()
     }
     
-    pub fn scroll_offset(&self) -> f32 {
+    pub fn scroll_offset(&self) -> (f32, f32) {
         self.text_box.scroll_offset()
     }
     
@@ -1229,7 +1229,7 @@ impl<'a> TextEdit<'a> {
         self.text_box.set_fadeout_clipping(fadeout_clipping);
     }
     
-    pub fn set_scroll_offset(&mut self, offset: f32) {
+    pub fn set_scroll_offset(&mut self, offset: (f32, f32)) {
         self.text_box.set_scroll_offset(offset);
     }
     
@@ -1243,7 +1243,7 @@ impl<'a> TextEdit<'a> {
         if let Some(cursor_rect) = self.cursor_geometry(1.0) {
             let text_width = self.text_box.inner.max_advance;
             let cursor_x = cursor_rect.x0 as f32;
-            let current_scroll = self.text_box.scroll_offset();
+            let current_scroll = self.text_box.scroll_offset().0;
             
             // Get the total text width to check if we're overflowing
             let total_text_width = self.text_box.inner.layout.full_width();
@@ -1260,7 +1260,7 @@ impl<'a> TextEdit<'a> {
                 // Cursor is too far left, scroll left
                 let new_scroll = (cursor_x - margin).max(0.0).round();
                 if (new_scroll - current_scroll).abs() > 0.5 {
-                    self.text_box.set_scroll_offset(new_scroll);
+                    self.text_box.set_scroll_offset((new_scroll, 0.0));
                     return true;
                 }
             } else if cursor_x > visible_end - margin {
@@ -1270,7 +1270,7 @@ impl<'a> TextEdit<'a> {
                 let max_scroll = (total_text_width - text_width + CURSOR_WIDTH).max(0.0).round();
                 let new_scroll = new_scroll.min(max_scroll).round();
                 if (new_scroll - current_scroll).abs() > 0.5 {
-                    self.text_box.set_scroll_offset(new_scroll);
+                    self.text_box.set_scroll_offset((new_scroll, 0.0));
                     return true;
                 }
             }

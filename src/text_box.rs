@@ -63,7 +63,7 @@ pub(crate) struct TextBoxInner {
     // todo: the current implementation fadeout can't fade glyphs that get very close to the clip rect edge, but without touching it. Should just switch to passing the whole clip rect to the shader and doing all the math there.
     pub(crate) fadeout_clipping: bool,
     pub(crate) auto_clip: bool,
-    pub(crate) scroll_offset: f32,
+    pub(crate) scroll_offset: (f32, f32),
     
     pub(crate) selectable: bool,
 
@@ -129,7 +129,7 @@ impl TextBoxInner {
             clip_rect: None,
             fadeout_clipping: false,
             auto_clip: false,
-            scroll_offset: 0.0,
+            scroll_offset: (0.0, 0.0),
             hidden: false,
             last_frame_touched: 0,
             can_hide: false,
@@ -195,7 +195,8 @@ impl<'a> TextBox<'a> {
             &self.inner.layout,
             self.inner.left as f32,
             self.inner.top as f32,
-            self.inner.scroll_offset,
+            self.inner.scroll_offset.0,
+            self.inner.scroll_offset.1,
             edit_showing_placeholder
         );
         
@@ -288,7 +289,7 @@ impl<'a> TextBox<'a> {
         self.inner.selection.selection
     }
 
-    pub fn scroll_offset(&self) -> f32 {
+    pub fn scroll_offset(&self) -> (f32, f32) {
         self.inner.scroll_offset
     }
 
@@ -334,7 +335,7 @@ impl<'a> TextBox<'a> {
         self.inner.fadeout_clipping = fadeout_clipping;
     }
 
-    pub fn set_scroll_offset(&mut self, offset: f32) {
+    pub fn set_scroll_offset(&mut self, offset: (f32, f32)) {
         self.inner.scroll_offset = offset;
     }
 
@@ -348,10 +349,10 @@ impl<'a> TextBox<'a> {
     pub fn effective_clip_rect(&self) -> Option<parley::Rect> {
         let auto_clip_rect = if self.inner.auto_clip {
             Some(parley::Rect {
-                x0: self.inner.scroll_offset as f64,
-                y0: 0.0,
-                x1: (self.inner.scroll_offset + self.inner.max_advance) as f64,
-                y1: self.inner.height as f64,
+                x0: self.inner.scroll_offset.0 as f64,
+                y0: self.inner.scroll_offset.1 as f64,
+                x1: (self.inner.scroll_offset.0 + self.inner.max_advance) as f64,
+                y1: (self.inner.scroll_offset.1 + self.inner.height) as f64,
             })
         } else {
             None
@@ -700,6 +701,7 @@ impl SelectionState {
         left: f32,
         top: f32,
         scroll_offset_x: f32,
+        scroll_offset_y: f32,
         edit_showing_placeholder: bool
     ) {
         if edit_showing_placeholder {
@@ -718,7 +720,7 @@ impl SelectionState {
                 if input_state.mouse.pointer_down {
                     let cursor_pos = (
                         cursor_pos.0 - left as f32 + scroll_offset_x,
-                        cursor_pos.1 - top as f32,
+                        cursor_pos.1 - top as f32 + scroll_offset_y,
                     );
                     self.extend_selection_to_point(
                         &layout,
@@ -733,7 +735,7 @@ impl SelectionState {
 
                     let cursor_pos = (
                         input_state.mouse.cursor_pos.0 as f32 - left + scroll_offset_x,
-                        input_state.mouse.cursor_pos.1 as f32 - top,
+                        input_state.mouse.cursor_pos.1 as f32 - top + scroll_offset_y,
                     );
 
                     if state.is_pressed() {
