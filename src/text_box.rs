@@ -277,7 +277,12 @@ impl<'a> TextBox<'a> {
         self.inner.depth
     }
 
-    pub fn text(&self) -> &str {
+    pub(crate) fn text_inner(&self) -> &str {
+        &self.inner.text
+    }
+
+    // todo: this consuming crap works for now but surely there's a way to annotate the lifetimes properly
+    pub fn text(self) -> &'a str {
         &self.inner.text
     }
 
@@ -684,7 +689,7 @@ impl<'a> TextBox<'a> {
         self.inner.selection.extend_selection_to_point(&self.inner.layout, x, y);
     }
 
-    pub(crate) fn layout(&mut self) -> &Layout<ColorBrush> {
+    pub fn layout(&mut self) -> &Layout<ColorBrush> {
         self.refresh_layout();
         &self.inner.layout
     }
@@ -693,6 +698,14 @@ impl<'a> TextBox<'a> {
         if self.inner.needs_relayout {
             self.rebuild_layout(None, false);
         }
+    }
+
+    pub fn set_selectable(&mut self, selectable: bool) {
+        self.inner.selectable = selectable;
+    }
+
+    pub fn selectable(&mut self) -> bool {
+        self.inner.selectable
     }
 }
 

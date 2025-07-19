@@ -348,8 +348,8 @@ impl<'a> TextEdit<'a> {
                     }
                     Key::Named(NamedKey::ArrowUp) => {
                         if !shift && ! self.inner.showing_placeholder {
+                            scroll_to_cursor = true;
                             if self.inner.single_line {
-                                scroll_to_cursor = true;
                                 self.text_box.move_to_text_start();
                             } else {
                                 self.text_box.move_up();
@@ -580,7 +580,7 @@ impl<'a> TextEdit<'a> {
 
     /// Insert at cursor, or replace selection.
     fn replace_range_and_record(&mut self, range: Range<usize>, old_selection: Selection, s: &str) {
-        let old_text = &self.text_box.text()[range.clone()];
+        let old_text = &self.text_box.text_inner()[range.clone()];
 
         let new_range_start = range.start;
         let new_range_end = range.start + s.len();
@@ -599,7 +599,7 @@ impl<'a> TextEdit<'a> {
         let old_selection = self.text_box.selection();
 
         let range = self.text_box.selection().text_range();
-        let old_text = &self.text_box.text()[range.clone()];
+        let old_text = &self.text_box.text_inner()[range.clone()];
 
         let new_range_start = range.start;
         let new_range_end = range.start + s.len();
@@ -625,7 +625,7 @@ impl<'a> TextEdit<'a> {
 
     pub(crate) fn restore_placeholder_if_any(&mut self) {
         if let Some(placeholder) = &self.inner.placeholder_text {
-            if self.text_box.text().is_empty() && !self.inner.showing_placeholder {
+            if self.text_box.text_inner().is_empty() && !self.inner.showing_placeholder {
                 self.text_box.text_mut().clear();
                 self.text_box.text_mut().push_str(&placeholder);
                 self.inner.showing_placeholder = true;
@@ -672,7 +672,7 @@ impl<'a> TextEdit<'a> {
             let focus = self.text_box.selection().focus();
             let start = focus.index();
             let end = focus.next_logical_word(&self.text_box.layout()).index();
-            if self.text_box.text().get(start..end).is_some() {
+            if self.text_box.text_inner().get(start..end).is_some() {
                 self.replace_range_and_record(start..end, self.text_box.selection(), "");
                 self.refresh_layout();
                 self.text_box.set_selection(
@@ -704,7 +704,7 @@ impl<'a> TextEdit<'a> {
                 } else {
                     // Otherwise, delete the previous character
                     let Some((start, _)) = self
-                        .text_box.text()
+                        .text_box.text_inner()
                         .get(..end)
                         .and_then(|str| str.char_indices().next_back())
                     else {
@@ -731,7 +731,7 @@ impl<'a> TextEdit<'a> {
             let focus = self.text_box.selection().focus();
             let end = focus.index();
             let start = focus.previous_logical_word(&self.text_box.layout()).index();
-            if self.text_box.text().get(start..end).is_some() {
+            if self.text_box.text_inner().get(start..end).is_some() {
                 self.replace_range_and_record(start..end, self.text_box.selection(), "");
                 self.refresh_layout();
                 self.text_box.set_selection(
@@ -803,8 +803,8 @@ impl<'a> TextEdit<'a> {
             self.text_box.text_mut().replace_range(preedit_range.clone(), "");
             self.inner.show_cursor = true;
 
-            let (index, affinity) = if preedit_range.start >= self.text_box.text().len() {
-                (self.text_box.text().len(), Affinity::Upstream)
+            let (index, affinity) = if preedit_range.start >= self.text_box.text_inner().len() {
+                (self.text_box.text_inner().len(), Affinity::Upstream)
             } else {
                 (preedit_range.start, Affinity::Downstream)
             };
@@ -928,6 +928,13 @@ impl<'a> TextEdit<'a> {
         self.text_box.inner.selection.selection = Cursor::from_byte_index(&self.text_box.inner.layout, index, affinity).into();
     }
 
+    pub fn layout(&mut self) -> &Layout<ColorBrush> {
+        self.text_box.layout()
+    }
+
+    pub fn set_size(&mut self, size: (f32, f32)) {
+        self.text_box.set_size(size)
+    }
 }
 
 
@@ -1192,8 +1199,7 @@ pub struct TextEdit<'a> {
 }
 
 impl<'a> TextEdit<'a> {
-    // Delegate all methods to inner for now - we'll move implementations later
-    pub fn raw_text(&self) -> &str {
+    pub fn raw_text(self) -> &'a str {
         self.text_box.text()
     }
     
@@ -1395,7 +1401,7 @@ impl<'a> TextEdit<'a> {
     pub fn set_placeholder(&mut self, placeholder: impl Into<Cow<'static, str>>) {
         let placeholder_cow = placeholder.into();
         self.inner.placeholder_text = Some(placeholder_cow.clone());
-        if self.text_box.text().is_empty() || self.inner.showing_placeholder {
+        if self.text_box.text_inner().is_empty() || self.inner.showing_placeholder {
             self.text_box.text_mut().clear();
             self.text_box.text_mut().push_str(&placeholder_cow);
             self.text_box.inner.needs_relayout = true;
