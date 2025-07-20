@@ -48,7 +48,7 @@ pub fn with_clipboard<R>(f: impl FnOnce(&mut Clipboard) -> R) -> R {
 pub(crate) struct TextBoxInner {
     pub(crate) text: Cow<'static, str>,
     pub(crate) style: StyleHandle,
-    pub(crate) style_id: u64,
+    pub(crate) style_version: u64,
     pub(crate) layout: Layout<ColorBrush>,
     pub(crate) needs_relayout: bool,
     pub(crate) left: f64,
@@ -113,7 +113,7 @@ impl TextBoxInner {
     pub(crate) fn new(text: impl Into<Cow<'static, str>>, pos: (f64, f64), size: (f32, f32), depth: f32) -> Self {
         Self {
             text: text.into(),
-            style_id: 0,
+            style_version: 0,
             layout: Layout::new(),
             selectable: true,
             needs_relayout: true,

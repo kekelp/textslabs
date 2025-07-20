@@ -190,7 +190,7 @@ impl Text {
         }
     }
 
-    pub(crate) fn new_style_id(&mut self) -> u64 {
+    pub(crate) fn new_style_version(&mut self) -> u64 {
         self.style_version_id_counter += 1;
         self.style_version_id_counter
     }
@@ -250,11 +250,11 @@ impl Text {
     #[must_use]
     pub fn add_style(&mut self, text_style: TextStyle2, text_edit_style: Option<TextEditStyle>) -> StyleHandle {
         let text_edit_style = text_edit_style.unwrap_or_default();
-        let new_id = self.new_style_id();
+        let new_version = self.new_style_version();
         let i = self.styles.insert(StyleInner {
             text_style,
             text_edit_style,
-            version: new_id,
+            version: new_version,
         }) as u32;
         StyleHandle { i }
     }
@@ -264,7 +264,7 @@ impl Text {
     }
 
     pub fn get_text_style_mut(&mut self, handle: &StyleHandle) -> &mut TextStyle2 {
-        self.styles[handle.i as usize].version = self.new_style_id();
+        self.styles[handle.i as usize].version = self.new_style_version();
         self.text_changed = true;
         &mut self.styles[handle.i as usize].text_style
     }
@@ -274,7 +274,7 @@ impl Text {
     }
 
     pub fn get_text_edit_style_mut(&mut self, handle: &StyleHandle) -> &mut TextEditStyle {
-        self.styles[handle.i as usize].version = self.new_style_id();
+        self.styles[handle.i as usize].version = self.new_style_version();
         self.text_changed = true;
         &mut self.styles[handle.i as usize].text_edit_style
     }
