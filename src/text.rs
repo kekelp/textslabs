@@ -6,6 +6,14 @@ use winit::{event::{Modifiers, MouseButton, WindowEvent}, window::Window};
 const MULTICLICK_DELAY: f64 = 0.4;
 const MULTICLICK_TOLERANCE_SQUARED: f64 = 26.0;
 
+
+#[derive(Debug)]
+pub(crate) struct StyleInner {
+    pub(crate) text_style: TextStyle2,
+    pub(crate) text_edit_style: TextEditStyle,
+    pub(crate) version: u64,
+}
+
 /// Centralized struct that holds collections of [`TextBox`]es, [`TextEdit`]s, [`TextStyle2`]s.
 /// 
 /// For rendering, a [`TextRenderer`] is also needed.
@@ -13,7 +21,7 @@ pub struct Text {
     pub(crate) text_boxes: Slab<TextBoxInner>,
     pub(crate) text_edits: Slab<(TextEditInner, TextBoxInner)>,
 
-    pub(crate) styles: Slab<(TextStyle2, TextEditStyle, u64)>,
+    pub(crate) styles: Slab<StyleInner>,
     pub(crate) style_version_id_counter: u64,
 
     pub(crate) input_state: TextInputState,
@@ -160,7 +168,11 @@ pub const DEFAULT_STYLE_HANDLE: StyleHandle = StyleHandle { i: DEFAULT_STYLE_I a
 impl Text {
     pub fn new() -> Self {
         let mut styles = Slab::with_capacity(10);
-        let i = styles.insert((original_default_style(), TextEditStyle::default(), 0));
+        let i = styles.insert(StyleInner {
+            text_style: original_default_style(),
+            text_edit_style: TextEditStyle::default(),
+            version: 0,
+        });
         debug_assert!(i == DEFAULT_STYLE_I);
 
         Self {
@@ -239,28 +251,32 @@ impl Text {
     pub fn add_style(&mut self, text_style: TextStyle2, text_edit_style: Option<TextEditStyle>) -> StyleHandle {
         let text_edit_style = text_edit_style.unwrap_or_default();
         let new_id = self.new_style_id();
-        let i = self.styles.insert((text_style, text_edit_style, new_id)) as u32;
+        let i = self.styles.insert(StyleInner {
+            text_style,
+            text_edit_style,
+            version: new_id,
+        }) as u32;
         StyleHandle { i }
     }
 
     pub fn get_text_style(&self, handle: &StyleHandle) -> &TextStyle2 {
-        &self.styles[handle.i as usize].0
+        &self.styles[handle.i as usize].text_style
     }
 
     pub fn get_text_style_mut(&mut self, handle: &StyleHandle) -> &mut TextStyle2 {
-        self.styles[handle.i as usize].2 = self.new_style_id();
+        self.styles[handle.i as usize].version = self.new_style_id();
         self.text_changed = true;
-        &mut self.styles[handle.i as usize].0
+        &mut self.styles[handle.i as usize].text_style
     }
 
     pub fn get_text_edit_style(&self, handle: &StyleHandle) -> &TextEditStyle {
-        &self.styles[handle.i as usize].1
+        &self.styles[handle.i as usize].text_edit_style
     }
 
     pub fn get_text_edit_style_mut(&mut self, handle: &StyleHandle) -> &mut TextEditStyle {
-        self.styles[handle.i as usize].2 = self.new_style_id();
+        self.styles[handle.i as usize].version = self.new_style_id();
         self.text_changed = true;
-        &mut self.styles[handle.i as usize].1
+        &mut self.styles[handle.i as usize].text_edit_style
     }
 
     pub fn get_default_text_style(&self) -> &TextStyle2 {
@@ -685,7 +701,7 @@ impl Text {
     pub fn get_text_box_mut(&mut self, handle: &TextBoxHandle) -> TextBox {
         let text_box_inner = &mut self.text_boxes[handle.i as usize];
         let style_handle = text_box_inner.style;
-        let style = &mut self.styles[style_handle.i as usize].0;
+        let style = &mut self.styles[style_handle.i as usize].text_style;
         TextBox { inner: text_box_inner, style }
     }
 
@@ -697,7 +713,7 @@ impl Text {
     pub fn get_text_box(&mut self, handle: &TextBoxHandle) -> TextBox {
         let text_box_inner = &mut self.text_boxes[handle.i as usize];
         let style_handle = text_box_inner.style;
-        let style = &mut self.styles[style_handle.i as usize].0;
+        let style = &mut self.styles[style_handle.i as usize].text_style;
         TextBox { inner: text_box_inner, style }
     }
 
@@ -713,22 +729,22 @@ impl Text {
 // I LOVE PARTIAL BORROWS!
 pub(crate) fn get_full_text_box_free<'a>(
     text_boxes: &'a mut Slab<TextBoxInner>,
-    styles: &'a mut Slab<(TextStyle2, TextEditStyle, u64)>,
+    styles: &'a mut Slab<StyleInner>,
     i: &TextBoxHandle,
 ) -> TextBox<'a> {
     let text_box_inner = &mut text_boxes[i.i as usize];
-    let style = &mut styles[text_box_inner.style.i as usize].0;
+    let style = &mut styles[text_box_inner.style.i as usize].text_style;
     TextBox { inner: text_box_inner, style }
 }
 
 // I LOVE PARTIAL BORROWS!
 pub(crate) fn get_full_text_edit_free<'a>(
     text_edits: &'a mut Slab<(TextEditInner, TextBoxInner)>,
-    styles: &'a mut Slab<(TextStyle2, TextEditStyle, u64)>,
+    styles: &'a mut Slab<StyleInner>,
     i: &TextEditHandle,
 ) -> TextEdit<'a> {
     let (text_edit_inner, text_box_inner) = text_edits.get_mut(i.i as usize).unwrap();
-    let (style, edit_style, _) = &mut styles[text_box_inner.style.i as usize];
-    let text_box = TextBox { inner: text_box_inner, style };
-    TextEdit { inner: text_edit_inner, edit_style, text_box }
+    let style_inner = &mut styles[text_box_inner.style.i as usize];
+    let text_box = TextBox { inner: text_box_inner, style: &mut style_inner.text_style };
+    TextEdit { inner: text_edit_inner, edit_style: &mut style_inner.text_edit_style, text_box }
 }
