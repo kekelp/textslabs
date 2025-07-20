@@ -444,9 +444,6 @@ impl<'a> TextBox<'a> {
         color_override: Option<ColorBrush>,
         single_line: bool,
     ) {
-        if !self.inner.needs_relayout {
-            return;
-        }
 
         with_text_cx(|layout_cx, font_cx| {
             let mut builder = layout_cx.tree_builder(font_cx, 1.0, true, self.style());
@@ -722,7 +719,6 @@ impl<'a> TextBox<'a> {
         if self.inner.needs_relayout || self.style_version_changed() {
             if self.style_version_changed() {
                 self.inner.style_version = self.style_version();
-                self.inner.needs_relayout = true;
             }
             self.rebuild_layout(None, false);
         }

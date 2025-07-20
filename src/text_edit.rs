@@ -1391,7 +1391,6 @@ impl<'a> TextEdit<'a> {
         if self.text_box.inner.needs_relayout || self.style_version_changed() {
             if self.style_version_changed() {
                 self.text_box.inner.style_version = self.style_version();
-                self.text_box.inner.needs_relayout = true;
             }
             self.text_box.rebuild_layout(color_override, self.inner.single_line);
         }
