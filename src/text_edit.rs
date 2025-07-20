@@ -1198,6 +1198,14 @@ impl<'a> TextEdit<'a> {
         &self.styles[self.text_box.inner.style.i as usize].text_edit_style
     }
 
+    pub(crate) fn style_version(&self) -> u64 {
+        self.styles[self.text_box.inner.style.i as usize].version
+    }
+
+    pub(crate) fn style_version_changed(&self) -> bool {
+        self.style_version() != self.text_box.inner.style_version
+    }
+
     pub fn raw_text(self) -> &'a str {
         self.text_box.text()
     }
@@ -1380,7 +1388,11 @@ impl<'a> TextEdit<'a> {
             None
         };
 
-        if self.text_box.inner.needs_relayout {
+        if self.text_box.inner.needs_relayout || self.style_version_changed() {
+            if self.style_version_changed() {
+                self.text_box.inner.style_version = self.style_version();
+                self.text_box.inner.needs_relayout = true;
+            }
             self.text_box.rebuild_layout(color_override, self.inner.single_line);
         }
     }

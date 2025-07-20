@@ -158,6 +158,14 @@ impl<'a> TextBox<'a> {
         &self.styles[self.inner.style.i as usize].text_style
     }
 
+    pub(crate) fn style_version(&self) -> u64 {
+        self.styles[self.inner.style.i as usize].version
+    }
+
+    pub(crate) fn style_version_changed(&self) -> bool {
+        self.style_version() != self.inner.style_version
+    }
+
     #[must_use]
     pub(crate) fn hit_full_rect(&self, cursor_pos: (f64, f64)) -> bool {
         self.inner.hit_full_rect(cursor_pos)
@@ -381,6 +389,7 @@ impl<'a> TextBox<'a> {
     // todo: this isn't very good, it remains borrowed with the wrong style
     pub fn set_style(&mut self, style: &StyleHandle) {
         self.inner.style = style.sneak_clone();
+        self.inner.style_version = self.style_version();
         self.inner.needs_relayout = true;
     }
 
@@ -710,7 +719,11 @@ impl<'a> TextBox<'a> {
     }
 
     pub(crate) fn refresh_layout(&mut self) {
-        if self.inner.needs_relayout {
+        if self.inner.needs_relayout || self.style_version_changed() {
+            if self.style_version_changed() {
+                self.inner.style_version = self.style_version();
+                self.inner.needs_relayout = true;
+            }
             self.rebuild_layout(None, false);
         }
     }

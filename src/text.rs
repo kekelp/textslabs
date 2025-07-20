@@ -206,6 +206,7 @@ impl Text {
     pub fn add_text_box(&mut self, text: impl Into<Cow<'static, str>>, pos: (f64, f64), size: (f32, f32), depth: f32) -> TextBoxHandle {
         let mut text_box = TextBoxInner::new(text, pos, size, depth);
         text_box.last_frame_touched = self.current_frame;
+        text_box.style_version = self.styles[text_box.style.i as usize].version;
         let i = self.text_boxes.insert(text_box) as u32;
         self.text_changed = true;
         TextBoxHandle { i }
@@ -220,6 +221,7 @@ impl Text {
     pub fn add_text_edit(&mut self, text: String, pos: (f64, f64), size: (f32, f32), depth: f32) -> TextEditHandle {
         let (text_edit, mut text_box) = TextEditInner::new(text, pos, size, depth);
         text_box.last_frame_touched = self.current_frame;
+        text_box.style_version = self.styles[text_box.style.i as usize].version;
         let i = self.text_edits.insert((text_edit, text_box)) as u32;
         self.text_changed = true;
         TextEditHandle { i }
