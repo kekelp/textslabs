@@ -137,6 +137,15 @@ pub(crate) struct TextEditInner {
     pub(crate) disabled: bool,
     pub(crate) showing_placeholder: bool,
     pub(crate) placeholder_text: Option<Cow<'static, str>>,
+    pub(crate) scroll_animation: Option<ScrollAnimation>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ScrollAnimation {
+    pub start_offset: f32,
+    pub target_offset: f32,
+    pub start_time: Instant,
+    pub duration: Duration,
 }
 
 impl TextEditInner {
@@ -154,11 +163,40 @@ impl TextEditInner {
             disabled: false,
             showing_placeholder: false,
             placeholder_text: None,
+            scroll_animation: None,
         };
         (text_edit, text_box)
     }
 }
 
+
+impl ScrollAnimation {
+    pub fn new(start_offset: f32, target_offset: f32, duration: Duration) -> Self {
+        Self {
+            start_offset,
+            target_offset,
+            start_time: Instant::now(),
+            duration,
+        }
+    }
+
+    pub fn get_current_offset(&self) -> f32 {
+        let elapsed = self.start_time.elapsed();
+        if elapsed >= self.duration {
+            return self.target_offset;
+        }
+
+        let progress = elapsed.as_secs_f32() / self.duration.as_secs_f32();
+        // Use smooth easing function (ease-out cubic)
+        let eased_progress = 1.0 - (1.0 - progress).powi(3);
+        
+        self.start_offset + (self.target_offset - self.start_offset) * eased_progress
+    }
+
+    pub fn is_finished(&self) -> bool {
+        self.start_time.elapsed() >= self.duration
+    }
+}
 
 impl<'a> TextEdit<'a> {
 
@@ -512,23 +550,49 @@ impl<'a> TextEdit<'a> {
             WindowEvent::MouseWheel { delta, .. } if !self.inner.single_line => {
                 let cursor_pos = input_state.mouse.cursor_pos;
                 if self.text_box.hit_full_rect(cursor_pos) {
-                    let scroll_amount = match delta {
-                        winit::event::MouseScrollDelta::LineDelta(_x, y) => y * 30.0,
-                        winit::event::MouseScrollDelta::PixelDelta(pos) => pos.y as f32,
-                    };
-                    
-                    if scroll_amount.abs() > 0.1 {
-                        let old_scroll = self.text_box.inner.scroll_offset.1;
-                        let new_scroll = old_scroll - scroll_amount;
+                    dbg!(event);
+
+                    match delta {
+                        winit::event::MouseScrollDelta::LineDelta(_x, y) => {
+                            // Smooth scrolling for mouse wheel (LineDelta)
+                            let scroll_amount = y * 120.0;
+                            
+                            if scroll_amount.abs() > 0.1 {
+                                let current_scroll = self.text_box.inner.scroll_offset.1;
+                                let target_scroll = current_scroll - scroll_amount;
+                                
+                                let total_text_height = self.text_box.inner.layout.height();
+                                let text_height = self.text_box.inner.height;
+                                let max_scroll = (total_text_height - text_height).max(0.0).round();
+                                let clamped_target = target_scroll.clamp(0.0, max_scroll).round();
+                                
+                                if (clamped_target - current_scroll).abs() > 0.1 {
+                                    // Start smooth scrolling animation for mouse wheel
+                                    let animation_duration = Duration::from_millis(200);
+                                    self.inner.scroll_animation = Some(ScrollAnimation::new(
+                                        current_scroll,
+                                        clamped_target,
+                                        animation_duration,
+                                    ));
+                                    manually_scrolled = true;
+                                }
+                            }
+                        }
+                        winit::event::MouseScrollDelta::PixelDelta(pos) => {
+                            let scroll_amount = pos.y as f32;
+
+                            let old_scroll = self.text_box.inner.scroll_offset.1;
+                            let new_scroll = old_scroll - scroll_amount;
                         
-                        let total_text_height = self.text_box.inner.layout.height();
-                        let text_height = self.text_box.inner.height;
-                        let max_scroll = (total_text_height - text_height).max(0.0).round();
-                        let new_scroll = new_scroll.clamp(0.0, max_scroll).round();
+                            let total_text_height = self.text_box.inner.layout.height();
+                            let text_height = self.text_box.inner.height;
+                            let max_scroll = (total_text_height - text_height).max(0.0).round();
+                            let new_scroll = new_scroll.clamp(0.0, max_scroll).round();
                         
-                        if (new_scroll - old_scroll).abs() > 0.1 {
-                            self.text_box.inner.scroll_offset.1 = new_scroll;
-                            manually_scrolled = true;
+                            if (new_scroll - old_scroll).abs() > 0.1 {
+                                self.text_box.inner.scroll_offset.1 = new_scroll;
+                                manually_scrolled = true;
+                            }
                         }
                     }
                 }
@@ -1240,6 +1304,27 @@ impl<'a> TextEdit<'a> {
     
     pub fn scroll_offset(&self) -> (f32, f32) {
         self.text_box.scroll_offset()
+    }
+
+    /// Update smooth scrolling animation. Call this every frame for non-single line text edits.
+    /// Returns true if the text edit needs to be redrawn due to animation updates.
+    pub fn update_smooth_scrolling(&mut self) -> bool {
+        if self.inner.single_line {
+            return false;
+        }
+
+        if let Some(animation) = &self.inner.scroll_animation {
+            let current_offset = animation.get_current_offset();
+            self.text_box.inner.scroll_offset.1 = current_offset;
+
+            if animation.is_finished() {
+                self.inner.scroll_animation = None;
+            }
+            
+            true // Animation updated, redraw needed
+        } else {
+            false // No animation running
+        }
     }
     
     pub fn selection(&self) -> Selection {

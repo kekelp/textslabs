@@ -722,6 +722,33 @@ impl Text {
     pub(crate) fn get_full_text_edit(&mut self, i: &TextEditHandle) -> TextEdit<'_> {
         get_full_text_edit_free(&mut self.text_edits, &mut self.styles, i)
     }
+
+    /// Update smooth scrolling animations for all text edits. Call this every frame.
+    /// Returns true if any text edit animations were updated and require redrawing.
+    pub fn update_smooth_scrolling(&mut self) -> bool {
+        let mut needs_redraw = false;
+        
+        for (_index, (text_edit_inner, text_box_inner)) in self.text_edits.iter_mut() {
+            if !text_edit_inner.single_line {
+                if let Some(animation) = &text_edit_inner.scroll_animation {
+                    let current_offset = animation.get_current_offset();
+                    text_box_inner.scroll_offset.1 = current_offset;
+
+                    if animation.is_finished() {
+                        text_edit_inner.scroll_animation = None;
+                    }
+                    
+                    needs_redraw = true;
+                }
+            }
+        }
+        
+        if needs_redraw {
+            self.text_changed = true;
+        }
+        
+        needs_redraw
+    }
 }
 
 // I LOVE PARTIAL BORROWS!

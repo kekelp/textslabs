@@ -138,6 +138,12 @@ impl State {
                 self.window.request_redraw();
             }
             WindowEvent::RedrawRequested => {
+                // Update smooth scrolling animations
+                let animation_updated = self.text.update_smooth_scrolling();
+                if animation_updated {
+                    self.window.request_redraw();
+                }
+
                 let frame = self.surface.get_current_texture().unwrap();
                 let view = frame.texture.create_view(&TextureViewDescriptor::default());
 
