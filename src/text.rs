@@ -475,7 +475,7 @@ impl Text {
                     AnyBox::TextBox(i) => {
                         let handle = TextBoxHandle { i: i as u32 };
                         let text_box = self.get_full_text_box(&handle);
-                        text_renderer.prepare_text_box_decorations(&text_box, true);
+                        text_renderer.prepare_text_box_decorations(&text_box, false);
                     },
                 }
             }
@@ -508,8 +508,15 @@ impl Text {
             }
         }
 
+        if let WindowEvent::MouseWheel { .. } = event {
+            let hovered = self.find_topmost_at_pos(self.input_state.mouse.cursor_pos);
+            if let Some(hovered_widget) = hovered {
+                self.handle_hovered_event(hovered_widget, event, window);
+            }
+            return;
+        }
+
         if let Some(focused) = self.focused {
-            // todo remove
             self.handle_focused_event(focused, event, window);
         }
     }
@@ -552,6 +559,12 @@ impl Text {
             if state.is_pressed() && *button == MouseButton::Left {
                 self.refocus(topmost_text_box);
                 self.handle_click_counting();
+            }
+        }
+
+        if let WindowEvent::MouseWheel { .. } = event {
+            if let Some(hovered_widget) = topmost_text_box {
+                self.handle_hovered_event(hovered_widget, event, window);
             }
         }
 
@@ -644,6 +657,27 @@ impl Text {
         }
     }
     
+    fn handle_hovered_event(&mut self, hovered: AnyBox, event: &WindowEvent, window: &Window) {
+        // scroll wheel event
+        if let WindowEvent::MouseWheel { .. } = event {
+            match hovered {
+                AnyBox::TextEdit(i) => {
+                    let handle = TextEditHandle { i: i as u32 };
+                    let mut text_edit = get_full_text_edit_free(&mut self.text_edits, &mut self.styles, &handle);
+
+                    let result = text_edit.handle_scroll_event(event, window, &self.input_state);
+                    if result.text_changed {
+                        self.text_changed = true;
+                    }
+                    if result.decorations_changed {
+                        self.decorations_changed = true;
+                    }
+                },
+                AnyBox::TextBox(_) => {}
+            }
+        }
+    }
+
     fn handle_focused_event(&mut self, focused: AnyBox, event: &WindowEvent, window: &Window) {
         match focused {
             AnyBox::TextEdit(i) => {

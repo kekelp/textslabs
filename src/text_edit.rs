@@ -528,63 +528,6 @@ impl<'a> TextEdit<'a> {
                     self.set_ime_cursor_area(window);
                 }
             }
-            WindowEvent::MouseWheel { delta, .. } if self.inner.single_line => {
-                let cursor_pos = input_state.mouse.cursor_pos;
-                if self.text_box.hit_full_rect(cursor_pos) {
-                    let scroll_amount = match delta {
-                        winit::event::MouseScrollDelta::LineDelta(x, _y) => x * 30.0,
-                        winit::event::MouseScrollDelta::PixelDelta(pos) => pos.x as f32,
-                    };
-                    
-                    if scroll_amount != 0.0 {
-                        let old_scroll = self.text_box.inner.scroll_offset.0;
-                        let new_scroll = old_scroll - scroll_amount;
-                        
-                        if self.apply_horizontal_scroll(new_scroll) {
-                            manually_scrolled = true;
-                        }
-                    }
-                }
-            }
-            WindowEvent::MouseWheel { delta, .. } if !self.inner.single_line => {
-                let cursor_pos = input_state.mouse.cursor_pos;
-                if self.text_box.hit_full_rect(cursor_pos) {
-
-                    let scroll_amount = match delta {
-                        winit::event::MouseScrollDelta::LineDelta(_x, y) => y * 120.0,
-                        winit::event::MouseScrollDelta::PixelDelta(pos) => pos.y as f32,
-                    };
-                    
-                    if scroll_amount.abs() > 0.1 {
-                        let current_scroll = self.text_box.inner.scroll_offset.1;
-                        let target_scroll = current_scroll - scroll_amount;
-                        
-                        let total_text_height = self.text_box.inner.layout.height();
-                        let text_height = self.text_box.inner.height;
-                        let max_scroll = (total_text_height - text_height).max(0.0).round();
-                        let clamped_target = target_scroll.clamp(0.0, max_scroll).round();
-                        
-                        if (clamped_target - current_scroll).abs() > 0.1 {
-                            let use_animation = match delta {
-                                winit::event::MouseScrollDelta::LineDelta(_x, y) => y.abs() > 0.5,
-                                winit::event::MouseScrollDelta::PixelDelta(_) => false,
-                            };
-                            
-                            if use_animation {
-                                let animation_duration = Duration::from_millis(200);
-                                self.inner.scroll_animation = Some(ScrollAnimation::new(
-                                    current_scroll,
-                                    clamped_target,
-                                    animation_duration,
-                                ));
-                            } else {
-                                self.text_box.inner.scroll_offset.1 = clamped_target;
-                            }
-                            manually_scrolled = true;
-                        }
-                    }
-                }
-            }
             _ => {}
         }
 
@@ -1528,5 +1471,69 @@ impl<'a> TextEdit<'a> {
 
     pub fn get_text_box(&self) -> &TextBox<'a> {
         return &self.text_box;
+    }
+
+    /// Handle scroll wheel events specifically (called for hovered text edits)
+    pub(crate) fn handle_scroll_event(&mut self, event: &WindowEvent, _window: &Window, _input_state: &TextInputState) -> TextEventResult {
+        let mut result = TextEventResult::nothing();
+        let mut manually_scrolled = false;
+
+        if let WindowEvent::MouseWheel { delta, .. } = event {
+            if self.inner.single_line {
+                let scroll_amount = match delta {
+                    winit::event::MouseScrollDelta::LineDelta(x, _y) => x * 30.0,
+                    winit::event::MouseScrollDelta::PixelDelta(pos) => pos.x as f32,
+                };
+                
+                if scroll_amount != 0.0 {
+                    let old_scroll = self.text_box.inner.scroll_offset.0;
+                    let new_scroll = old_scroll - scroll_amount;
+                    
+                    if self.apply_horizontal_scroll(new_scroll) {
+                        manually_scrolled = true;
+                    }
+                }
+            } else {
+                let scroll_amount = match delta {
+                    winit::event::MouseScrollDelta::LineDelta(_x, y) => y * 120.0,
+                    winit::event::MouseScrollDelta::PixelDelta(pos) => pos.y as f32,
+                };
+                
+                if scroll_amount.abs() > 0.1 {
+                    let current_scroll = self.text_box.inner.scroll_offset.1;
+                    let target_scroll = current_scroll - scroll_amount;
+                    
+                    let total_text_height = self.text_box.inner.layout.height();
+                    let text_height = self.text_box.inner.height;
+                    let max_scroll = (total_text_height - text_height).max(0.0).round();
+                    let clamped_target = target_scroll.clamp(0.0, max_scroll).round();
+                    
+                    if (clamped_target - current_scroll).abs() > 0.1 {
+                        let use_animation = match delta {
+                            winit::event::MouseScrollDelta::LineDelta(_x, y) => y.abs() > 0.5,
+                            winit::event::MouseScrollDelta::PixelDelta(_) => false,
+                        };
+                        
+                        if use_animation {
+                            let animation_duration = Duration::from_millis(200);
+                            self.inner.scroll_animation = Some(ScrollAnimation::new(
+                                current_scroll,
+                                clamped_target,
+                                animation_duration,
+                            ));
+                        } else {
+                            self.text_box.inner.scroll_offset.1 = clamped_target;
+                        }
+                        manually_scrolled = true;
+                    }
+                }
+            }
+        }
+
+        if manually_scrolled {
+            result.text_changed = true;
+        }
+
+        result
     }
 }
