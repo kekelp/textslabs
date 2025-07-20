@@ -517,15 +517,14 @@ impl<'a> TextEdit<'a> {
             }
             WindowEvent::Ime(Ime::Preedit(text, cursor)) => {
                 scroll_to_cursor = true;
+                result.text_changed = true;
                 if self.inner.showing_placeholder {
                     self.clear_placeholder()
                 }
                 if text.is_empty() {
                     self.clear_compose();
-                    result.text_changed = true;
                 } else {
                     self.set_compose(&text, *cursor);
-                    result.text_changed = true;
                     self.set_ime_cursor_area(window);
                 }
             }
@@ -550,49 +549,38 @@ impl<'a> TextEdit<'a> {
             WindowEvent::MouseWheel { delta, .. } if !self.inner.single_line => {
                 let cursor_pos = input_state.mouse.cursor_pos;
                 if self.text_box.hit_full_rect(cursor_pos) {
-                    dbg!(event);
 
-                    match delta {
-                        winit::event::MouseScrollDelta::LineDelta(_x, y) => {
-                            // Smooth scrolling for mouse wheel (LineDelta)
-                            let scroll_amount = y * 120.0;
+                    let scroll_amount = match delta {
+                        winit::event::MouseScrollDelta::LineDelta(_x, y) => y * 120.0,
+                        winit::event::MouseScrollDelta::PixelDelta(pos) => pos.y as f32,
+                    };
+                    
+                    if scroll_amount.abs() > 0.1 {
+                        let current_scroll = self.text_box.inner.scroll_offset.1;
+                        let target_scroll = current_scroll - scroll_amount;
+                        
+                        let total_text_height = self.text_box.inner.layout.height();
+                        let text_height = self.text_box.inner.height;
+                        let max_scroll = (total_text_height - text_height).max(0.0).round();
+                        let clamped_target = target_scroll.clamp(0.0, max_scroll).round();
+                        
+                        if (clamped_target - current_scroll).abs() > 0.1 {
+                            let use_animation = match delta {
+                                winit::event::MouseScrollDelta::LineDelta(_x, y) => y.abs() > 0.5,
+                                winit::event::MouseScrollDelta::PixelDelta(_) => false,
+                            };
                             
-                            if scroll_amount.abs() > 0.1 {
-                                let current_scroll = self.text_box.inner.scroll_offset.1;
-                                let target_scroll = current_scroll - scroll_amount;
-                                
-                                let total_text_height = self.text_box.inner.layout.height();
-                                let text_height = self.text_box.inner.height;
-                                let max_scroll = (total_text_height - text_height).max(0.0).round();
-                                let clamped_target = target_scroll.clamp(0.0, max_scroll).round();
-                                
-                                if (clamped_target - current_scroll).abs() > 0.1 {
-                                    // Start smooth scrolling animation for mouse wheel
-                                    let animation_duration = Duration::from_millis(200);
-                                    self.inner.scroll_animation = Some(ScrollAnimation::new(
-                                        current_scroll,
-                                        clamped_target,
-                                        animation_duration,
-                                    ));
-                                    manually_scrolled = true;
-                                }
+                            if use_animation {
+                                let animation_duration = Duration::from_millis(200);
+                                self.inner.scroll_animation = Some(ScrollAnimation::new(
+                                    current_scroll,
+                                    clamped_target,
+                                    animation_duration,
+                                ));
+                            } else {
+                                self.text_box.inner.scroll_offset.1 = clamped_target;
                             }
-                        }
-                        winit::event::MouseScrollDelta::PixelDelta(pos) => {
-                            let scroll_amount = pos.y as f32;
-
-                            let old_scroll = self.text_box.inner.scroll_offset.1;
-                            let new_scroll = old_scroll - scroll_amount;
-                        
-                            let total_text_height = self.text_box.inner.layout.height();
-                            let text_height = self.text_box.inner.height;
-                            let max_scroll = (total_text_height - text_height).max(0.0).round();
-                            let new_scroll = new_scroll.clamp(0.0, max_scroll).round();
-                        
-                            if (new_scroll - old_scroll).abs() > 0.1 {
-                                self.text_box.inner.scroll_offset.1 = new_scroll;
-                                manually_scrolled = true;
-                            }
+                            manually_scrolled = true;
                         }
                     }
                 }

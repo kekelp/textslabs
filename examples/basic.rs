@@ -71,7 +71,7 @@ impl State {
 
         // Create text boxes and get handles. Normally, the handle would be owned by a higher level struct representing a node in a GUI tree or something similar.
         let single_line_input = text.add_text_edit("".to_string(), (10.0, 15.0), (200.0, 35.0), 0.0);
-        let editable_text_with_unicode = text.add_text_edit("Editable text 無限での座を含む全ての".to_string(), (300.0, 200.0), (400.0, 200.0), 0.0);
+        let editable_text_with_unicode = text.add_text_edit("Editable text 無限での座を含む全てのEditable text 無限での座を含む全てのEditable text 無限での座を含む全てのEditable text 無限での座を含む全てのEditable text 無限での座を含む全ての".to_string(), (300.0, 200.0), (400.0, 200.0), 0.0);
         let _info = text.add_text_box("Press Ctrl + D to disable the top edit box. Press Ctrl + H to toggle the fade effect on the clipped text box".to_string(), (10.0, 60.0), (200.0, 100.0), 0.0);
         let _help_text_edit = text.add_text_edit("Press Ctrl + Plus and Ctrl + Minus to adjust the size of the big text.".to_string(), (470.0, 60.0), (200.0, 100.0), 0.0);
         let shift_enter_text_edit = text.add_text_edit("Use Shift+Enter for newlines here".to_string(), (250.0, 60.0), (200.0, 100.0), 0.0);

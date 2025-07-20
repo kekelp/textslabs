@@ -444,7 +444,6 @@ impl<'a> TextBox<'a> {
         color_override: Option<ColorBrush>,
         single_line: bool,
     ) {
-
         with_text_cx(|layout_cx, font_cx| {
             let mut builder = layout_cx.tree_builder(font_cx, 1.0, true, self.style());
 
