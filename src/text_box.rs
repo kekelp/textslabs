@@ -72,11 +72,11 @@ pub(crate) struct TextBoxInner {
     pub(crate) can_hide: bool,
 }
 
-/// A struct representing a text box.
+/// A struct that refers to a text box stored inside a [`Text`] struct.
 /// 
 /// This struct can't be created directly. Instead, use [`Text::add_text_box()`] to create one within [`Text`] and get a [`TextBoxHandle`] back.
 /// 
-/// Then, the handle can be used to get a reference to the `TextBox` with [`Text::get_text_box()`], or the equivalent `mut` functions.
+/// Then, the handle can be used to get a `TextBox` with [`Text::get_text_box()`].
 pub struct TextBox<'a> {
     pub(crate) inner: &'a mut TextBoxInner,
     pub(crate) style: &'a TextStyle2,
