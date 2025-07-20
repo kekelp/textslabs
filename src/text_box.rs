@@ -9,6 +9,7 @@ use arboard::Clipboard;
 use parley::{Affinity, Alignment, Selection};
 
 use crate::*;
+use slab::Slab;
 
 const X_TOLERANCE: f64 = 35.0;
 
@@ -79,7 +80,7 @@ pub(crate) struct TextBoxInner {
 /// Then, the handle can be used to get a `TextBox` with [`Text::get_text_box()`].
 pub struct TextBox<'a> {
     pub(crate) inner: &'a mut TextBoxInner,
-    pub(crate) style: &'a TextStyle2,
+    pub(crate) styles: &'a Slab<StyleInner>,
 }
 
 
@@ -153,6 +154,10 @@ impl TextBoxInner {
 }
 
 impl<'a> TextBox<'a> {
+    pub(crate) fn style(&self) -> &TextStyle2 {
+        &self.styles[self.inner.style.i as usize].text_style
+    }
+
     #[must_use]
     pub(crate) fn hit_full_rect(&self, cursor_pos: (f64, f64)) -> bool {
         self.inner.hit_full_rect(cursor_pos)
@@ -435,7 +440,7 @@ impl<'a> TextBox<'a> {
         }
 
         with_text_cx(|layout_cx, font_cx| {
-            let mut builder = layout_cx.tree_builder(font_cx, 1.0, true, self.style);
+            let mut builder = layout_cx.tree_builder(font_cx, 1.0, true, self.style());
 
             if let Some(color_override) = color_override {
                 builder.push_style_modification_span(&[

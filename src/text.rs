@@ -700,9 +700,7 @@ impl Text {
     /// This is a fast lookup operation that does not require any hashing.
     pub fn get_text_box_mut(&mut self, handle: &TextBoxHandle) -> TextBox {
         let text_box_inner = &mut self.text_boxes[handle.i as usize];
-        let style_handle = text_box_inner.style;
-        let style = &mut self.styles[style_handle.i as usize].text_style;
-        TextBox { inner: text_box_inner, style }
+        TextBox { inner: text_box_inner, styles: &self.styles }
     }
 
     /// Get a mutable reference to a text box wrapped with its style.
@@ -712,9 +710,7 @@ impl Text {
     /// This is a fast lookup operation that does not require any hashing.
     pub fn get_text_box(&mut self, handle: &TextBoxHandle) -> TextBox {
         let text_box_inner = &mut self.text_boxes[handle.i as usize];
-        let style_handle = text_box_inner.style;
-        let style = &mut self.styles[style_handle.i as usize].text_style;
-        TextBox { inner: text_box_inner, style }
+        TextBox { inner: text_box_inner, styles: &self.styles }
     }
 
     pub(crate) fn get_full_text_box(&mut self, i: &TextBoxHandle) -> TextBox<'_> {
@@ -729,22 +725,20 @@ impl Text {
 // I LOVE PARTIAL BORROWS!
 pub(crate) fn get_full_text_box_free<'a>(
     text_boxes: &'a mut Slab<TextBoxInner>,
-    styles: &'a mut Slab<StyleInner>,
+    styles: &'a Slab<StyleInner>,
     i: &TextBoxHandle,
 ) -> TextBox<'a> {
     let text_box_inner = &mut text_boxes[i.i as usize];
-    let style = &mut styles[text_box_inner.style.i as usize].text_style;
-    TextBox { inner: text_box_inner, style }
+    TextBox { inner: text_box_inner, styles }
 }
 
 // I LOVE PARTIAL BORROWS!
 pub(crate) fn get_full_text_edit_free<'a>(
     text_edits: &'a mut Slab<(TextEditInner, TextBoxInner)>,
-    styles: &'a mut Slab<StyleInner>,
+    styles: &'a Slab<StyleInner>,
     i: &TextEditHandle,
 ) -> TextEdit<'a> {
     let (text_edit_inner, text_box_inner) = text_edits.get_mut(i.i as usize).unwrap();
-    let style_inner = &mut styles[text_box_inner.style.i as usize];
-    let text_box = TextBox { inner: text_box_inner, style: &mut style_inner.text_style };
-    TextEdit { inner: text_edit_inner, edit_style: &mut style_inner.text_edit_style, text_box }
+    let text_box = TextBox { inner: text_box_inner, styles };
+    TextEdit { inner: text_edit_inner, styles, text_box }
 }
