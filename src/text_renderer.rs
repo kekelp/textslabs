@@ -129,6 +129,7 @@ impl ContextlessTextRenderer {
             uv_origin: [0, 0],
             depth: 0.0,
             flags: pack_flags(2, 0), // todo make names for these
+            clip_rect: [0, 0, 32767, 32767], // No clipping for decorations
         };
         self.decorations.push(quad);
     }
@@ -188,6 +189,7 @@ pub(crate) struct Quad {
     pub color: u32,
     pub depth: f32,
     pub flags: u32,
+    pub clip_rect: [i16; 4], // x, y, width, height in pixels
 }
 
 fn make_quad(glyph: &GlyphWithContext, stored_glyph: &StoredGlyph) -> Quad {
@@ -209,6 +211,7 @@ fn make_quad(glyph: &GlyphWithContext, stored_glyph: &StoredGlyph) -> Quad {
         color,
         flags: pack_flags(flags, 0), // No fade by default
         depth: 0.0,
+        clip_rect: [0, 0, 32767, 32767], // No clipping (will be set later)
     };
 }
 
@@ -229,24 +232,13 @@ fn clip_quad(quad: Quad, left: f32, top: f32, clip_rect: Option<parley::Rect>, f
         let quad_x1 = quad_x0 + quad.dim[0] as i32;
         let quad_y1 = quad_y0 + quad.dim[1] as i32;
 
-        // Calculate clipped bounds
-        let clipped_x0 = quad_x0.max(clip_x0);
-        let clipped_x1 = quad_x1.min(clip_x1);
-        let clipped_y0 = quad_y0.max(clip_y0);
-        let clipped_y1 = quad_y1.min(clip_y1);
-
-        // If completely clipped out, return None
-        if clipped_x0 >= clipped_x1 || clipped_y0 >= clipped_y1 {
-            return None;
-        }
-
-        // Calculate how much was clipped from the left and top
-        let left_clip = clipped_x0 - quad_x0;
-        let top_clip = clipped_y0 - quad_y0;
-
-        // Adjust UV coordinates to match the clipped area
-        let new_uv_x = quad.uv_origin[0] + left_clip as u16;
-        let new_uv_y = quad.uv_origin[1] + top_clip as u16;
+        // Set the GPU clip rectangle
+        quad.clip_rect = [
+            clip_x0 as i16,
+            clip_y0 as i16,
+            clip_x1 as i16,
+            clip_y1 as i16,
+        ];
 
         // Extract content type from existing flags
         let content_type = quad.flags & FLAG_CONTENT_TYPE_MASK;
@@ -260,10 +252,10 @@ fn clip_quad(quad: Quad, left: f32, top: f32, clip_rect: Option<parley::Rect>, f
             if quad_y1 > clip_y1 { fade_edges |= 8; }
         }
         
-        quad.pos = [clipped_x0, clipped_y0];
-        quad.dim = [(clipped_x1 - clipped_x0) as u16, (clipped_y1 - clipped_y0) as u16];
-        quad.uv_origin = [new_uv_x, new_uv_y];
         quad.flags = pack_flags(content_type, fade_edges);
+    } else {
+        // No clipping - use maximum clip rectangle
+        quad.clip_rect = [0, 0, 32767, 32767];
     }
     
     Some(quad)
@@ -446,6 +438,7 @@ impl TextRenderer {
                 color: 0xff0000ff,
                 depth: 0.0,
                 flags: pack_flags(0, 0),
+                clip_rect: [0, 0, 32767, 32767]
             }];
         }
     
@@ -459,6 +452,7 @@ impl TextRenderer {
                 color: 0xffffffff,
                 depth: 0.0,
                 flags: pack_flags(1, 0),
+                clip_rect: [0, 0, 32767, 32767]
             }];
         }
         

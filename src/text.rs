@@ -435,9 +435,7 @@ impl Text {
 
             }
         }
-        
-        dbg!(&self.scrolled_moved_indices);
-        
+                
         if self.text_changed {
             text_renderer.clear();
         } else if self.decorations_changed || !self.scrolled_moved_indices.is_empty() {
@@ -465,15 +463,14 @@ impl Text {
         // if only scrolling or movement occurred, move quads in-place
         if !self.text_changed {
             if !self.scrolled_moved_indices.is_empty() {
-                println!("{:?} Scroll only", std::time::SystemTime::now());
                 self.handle_scroll_fast_path(text_renderer);
             }
 
         } else {
+        // if self.text_changed || !self.scrolled_moved_indices.is_empty(){
+
             let current_frame = self.current_frame;
             if self.text_changed {
-                println!("{:?} Full text prepare", std::time::SystemTime::now());
-
                 // todo: figure out some other way to cheat partial borrowing
                 for i in 0..self.text_edits.capacity() {
                     if self.text_edits.contains(i) {

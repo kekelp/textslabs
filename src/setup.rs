@@ -127,6 +127,7 @@ impl ContextlessTextRenderer {
                 3 => Uint32,
                 4 => Float32,
                 5 => Uint32,
+                6 => Sint16x4,
             ],
         };
 

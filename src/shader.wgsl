@@ -6,6 +6,7 @@ struct VertexInput {
     @location(3) color: u32,
     @location(4) depth: f32,
     @location(5) flags: u32,
+    @location(6) clip_rect: vec4<i32>,
 }
 
 struct VertexOutput {
@@ -15,6 +16,7 @@ struct VertexOutput {
     @location(2) @interpolate(flat) flags: u32,
     @location(3) quad_pos: vec2<f32>,
     @location(4) @interpolate(flat) quad_size: vec2<f32>,
+    @location(5) @interpolate(flat) clip_rect: vec4<f32>,
 };
 
 struct Params {
@@ -88,6 +90,7 @@ fn vs_main(input: VertexInput) -> VertexOutput {
     vert_output.flags = input.flags;
     vert_output.quad_pos = coords;
     vert_output.quad_size = dim;
+    vert_output.clip_rect = vec4<f32>(input.clip_rect);
 
     return vert_output;
 }
@@ -120,6 +123,13 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     let content_type = get_content_type(input.flags);
     let fade_edges = get_fade_edges(input.flags);
     var fade_alpha = calculate_fade_alpha(input.quad_pos, fade_edges, input.quad_size);
+    
+    // Check if pixel is within clipping rectangle
+    let frag_coord = input.position.xy;
+    if frag_coord.x < input.clip_rect.x || frag_coord.x > input.clip_rect.z ||
+       frag_coord.y < input.clip_rect.y || frag_coord.y > input.clip_rect.w {
+        discard;
+    }
     
     if content_type == 1 {
         var color = textureSampleLevel(mask_atlas_texture, atlas_sampler, input.uv, 0.0);
