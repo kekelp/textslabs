@@ -436,7 +436,7 @@ impl Text {
             }
         }
         
-        dbg!(self.text_changed);
+        dbg!(&self.scrolled_moved_indices);
         
         if self.text_changed {
             text_renderer.clear();
@@ -499,7 +499,9 @@ impl Text {
 
         self.text_changed = false;
         self.decorations_changed = false;
-        self.scrolled_moved_indices.clear();
+        
+        // Only clear scrolled indices when all animations are finished
+        self.clear_finished_scroll_animations();
 
         self.using_frame_based_visibility = false;
     }
@@ -520,6 +522,26 @@ impl Text {
                 },
             }
         }
+    }
+
+    /// Clear scroll indices only for elements that have finished their animations
+    fn clear_finished_scroll_animations(&mut self) {
+        self.scrolled_moved_indices.retain(|any_box| {
+            match any_box {
+                AnyBox::TextEdit(i) => {
+                    if let Some((text_edit_inner, _text_box_inner)) = self.text_edits.get(*i as usize) {
+                        // Keep in list if animation is still running
+                        text_edit_inner.scroll_animation.is_some()
+                    } else {
+                        false // Remove if text edit no longer exists
+                    }
+                },
+                AnyBox::TextBox(_i) => {
+                    // Text boxes don't have animations, so they can be cleared immediately
+                    false
+                },
+            }
+        });
     }
 
     /// Handle window events for text widgets.
