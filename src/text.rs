@@ -864,10 +864,10 @@ pub(crate) fn get_full_text_edit_free<'a>(
 fn move_quads_for_scroll(text_renderer: &mut TextRenderer, quad_storage: &mut QuadStorage, current_offset: (f32, f32)) {
     let delta_x = current_offset.0 - quad_storage.last_offset.0;
     let delta_y = current_offset.1 - quad_storage.last_offset.1;
-    
-    if delta_x.abs() < 0.1 && delta_y.abs() < 0.1 {
-        return; // No significant movement
-    }
+
+    // Use rounded deltas
+    let delta_x_rounded = delta_x.round();
+    let delta_y_rounded = delta_y.round();
 
     // Move quads across all atlas pages
     for page_range in &quad_storage.pages {
@@ -876,8 +876,8 @@ fn move_quads_for_scroll(text_renderer: &mut TextRenderer, quad_storage: &mut Qu
                 if let Some(page) = text_renderer.text_renderer.mask_atlas_pages.get_mut(page_range.page_index as usize) {
                     for quad_index in page_range.quad_start..page_range.quad_end {
                         if let Some(quad) = page.quads.get_mut(quad_index as usize) {
-                            quad.pos[0] = (quad.pos[0] as f32 - delta_x) as i32;
-                            quad.pos[1] = (quad.pos[1] as f32 - delta_y) as i32;
+                            quad.pos[0] = quad.pos[0] - delta_x_rounded as i32;
+                            quad.pos[1] = quad.pos[1] - delta_y_rounded as i32;
                         }
                     }
                 }
@@ -886,8 +886,8 @@ fn move_quads_for_scroll(text_renderer: &mut TextRenderer, quad_storage: &mut Qu
                 if let Some(page) = text_renderer.text_renderer.color_atlas_pages.get_mut(page_range.page_index as usize) {
                     for quad_index in page_range.quad_start..page_range.quad_end {
                         if let Some(quad) = page.quads.get_mut(quad_index as usize) {
-                            quad.pos[0] = (quad.pos[0] as f32 - delta_x) as i32;
-                            quad.pos[1] = (quad.pos[1] as f32 - delta_y) as i32;
+                            quad.pos[0] = quad.pos[0] - delta_x_rounded as i32;
+                            quad.pos[1] = quad.pos[1] - delta_y_rounded as i32;
                         }
                     }
                 }
@@ -896,5 +896,6 @@ fn move_quads_for_scroll(text_renderer: &mut TextRenderer, quad_storage: &mut Qu
     }
 
     // Update stored offset
-    quad_storage.last_offset = current_offset;
+    quad_storage.last_offset.0 += delta_x_rounded;
+    quad_storage.last_offset.1 += delta_y_rounded;
 }

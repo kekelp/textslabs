@@ -1493,34 +1493,34 @@ impl<'a> TextEdit<'a> {
                     winit::event::MouseScrollDelta::PixelDelta(pos) => pos.y as f32,
                 };
                 
-                if scroll_amount.abs() > 0.1 {
-                    let current_scroll = self.text_box.inner.scroll_offset.1;
-                    let target_scroll = current_scroll - scroll_amount;
+                let current_scroll = self.text_box.inner.scroll_offset.1;
+                let target_scroll = current_scroll - scroll_amount;
+                
+                let total_text_height = self.text_box.inner.layout.height();
+                let text_height = self.text_box.inner.height;
+                let max_scroll = (total_text_height - text_height).max(0.0).round();
+                let clamped_target = target_scroll.clamp(0.0, max_scroll).round();
+                
+                if (clamped_target - current_scroll).abs() > 0.1 {
+                    let use_animation = match delta {
+                        // can't find a good way to tell apart touchpad and mouse wheel. They both show up as LineDelta.
+                        winit::event::MouseScrollDelta::LineDelta(_x, y) => y.abs().fract() == 0.0,
+                        winit::event::MouseScrollDelta::PixelDelta(_) => false,
+                    };
                     
-                    let total_text_height = self.text_box.inner.layout.height();
-                    let text_height = self.text_box.inner.height;
-                    let max_scroll = (total_text_height - text_height).max(0.0).round();
-                    let clamped_target = target_scroll.clamp(0.0, max_scroll).round();
-                    
-                    if (clamped_target - current_scroll).abs() > 0.1 {
-                        let use_animation = match delta {
-                            winit::event::MouseScrollDelta::LineDelta(_x, y) => y.abs() > 0.5,
-                            winit::event::MouseScrollDelta::PixelDelta(_) => false,
-                        };
-                        
-                        if use_animation {
-                            let animation_duration = Duration::from_millis(200);
-                            self.inner.scroll_animation = Some(ScrollAnimation::new(
-                                current_scroll,
-                                clamped_target,
-                                animation_duration,
-                            ));
-                        } else {
-                            self.text_box.inner.scroll_offset.1 = clamped_target;
-                        }
-                        did_scroll = true;
+                    if use_animation {
+                        let animation_duration = Duration::from_millis(200);
+                        self.inner.scroll_animation = Some(ScrollAnimation::new(
+                            current_scroll,
+                            clamped_target,
+                            animation_duration,
+                        ));
+                    } else {
+                        self.text_box.inner.scroll_offset.1 = clamped_target;
                     }
+                    did_scroll = true;
                 }
+                
             }
         }
 

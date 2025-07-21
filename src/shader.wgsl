@@ -67,14 +67,41 @@ fn vs_main(input: VertexInput) -> VertexOutput {
     let coords = vec2f(ucoords);
 
     let dim = split(input.dim);
-
+    let quad_pos = vec2f(input.pos);
+    
+    // Apply clipping in vertex shader
+    let clip_rect = vec4<f32>(input.clip_rect);
+    
+    // Calculate original quad bounds
+    let quad_x0 = quad_pos.x;
+    let quad_y0 = quad_pos.y;
+    let quad_x1 = quad_x0 + dim.x;
+    let quad_y1 = quad_y0 + dim.y;
+    
+    // Calculate clipped bounds - ensure we're within the clip rectangle on all sides
+    let clipped_x0 = max(quad_x0, clip_rect.x);  
+    let clipped_x1 = max(clipped_x0, min(quad_x1, clip_rect.z));  // Ensure x1 >= x0
+    let clipped_y0 = max(quad_y0, clip_rect.y);  
+    let clipped_y1 = max(clipped_y0, min(quad_y1, clip_rect.w));  // Ensure y1 >= y0
+    
+    // Calculate how much was clipped from left/top
+    let left_clip = clipped_x0 - quad_x0;
+    let top_clip = clipped_y0 - quad_y0;
+    
+    // Calculate clipped dimensions (guaranteed to be non-negative)
+    let clipped_dim = vec2f(clipped_x1 - clipped_x0, clipped_y1 - clipped_y0);
+    
+    // Adjust UV coordinates for clipped area
+    let uv_origin = split(input.uv_origin);
+    let adjusted_uv_origin = uv_origin + vec2f(left_clip, top_clip);
     let atlas_size = vec2f(textureDimensions(mask_atlas_texture));
-    vert_output.uv = (split(input.uv_origin) + dim * coords) / atlas_size;
+    vert_output.uv = (adjusted_uv_origin + clipped_dim * coords) / atlas_size;
 
-    var pos = vec2f(input.pos) + dim * coords;
+    // Use clipped position and dimensions
+    let clipped_pos = vec2f(clipped_x0, clipped_y0) + clipped_dim * coords;
     
     vert_output.position = vec4f(
-        2.0 * (pos / params.screen_resolution) - 1.0,
+        2.0 * (clipped_pos / params.screen_resolution) - 1.0,
         input.depth,
         1.0,
     );
@@ -89,8 +116,8 @@ fn vs_main(input: VertexInput) -> VertexOutput {
 
     vert_output.flags = input.flags;
     vert_output.quad_pos = coords;
-    vert_output.quad_size = dim;
-    vert_output.clip_rect = vec4<f32>(input.clip_rect);
+    vert_output.quad_size = clipped_dim;
+    vert_output.clip_rect = clip_rect;
 
     return vert_output;
 }
@@ -123,13 +150,6 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     let content_type = get_content_type(input.flags);
     let fade_edges = get_fade_edges(input.flags);
     var fade_alpha = calculate_fade_alpha(input.quad_pos, fade_edges, input.quad_size);
-    
-    // Check if pixel is within clipping rectangle
-    let frag_coord = input.position.xy;
-    if frag_coord.x < input.clip_rect.x || frag_coord.x > input.clip_rect.z ||
-       frag_coord.y < input.clip_rect.y || frag_coord.y > input.clip_rect.w {
-        discard;
-    }
     
     if content_type == 1 {
         var color = textureSampleLevel(mask_atlas_texture, atlas_sampler, input.uv, 0.0);
