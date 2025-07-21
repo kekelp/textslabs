@@ -191,7 +191,8 @@ impl ContextlessTextRenderer {
             gpu: Some(GpuAtlasPage {
                 texture: mask_texture,
                 bind_group: mask_bind_group,
-            })
+            }),
+            quad_count_before_render: 0,
         }];
 
         let color_texture = device.create_texture(&TextureDescriptor {
@@ -233,7 +234,8 @@ impl ContextlessTextRenderer {
             gpu: Some(GpuAtlasPage {
                 texture: color_texture,
                 bind_group: color_bind_group,
-            })
+            }),
+            quad_count_before_render: 0,
         }];
 
         let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {

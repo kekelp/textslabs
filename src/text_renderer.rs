@@ -9,6 +9,7 @@ fn pack_flags(content_type: u32, fade_edges: u32) -> u32 {
     ((fade_edges & 0x0F) << FLAG_FADE_EDGES_SHIFT)
 }
 
+
 /// A struct for rendering text and text edit boxes on the GPU.
 /// 
 /// Uses traditional CPU-size rasterizing and a dynamic glyph atlas on the GPU.
@@ -55,6 +56,8 @@ pub(crate) struct AtlasPage<ImageType> {
     pub(crate) packer: BucketedAtlasAllocator,
     pub(crate) image: ImageType,
     pub gpu: Option<GpuAtlasPage>,
+    /// Quad count before the current render operation (for tracking ranges)
+    pub(crate) quad_count_before_render: u32,
 }
 
 pub(crate) struct GpuAtlasPage {
@@ -361,8 +364,15 @@ impl TextRenderer {
         let content_left = left - text_box.scroll_offset().0;
         let content_top = top - text_box.scroll_offset().1;
 
+        // Capture quad counts before rendering
+        self.capture_quad_ranges_before();
+
         self.text_renderer.prepare_layout(&text_box.inner.layout, &mut self.scale_cx, content_left, content_top, clip_rect, fade);
         self.text_renderer.needs_gpu_sync = true;
+        
+        // Update quad storage with new ranges
+        let scroll_offset = text_box.scroll_offset();
+        self.capture_quad_ranges_after(&mut text_box.inner.quad_storage, scroll_offset);
     }
 
     pub fn prepare_text_edit_layout(&mut self, text_edit: &mut TextEdit) {
@@ -380,8 +390,15 @@ impl TextRenderer {
         let content_left = left - text_edit.scroll_offset().0;
         let content_top = top - text_edit.scroll_offset().1;
 
+        // Capture quad counts before rendering
+        self.capture_quad_ranges_before();
+
         self.text_renderer.prepare_layout(&text_edit.text_box.inner.layout, &mut self.scale_cx, content_left, content_top, clip_rect, fade);
         self.text_renderer.needs_gpu_sync = true;
+        
+        // Update quad storage with new ranges
+        let scroll_offset = text_edit.scroll_offset();
+        self.capture_quad_ranges_after(&mut text_edit.text_box.inner.quad_storage, scroll_offset);
     }
 
     pub fn prepare_text_box_decorations(&mut self, text_box: &TextBox, editable: bool) {
@@ -453,6 +470,57 @@ impl TextRenderer {
         if self.text_renderer.mask_atlas_pages[0].quads.is_empty() { return }
         
         self.text_renderer.render(pass);
+    }
+    
+    /// Capture quad counts before text rendering
+    fn capture_quad_ranges_before(&mut self) {
+        // Store current quad counts in each atlas page
+        for page in &mut self.text_renderer.mask_atlas_pages {
+            page.quad_count_before_render = page.quads.len() as u32;
+        }
+        
+        for page in &mut self.text_renderer.color_atlas_pages {
+            page.quad_count_before_render = page.quads.len() as u32;
+        }
+    }
+    
+    /// Capture quad ranges after text rendering and populate QuadStorage
+    fn capture_quad_ranges_after(&mut self, quad_storage: &mut QuadStorage, current_offset: (f32, f32)) {
+        // Clear existing ranges and update offset
+        quad_storage.pages.clear();
+        quad_storage.last_offset = current_offset;
+        
+        // Process mask pages
+        for (page_idx, page) in self.text_renderer.mask_atlas_pages.iter().enumerate() {
+            let start_count = page.quad_count_before_render;
+            let end_count = page.quads.len() as u32;
+            
+            if end_count > start_count {
+                // New quads were added to this page
+                quad_storage.pages.push(QuadPageRange {
+                    page_type: AtlasPageType::Mask,
+                    page_index: page_idx as u16,
+                    quad_start: start_count,
+                    quad_end: end_count,
+                });
+            }
+        }
+        
+        // Process color pages  
+        for (page_idx, page) in self.text_renderer.color_atlas_pages.iter().enumerate() {
+            let start_count = page.quad_count_before_render;
+            let end_count = page.quads.len() as u32;
+            
+            if end_count > start_count {
+                // New quads were added to this page
+                quad_storage.pages.push(QuadPageRange {
+                    page_type: AtlasPageType::Color,
+                    page_index: page_idx as u16,
+                    quad_start: start_count,
+                    quad_end: end_count,
+                });
+            }
+        }
     }
 }
 
@@ -826,6 +894,7 @@ impl ContextlessTextRenderer {
                     packer: BucketedAtlasAllocator::new(size2(atlas_size as i32, atlas_size as i32)),
                     quads: Vec::<Quad>::with_capacity(300),
                     gpu: None, // will be created later
+                    quad_count_before_render: 0,
                 });
                 return self.mask_atlas_pages.len() - 1;
             },
@@ -835,6 +904,7 @@ impl ContextlessTextRenderer {
                     packer: BucketedAtlasAllocator::new(size2(atlas_size as i32, atlas_size as i32)),
                     quads: Vec::<Quad>::with_capacity(300),
                     gpu: None, // will be created later
+                    quad_count_before_render: 0,
                 });
                 return self.color_atlas_pages.len() - 1;
             },
