@@ -32,6 +32,8 @@ pub struct Text {
     pub(crate) text_changed: bool,
     pub(crate) using_frame_based_visibility: bool,
     pub(crate) decorations_changed: bool,
+    
+    pub(crate) scrolled_moved_indices: Vec<AnyBox>,
 
     pub(crate) current_frame: u64,
 }
@@ -185,6 +187,7 @@ impl Text {
             mouse_hit_stack: Vec::with_capacity(6),
             text_changed: true,
             decorations_changed: true,
+            scrolled_moved_indices: Vec::new(),
             current_frame: 1,
             using_frame_based_visibility: false,
         }
@@ -432,39 +435,17 @@ impl Text {
 
             }
         }
-
+        
+        dbg!(self.text_changed);
+        
         if self.text_changed {
             text_renderer.clear();
-        } else if self.decorations_changed {
+        } else if self.decorations_changed || !self.scrolled_moved_indices.is_empty() {
             text_renderer.clear_decorations_only();
         }
 
-        let current_frame = self.current_frame;
-        if self.text_changed {
-            // todo: figure out some other way to cheat partial borrowing
-
-            for i in 0..self.text_edits.capacity() {
-                if self.text_edits.contains(i) {
-                    let handle = TextEditHandle { i: i as u32 };
-                    let mut text_edit = self.get_full_text_edit(&handle);
-                    if !text_edit.hidden() && text_edit.text_box.inner.last_frame_touched == current_frame {
-                        text_renderer.prepare_text_edit_layout(&mut text_edit);
-                    }
-                }
-            }
-
-            for i in 0..self.text_boxes.capacity() {
-                if self.text_boxes.contains(i) {
-                    let handle = TextBoxHandle { i: i as u32 };
-                    let mut text_edit = self.get_full_text_box(&handle);
-                    if !text_edit.hidden() && text_edit.inner.last_frame_touched == current_frame {
-                        text_renderer.prepare_text_box_layout(&mut text_edit);
-                    }
-                }
-            }
-        }
-
-        if self.decorations_changed || self.text_changed {
+        // decorations
+        if self.decorations_changed || self.text_changed  || !self.scrolled_moved_indices.is_empty(){
             if let Some(focused) = self.focused {
                 match focused {
                     AnyBox::TextEdit(i) => {
@@ -481,10 +462,64 @@ impl Text {
             }
         }
 
+        // if only scrolling or movement occurred, move quads in-place
+        if !self.text_changed {
+            if !self.scrolled_moved_indices.is_empty() {
+                println!("{:?} Scroll only", std::time::SystemTime::now());
+                self.handle_scroll_fast_path(text_renderer);
+            }
+
+        } else {
+            let current_frame = self.current_frame;
+            if self.text_changed {
+                println!("{:?} Full text prepare", std::time::SystemTime::now());
+
+                // todo: figure out some other way to cheat partial borrowing
+                for i in 0..self.text_edits.capacity() {
+                    if self.text_edits.contains(i) {
+                        let handle = TextEditHandle { i: i as u32 };
+                        let mut text_edit = self.get_full_text_edit(&handle);
+                        if !text_edit.hidden() && text_edit.text_box.inner.last_frame_touched == current_frame {
+                            text_renderer.prepare_text_edit_layout(&mut text_edit);
+                        }
+                    }
+                }
+
+                for i in 0..self.text_boxes.capacity() {
+                    if self.text_boxes.contains(i) {
+                        let handle = TextBoxHandle { i: i as u32 };
+                        let mut text_edit = self.get_full_text_box(&handle);
+                        if !text_edit.hidden() && text_edit.inner.last_frame_touched == current_frame {
+                            text_renderer.prepare_text_box_layout(&mut text_edit);
+                        }
+                    }
+                }
+            }
+        }
+
         self.text_changed = false;
         self.decorations_changed = false;
+        self.scrolled_moved_indices.clear();
 
         self.using_frame_based_visibility = false;
+    }
+
+    /// Fast path for handling scroll-only changes by moving quads in-place
+    fn handle_scroll_fast_path(&mut self, text_renderer: &mut TextRenderer) {
+        for any_box in &self.scrolled_moved_indices {
+            match any_box {
+                AnyBox::TextEdit(i) => {
+                    if let Some((_text_edit_inner, text_box_inner)) = self.text_edits.get_mut(*i as usize) {
+                        move_quads_for_scroll(text_renderer, &mut text_box_inner.quad_storage, text_box_inner.scroll_offset);
+                    }
+                },
+                AnyBox::TextBox(i) => {
+                    if let Some(text_box_inner) = self.text_boxes.get_mut(*i as usize) {
+                        move_quads_for_scroll(text_renderer, &mut text_box_inner.quad_storage, text_box_inner.scroll_offset);
+                    }
+                },
+            }
+        }
     }
 
     /// Handle window events for text widgets.
@@ -666,11 +701,9 @@ impl Text {
                     let mut text_edit = get_full_text_edit_free(&mut self.text_edits, &mut self.styles, &handle);
 
                     let result = text_edit.handle_scroll_event(event, window, &self.input_state);
-                    if result.text_changed {
-                        self.text_changed = true;
-                    }
-                    if result.decorations_changed {
+                    if result {
                         self.decorations_changed = true;
+                        self.scrolled_moved_indices.push(AnyBox::TextEdit(i));
                     }
                 },
                 AnyBox::TextBox(_) => {}
@@ -691,6 +724,9 @@ impl Text {
                 if result.decorations_changed {
                     self.decorations_changed = true;
                 }
+                if !result.text_changed && result.scrolled {
+                    self.scrolled_moved_indices.push(AnyBox::TextEdit(i));
+                }
             },
             AnyBox::TextBox(i) => {
                 let handle = TextBoxHandle { i: i as u32 };
@@ -702,6 +738,9 @@ impl Text {
                 }
                 if result.decorations_changed {
                     self.decorations_changed = true;
+                }
+                if !result.text_changed && result.scrolled {
+                    self.scrolled_moved_indices.push(AnyBox::TextBox(i));
                 }
             },
         }
@@ -777,10 +816,6 @@ impl Text {
             }
         }
         
-        if needs_redraw {
-            self.text_changed = true;
-        }
-        
         needs_redraw
     }
 }
@@ -804,4 +839,43 @@ pub(crate) fn get_full_text_edit_free<'a>(
     let (text_edit_inner, text_box_inner) = text_edits.get_mut(i.i as usize).unwrap();
     let text_box = TextBox { inner: text_box_inner, styles };
     TextEdit { inner: text_edit_inner, styles, text_box }
+}
+
+/// Move quads in atlas pages to reflect new scroll position
+fn move_quads_for_scroll(text_renderer: &mut TextRenderer, quad_storage: &mut QuadStorage, current_offset: (f32, f32)) {
+    let delta_x = current_offset.0 - quad_storage.last_offset.0;
+    let delta_y = current_offset.1 - quad_storage.last_offset.1;
+    
+    if delta_x.abs() < 0.1 && delta_y.abs() < 0.1 {
+        return; // No significant movement
+    }
+
+    // Move quads across all atlas pages
+    for page_range in &quad_storage.pages {
+        match page_range.page_type {
+            AtlasPageType::Mask => {
+                if let Some(page) = text_renderer.text_renderer.mask_atlas_pages.get_mut(page_range.page_index as usize) {
+                    for quad_index in page_range.quad_start..page_range.quad_end {
+                        if let Some(quad) = page.quads.get_mut(quad_index as usize) {
+                            quad.pos[0] = (quad.pos[0] as f32 - delta_x) as i32;
+                            quad.pos[1] = (quad.pos[1] as f32 - delta_y) as i32;
+                        }
+                    }
+                }
+            },
+            AtlasPageType::Color => {
+                if let Some(page) = text_renderer.text_renderer.color_atlas_pages.get_mut(page_range.page_index as usize) {
+                    for quad_index in page_range.quad_start..page_range.quad_end {
+                        if let Some(quad) = page.quads.get_mut(quad_index as usize) {
+                            quad.pos[0] = (quad.pos[0] as f32 - delta_x) as i32;
+                            quad.pos[1] = (quad.pos[1] as f32 - delta_y) as i32;
+                        }
+                    }
+                }
+            },
+        }
+    }
+
+    // Update stored offset
+    quad_storage.last_offset = current_offset;
 }

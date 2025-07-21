@@ -50,6 +50,8 @@ pub struct TextEventResult {
     pub text_changed: bool,
     /// Whether visual decorations (selection, cursor position, etc.) changed
     pub decorations_changed: bool,
+    /// Whether only scrolling occurred (no content changes)
+    pub scrolled: bool,
 }
 
 impl TextEventResult {
@@ -57,6 +59,7 @@ impl TextEventResult {
         Self {
             text_changed: false,
             decorations_changed: false,
+            scrolled: false,
         }
     }
 }
@@ -306,7 +309,6 @@ impl<'a> TextEdit<'a> {
         
         let mut result = TextEventResult::nothing();
         let mut scroll_to_cursor = false;
-        let mut manually_scrolled = false;
 
         let showing_placeholder = self.inner.showing_placeholder;
         if ! self.inner.showing_placeholder {
@@ -545,16 +547,9 @@ impl<'a> TextEdit<'a> {
         if scroll_to_cursor || result.text_changed  {
             let did_scroll = self.update_scroll_to_cursor();
             if did_scroll {
-                result.text_changed = true;
+                result.scrolled = true;
             }
         }
-
-        if manually_scrolled {
-            result.text_changed = true;
-            result.decorations_changed = true;
-        }
-
-
 
         return result;
     }
@@ -1474,9 +1469,8 @@ impl<'a> TextEdit<'a> {
     }
 
     /// Handle scroll wheel events specifically (called for hovered text edits)
-    pub(crate) fn handle_scroll_event(&mut self, event: &WindowEvent, _window: &Window, _input_state: &TextInputState) -> TextEventResult {
-        let mut result = TextEventResult::nothing();
-        let mut manually_scrolled = false;
+    pub(crate) fn handle_scroll_event(&mut self, event: &WindowEvent, _window: &Window, _input_state: &TextInputState) -> bool {
+        let mut did_scroll = false;
 
         if let WindowEvent::MouseWheel { delta, .. } = event {
             if self.inner.single_line {
@@ -1490,7 +1484,7 @@ impl<'a> TextEdit<'a> {
                     let new_scroll = old_scroll - scroll_amount;
                     
                     if self.apply_horizontal_scroll(new_scroll) {
-                        manually_scrolled = true;
+                        did_scroll = true;
                     }
                 }
             } else {
@@ -1524,16 +1518,12 @@ impl<'a> TextEdit<'a> {
                         } else {
                             self.text_box.inner.scroll_offset.1 = clamped_target;
                         }
-                        manually_scrolled = true;
+                        did_scroll = true;
                     }
                 }
             }
         }
 
-        if manually_scrolled {
-            result.text_changed = true;
-        }
-
-        result
+        did_scroll
     }
 }

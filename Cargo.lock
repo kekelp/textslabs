@@ -1702,6 +1702,7 @@ dependencies = [
  "pollster",
  "rustc-hash 2.1.1",
  "slab",
+ "smallvec",
  "swash",
  "wgpu",
  "winit",

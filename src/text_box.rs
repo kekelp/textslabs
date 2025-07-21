@@ -10,8 +10,34 @@ use parley::{Affinity, Alignment, Selection};
 
 use crate::*;
 use slab::Slab;
+use smallvec::SmallVec;
 
 const X_TOLERANCE: f64 = 35.0;
+
+/// Atlas page type discriminator
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum AtlasPageType {
+    Mask = 0,
+    Color = 1,
+}
+
+/// Represents a range of quads within a specific atlas page
+#[derive(Debug, Clone)]
+pub(crate) struct QuadPageRange {
+    pub page_type: AtlasPageType,
+    pub page_index: u16,        // Atlas pages rarely exceed 65k
+    pub quad_start: u32,        // Quad indices in a single page
+    pub quad_end: u32,
+}
+
+/// Tracks the location of quads for a text element to enable fast movement
+#[derive(Debug, Clone, Default)]
+pub(crate) struct QuadStorage {
+    /// Atlas page ranges - inline storage for 1-2 ranges (covers most cases)
+    pub pages: SmallVec<[QuadPageRange; 2]>,
+    /// The scroll offset used when this quad data was generated
+    pub last_offset: (f32, f32),
+}
 
 pub(crate) struct TextContext {
     layout_cx: LayoutContext<ColorBrush>,
@@ -71,6 +97,9 @@ pub(crate) struct TextBoxInner {
     pub(crate) hidden: bool,
     pub(crate) last_frame_touched: u64,
     pub(crate) can_hide: bool,
+    
+    /// Tracks quad storage for fast scrolling
+    pub(crate) quad_storage: QuadStorage,
 }
 
 /// A struct that refers to a text box stored inside a [`Text`] struct.
@@ -134,6 +163,7 @@ impl TextBoxInner {
             hidden: false,
             last_frame_touched: 0,
             can_hide: false,
+            quad_storage: QuadStorage::default(),
         }
     }
 
@@ -205,7 +235,7 @@ impl<'a> TextBox<'a> {
                         
                         if (new_scroll - old_scroll).abs() > 0.1 {
                             self.inner.scroll_offset.1 = new_scroll;
-                            result.text_changed = true;
+                            result.scrolled = true;
                         }
                     }
                 }
