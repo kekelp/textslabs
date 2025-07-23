@@ -246,7 +246,7 @@ impl ContextlessTextRenderer {
         });
 
         let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
-            label: Some("parley2 pipeline"),
+            label: Some("textslabs pipeline"),
             layout: Some(&pipeline_layout),
             vertex: VertexState {
                 module: &shader,

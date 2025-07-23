@@ -1,4 +1,4 @@
-use parley2::*;
+use textslabs::*;
 use std::sync::Arc;
 use parley::*;
 use wgpu::*;

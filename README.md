@@ -1,11 +1,11 @@
 [![Apache 2.0 or MIT license.](https://img.shields.io/badge/license-Apache--2.0_OR_MIT-blue.svg)](#license)
-[![Documentation for the `main` branch](https://img.shields.io/badge/docs-main-informational)](https://kekelp.github.io/parley2/parley2/index.html)
+[![Documentation for the `main` branch](https://img.shields.io/badge/docs-main-informational)](https://kekelp.github.io/textslabs/textslabs/index.html)
 
-Parley2 is an experimental high level text library based on Parley.
+Textslabs is an experimental high level text library based on Parley.
 
 The goal is to allow any winit/wgpu program to have full-featured text and text editing with minimal integration effort.
 
-See the `basic.rs` example to see how the library can be used, or the [docs for the main branch](https://kekelp.github.io/parley2/parley2/index.html) for more information.
+See the `basic.rs` example to see how the library can be used, or the [docs for the main branch](https://kekelp.github.io/textslabs/textslabs/index.html) for more information.
 
 
 ## License

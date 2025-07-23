@@ -1,7 +1,7 @@
 /// Declarative pattern example showing 5x5 grid with different visibility patterns.
 
 use parley::TextStyle;
-use parley2::*;
+use textslabs::*;
 use std::{collections::HashMap, sync::Arc, time::Duration};
 use wgpu::*;
 use winit::{
@@ -301,7 +301,7 @@ impl winit::application::ApplicationHandler for Application {
         let (width, height) = (800, 600);
         let window_attributes = Window::default_attributes()
             .with_inner_size(LogicalSize::new(width as f64, height as f64))
-            .with_title("Parley2 Declarative Grid Demo");
+            .with_title("Declarative");
         let window = Arc::new(event_loop.create_window(window_attributes).unwrap());
         
         self.state = Some(State::new(window.clone()));

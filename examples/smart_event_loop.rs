@@ -12,7 +12,7 @@
 // The text struct will spawn a thread that will wake up the event loop when needed.
 
 
-use parley2::*;
+use textslabs::*;
 use std::sync::Arc;
 use wgpu::*;
 use winit::{
