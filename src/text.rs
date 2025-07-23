@@ -527,8 +527,8 @@ impl Text {
             match any_box {
                 AnyBox::TextEdit(i) => {
                     if let Some((text_edit_inner, _text_box_inner)) = self.text_edits.get(*i as usize) {
-                        // Keep in list if animation is still running
-                        text_edit_inner.scroll_animation.is_some()
+                        // Keep in list if any animation is still running
+                        text_edit_inner.scroll_animation.is_some() || text_edit_inner.horizontal_scroll_animation.is_some()
                     } else {
                         false // Remove if text edit no longer exists
                     }
@@ -821,7 +821,20 @@ impl Text {
         let mut needs_redraw = false;
         
         for (_index, (text_edit_inner, text_box_inner)) in self.text_edits.iter_mut() {
-            if !text_edit_inner.single_line {
+            if text_edit_inner.single_line {
+                // Handle horizontal scroll animation for single-line text boxes
+                if let Some(animation) = &text_edit_inner.horizontal_scroll_animation {
+                    let current_offset = animation.get_current_offset();
+                    text_box_inner.scroll_offset.0 = current_offset;
+
+                    if animation.is_finished() {
+                        text_edit_inner.horizontal_scroll_animation = None;
+                    }
+                    
+                    needs_redraw = true;
+                }
+            } else {
+                // Handle vertical scroll animation for multi-line text boxes
                 if let Some(animation) = &text_edit_inner.scroll_animation {
                     let current_offset = animation.get_current_offset();
                     text_box_inner.scroll_offset.1 = current_offset;

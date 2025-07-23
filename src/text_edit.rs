@@ -141,6 +141,7 @@ pub(crate) struct TextEditInner {
     pub(crate) showing_placeholder: bool,
     pub(crate) placeholder_text: Option<Cow<'static, str>>,
     pub(crate) scroll_animation: Option<ScrollAnimation>,
+    pub(crate) horizontal_scroll_animation: Option<ScrollAnimation>,
 }
 
 #[derive(Debug, Clone)]
@@ -167,6 +168,7 @@ impl TextEditInner {
             showing_placeholder: false,
             placeholder_text: None,
             scroll_animation: None,
+            horizontal_scroll_animation: None,
         };
         (text_edit, text_box)
     }
@@ -1232,25 +1234,38 @@ impl<'a> TextEdit<'a> {
         self.text_box.scroll_offset()
     }
 
-    /// Update smooth scrolling animation. Call this every frame for non-single line text edits.
+    /// Update smooth scrolling animation. Call this every frame for both single and multi-line text edits.
     /// Returns true if the text edit needs to be redrawn due to animation updates.
     pub fn update_smooth_scrolling(&mut self) -> bool {
+        let mut needs_redraw = false;
+
         if self.inner.single_line {
-            return false;
-        }
+            // Handle horizontal scroll animation for single-line text boxes
+            if let Some(animation) = &self.inner.horizontal_scroll_animation {
+                let current_offset = animation.get_current_offset();
+                self.text_box.inner.scroll_offset.0 = current_offset;
 
-        if let Some(animation) = &self.inner.scroll_animation {
-            let current_offset = animation.get_current_offset();
-            self.text_box.inner.scroll_offset.1 = current_offset;
-
-            if animation.is_finished() {
-                self.inner.scroll_animation = None;
+                if animation.is_finished() {
+                    self.inner.horizontal_scroll_animation = None;
+                }
+                
+                needs_redraw = true;
             }
-            
-            true // Animation updated, redraw needed
         } else {
-            false // No animation running
+            // Handle vertical scroll animation for multi-line text boxes
+            if let Some(animation) = &self.inner.scroll_animation {
+                let current_offset = animation.get_current_offset();
+                self.text_box.inner.scroll_offset.1 = current_offset;
+
+                if animation.is_finished() {
+                    self.inner.scroll_animation = None;
+                }
+                
+                needs_redraw = true;
+            }
         }
+
+        needs_redraw
     }
     
     pub fn selection(&self) -> Selection {
@@ -1468,62 +1483,102 @@ impl<'a> TextEdit<'a> {
         return &self.text_box;
     }
 
-    /// Handle scroll wheel events specifically (called for hovered text edits)
-    pub(crate) fn handle_scroll_event(&mut self, event: &WindowEvent, _window: &Window, _input_state: &TextInputState) -> bool {
+    pub(crate) fn handle_scroll_event(&mut self, event: &WindowEvent, _window: &Window, input_state: &TextInputState) -> bool {
         let mut did_scroll = false;
 
         if let WindowEvent::MouseWheel { delta, .. } = event {
+            let shift_held = input_state.modifiers.state().shift_key();
+            
             if self.inner.single_line {
+                // Single-line horizontal scrolling - exactly like vertical but for horizontal
                 let scroll_amount = match delta {
-                    winit::event::MouseScrollDelta::LineDelta(x, _y) => x * 30.0,
-                    winit::event::MouseScrollDelta::PixelDelta(pos) => pos.x as f32,
+                    winit::event::MouseScrollDelta::LineDelta(x, y) => {
+                        if shift_held {
+                            y * 120.0  // Convert vertical scroll to horizontal when shift is held
+                        } else {
+                            x * 120.0  // Normal horizontal scroll (same scale as vertical)
+                        }
+                    },
+                    winit::event::MouseScrollDelta::PixelDelta(pos) => {
+                        if shift_held {
+                            pos.y as f32  // Convert vertical to horizontal when shift is held
+                        } else {
+                            pos.x as f32  // Normal horizontal scroll
+                        }
+                    },
                 };
                 
                 if scroll_amount != 0.0 {
-                    let old_scroll = self.text_box.inner.scroll_offset.0;
-                    let new_scroll = old_scroll - scroll_amount;
+                    let current_scroll = self.text_box.inner.scroll_offset.0;
+                    let target_scroll = current_scroll - scroll_amount;
                     
-                    if self.apply_horizontal_scroll(new_scroll) {
+                    let total_text_width = self.text_box.inner.layout.full_width();
+                    let text_width = self.text_box.inner.max_advance;
+                    let max_scroll = (total_text_width - text_width).max(0.0).round() + CURSOR_WIDTH;
+                    let clamped_target = target_scroll.clamp(0.0, max_scroll).round();
+                    
+                    if (clamped_target - current_scroll).abs() > 0.1 {
+                        if should_use_animation(delta, shift_held) {
+                            let animation_duration = Duration::from_millis(200);
+                            self.inner.horizontal_scroll_animation = Some(ScrollAnimation::new(
+                                current_scroll,
+                                clamped_target,
+                                animation_duration,
+                            ));
+                        } else {
+                            self.text_box.inner.scroll_offset.0 = clamped_target;
+                        }
                         did_scroll = true;
                     }
                 }
             } else {
+                // Multi-line vertical scrolling
                 let scroll_amount = match delta {
                     winit::event::MouseScrollDelta::LineDelta(_x, y) => y * 120.0,
                     winit::event::MouseScrollDelta::PixelDelta(pos) => pos.y as f32,
                 };
                 
-                let current_scroll = self.text_box.inner.scroll_offset.1;
-                let target_scroll = current_scroll - scroll_amount;
-                
-                let total_text_height = self.text_box.inner.layout.height();
-                let text_height = self.text_box.inner.height;
-                let max_scroll = (total_text_height - text_height).max(0.0).round();
-                let clamped_target = target_scroll.clamp(0.0, max_scroll).round();
-                
-                if (clamped_target - current_scroll).abs() > 0.1 {
-                    let use_animation = match delta {
-                        // can't find a good way to tell apart touchpad and mouse wheel. They both show up as LineDelta.
-                        winit::event::MouseScrollDelta::LineDelta(_x, y) => y.abs().fract() == 0.0,
-                        winit::event::MouseScrollDelta::PixelDelta(_) => false,
-                    };
+                if scroll_amount != 0.0 {
+                    let current_scroll = self.text_box.inner.scroll_offset.1;
+                    let target_scroll = current_scroll - scroll_amount;
                     
-                    if use_animation {
-                        let animation_duration = Duration::from_millis(200);
-                        self.inner.scroll_animation = Some(ScrollAnimation::new(
-                            current_scroll,
-                            clamped_target,
-                            animation_duration,
-                        ));
-                    } else {
-                        self.text_box.inner.scroll_offset.1 = clamped_target;
+                    let total_text_height = self.text_box.inner.layout.height();
+                    let text_height = self.text_box.inner.height;
+                    let max_scroll = (total_text_height - text_height).max(0.0).round();
+                    let clamped_target = target_scroll.clamp(0.0, max_scroll).round();
+                    
+                    if (clamped_target - current_scroll).abs() > 0.1 {
+                        if should_use_animation(delta, true) {
+                            let animation_duration = Duration::from_millis(200);
+                            self.inner.scroll_animation = Some(ScrollAnimation::new(
+                                current_scroll,
+                                clamped_target,
+                                animation_duration,
+                            ));
+                        } else {
+                            self.text_box.inner.scroll_offset.1 = clamped_target;
+                        }
+                        did_scroll = true;
                     }
-                    did_scroll = true;
                 }
-                
             }
         }
 
         did_scroll
+    }
+}
+
+/// Determine if animation should be used based on delta type and which component is being used
+fn should_use_animation(delta: &winit::event::MouseScrollDelta, vertical: bool) -> bool {
+    match delta {
+        // can't find a good way to tell apart touchpad and mouse wheel. They both show up as LineDelta.
+        winit::event::MouseScrollDelta::LineDelta(x, y) => {
+            if vertical {
+                y.abs().fract() == 0.0
+            } else {
+                x.abs().fract() == 0.0
+            }
+        },
+        winit::event::MouseScrollDelta::PixelDelta(_) => false,
     }
 }
