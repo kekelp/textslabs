@@ -1,6 +1,6 @@
 use crate::*;
 use slab::Slab;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use winit::{event::{Modifiers, MouseButton, WindowEvent}, window::Window};
 
 const MULTICLICK_DELAY: f64 = 0.4;
@@ -545,11 +545,14 @@ impl Text {
     /// For complex z-ordering, use [`Text::find_topmost_text_box()`] and [`Text::handle_event_with_topmost()`], as described in the crate-level docs and shown in the `occlusion.rs` example.
     /// 
     /// Any events other than `winit::WindowEvent::MouseInput` can use either this method or the occlusion method interchangeably.
-    pub fn handle_event(&mut self, event: &WindowEvent, window: &Window) {
+    pub fn handle_event(&mut self, event: &WindowEvent, window: &Window) -> EventResult {
+        let mut result = EventResult { consumed: false, need_rerender: false };
+        
         self.input_state.handle_event(event);
 
         if let WindowEvent::Resized(_) = event {
             self.text_changed = true;
+            result.need_rerender = true;
         }
 
         // update smooth scrolling animations
@@ -557,12 +560,21 @@ impl Text {
             let animation_updated = self.update_smooth_scrolling();
             if animation_updated {
                 window.request_redraw();
+                result.need_rerender = true;
+            }
+            // If animations are still running, we need to keep rerendering
+            if self.get_max_animation_duration().is_some() {
+                result.need_rerender = true;
             }
         }
 
         if let WindowEvent::MouseInput { state, button, .. } = event {
             if state.is_pressed() && *button == MouseButton::Left {
                 let new_focus = self.find_topmost_at_pos(self.input_state.mouse.cursor_pos);
+                if new_focus.is_some() {
+                    result.consumed = true;
+                    result.need_rerender = true;
+                }
                 self.refocus(new_focus);
                 self.handle_click_counting();
             }
@@ -571,14 +583,18 @@ impl Text {
         if let WindowEvent::MouseWheel { .. } = event {
             let hovered = self.find_topmost_at_pos(self.input_state.mouse.cursor_pos);
             if let Some(hovered_widget) = hovered {
-                self.handle_hovered_event(hovered_widget, event, window);
+                result.consumed = true;
+                self.handle_hovered_event(hovered_widget, event, window, &mut result);
             }
-            return;
+            return result;
         }
 
         if let Some(focused) = self.focused {
-            self.handle_focused_event(focused, event, window);
+            result.consumed = true;
+            self.handle_focused_event(focused, event, window, &mut result);
         }
+        
+        result
     }
 
     /// Find the topmost text box that would receive mouse events, if it wasn't occluded by any non-text-box objects.
@@ -612,7 +628,9 @@ impl Text {
     /// Pass `Some(text_box_id)` if a text box should receive the event, or `None` if it's occluded.
     /// 
     /// If the text box is occluded, this function should still be called with `None`, so that text boxes can defocus.
-    pub fn handle_event_with_topmost(&mut self, event: &WindowEvent, window: &Window, topmost_text_box: Option<AnyBox>) {
+    pub fn handle_event_with_topmost(&mut self, event: &WindowEvent, window: &Window, topmost_text_box: Option<AnyBox>) -> EventResult {
+        let mut result = EventResult { consumed: false, need_rerender: false };
+        
         self.input_state.handle_event(event);
 
         // update smooth scrolling animations
@@ -620,11 +638,20 @@ impl Text {
             let animation_updated = self.update_smooth_scrolling();
             if animation_updated {
                 window.request_redraw();
+                result.need_rerender = true;
+            }
+            // If animations are still running, we need to keep rerendering
+            if self.get_max_animation_duration().is_some() {
+                result.need_rerender = true;
             }
         }
 
         if let WindowEvent::MouseInput { state, button, .. } = event {
             if state.is_pressed() && *button == MouseButton::Left {
+                if topmost_text_box.is_some() {
+                    result.consumed = true;
+                    result.need_rerender = true;
+                }
                 self.refocus(topmost_text_box);
                 self.handle_click_counting();
             }
@@ -632,13 +659,17 @@ impl Text {
 
         if let WindowEvent::MouseWheel { .. } = event {
             if let Some(hovered_widget) = topmost_text_box {
-                self.handle_hovered_event(hovered_widget, event, window);
+                result.consumed = true;
+                self.handle_hovered_event(hovered_widget, event, window, &mut result);
             }
         }
 
         if let Some(focused) = self.focused {
-            self.handle_focused_event(focused, event, window);
+            result.consumed = true;
+            self.handle_focused_event(focused, event, window, &mut result);
         }
+        
+        result
     }
 
     fn find_topmost_at_pos(&mut self, cursor_pos: (f64, f64)) -> Option<AnyBox> {
@@ -725,14 +756,15 @@ impl Text {
         }
     }
     
-    fn handle_hovered_event(&mut self, hovered: AnyBox, event: &WindowEvent, window: &Window) {
+    fn handle_hovered_event(&mut self, hovered: AnyBox, event: &WindowEvent, window: &Window, result: &mut EventResult) {
         // scroll wheel event
         if let WindowEvent::MouseWheel { .. } = event {
             match hovered {
                 AnyBox::TextEdit(i) => {
                     let handle = TextEditHandle { i: i as u32 };
-                    let result = self.handle_text_edit_scroll_event(&handle, event, window);
-                    if result {
+                    let did_scroll = self.handle_text_edit_scroll_event(&handle, event, window);
+                    if did_scroll {
+                        result.need_rerender = true;
                         self.decorations_changed = true;
                         self.scrolled_moved_indices.push(AnyBox::TextEdit(i));
                     }
@@ -742,36 +774,42 @@ impl Text {
         }
     }
 
-    fn handle_focused_event(&mut self, focused: AnyBox, event: &WindowEvent, window: &Window) {
+    fn handle_focused_event(&mut self, focused: AnyBox, event: &WindowEvent, window: &Window, result: &mut EventResult) {
         match focused {
             AnyBox::TextEdit(i) => {
                 let handle = TextEditHandle { i: i as u32 };
                 let mut text_edit = get_full_text_edit_free(&mut self.text_edits, &mut self.styles, &handle);
 
-                let result = text_edit.handle_event(event, window, &self.input_state);
-                if result.text_changed {
+                let text_result = text_edit.handle_event(event, window, &self.input_state);
+                if text_result.text_changed {
                     self.text_changed = true;
+                    result.need_rerender = true;
                 }
-                if result.decorations_changed {
+                if text_result.decorations_changed {
                     self.decorations_changed = true;
+                    result.need_rerender = true;
                 }
-                if !result.text_changed && result.scrolled {
+                if !text_result.text_changed && text_result.scrolled {
                     self.scrolled_moved_indices.push(AnyBox::TextEdit(i));
+                    result.need_rerender = true;
                 }
             },
             AnyBox::TextBox(i) => {
                 let handle = TextBoxHandle { i: i as u32 };
                 let mut text_box = get_full_text_box_free(&mut self.text_boxes, &mut self.styles, &handle);
 
-                let result = text_box.handle_event(event, window, &self.input_state);
-                if result.text_changed {
+                let text_result = text_box.handle_event(event, window, &self.input_state);
+                if text_result.text_changed {
                     self.text_changed = true;
+                    result.need_rerender = true;
                 }
-                if result.decorations_changed {
+                if text_result.decorations_changed {
                     self.decorations_changed = true;
+                    result.need_rerender = true;
                 }
-                if !result.text_changed && result.scrolled {
+                if !text_result.text_changed && text_result.scrolled {
                     self.scrolled_moved_indices.push(AnyBox::TextBox(i));
+                    result.need_rerender = true;
                 }
             },
         }
@@ -842,6 +880,30 @@ impl Text {
         };
         
         self.scroll_animations.push(animation);
+    }
+
+    /// Get the maximum remaining animation duration, if any animations are running.
+    fn get_max_animation_duration(&self) -> Option<Duration> {
+        let now = Instant::now();
+        let mut max_remaining = Duration::ZERO;
+        let mut has_animations = false;
+        
+        for animation in &self.scroll_animations {
+            let elapsed = now.duration_since(animation.start_time);
+            if elapsed < animation.duration {
+                let remaining = animation.duration - elapsed;
+                if remaining > max_remaining {
+                    max_remaining = remaining;
+                }
+                has_animations = true;
+            }
+        }
+        
+        if has_animations {
+            Some(max_remaining)
+        } else {
+            None
+        }
     }
 
     /// Update smooth scrolling animations for all text edits automatically.
@@ -1022,4 +1084,13 @@ fn move_quads_for_scroll(text_renderer: &mut TextRenderer, quad_storage: &mut Qu
     // Update stored offset
     quad_storage.last_offset.0 += delta_x_rounded;
     quad_storage.last_offset.1 += delta_y_rounded;
+}
+
+/// Result of handling a window event, providing hints to the user about what actions they should take.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EventResult {
+    /// Whether the event was consumed by a text widget
+    pub consumed: bool,
+    /// Whether the user should rerender/redraw the UI
+    pub need_rerender: bool,
 }
