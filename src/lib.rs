@@ -30,7 +30,7 @@
 //! The main way to use the library is imperative with a handle-based system:
 //! 
 //! ```rust
-//! let mut text = Text::new();
+//! let mut text = Text::new(None, ());
 //! 
 //! // Add text boxes and get handles
 //! let handle = text.add_text_box("Hello", (10.0, 10.0), (200.0, 50.0), 0.0);

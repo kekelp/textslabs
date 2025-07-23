@@ -1,11 +1,12 @@
 use crate::*;
 use slab::Slab;
+use std::sync::mpsc;
+use std::thread;
 use std::time::{Duration, Instant};
-use winit::{event::{Modifiers, MouseButton, WindowEvent}, window::Window};
+use winit::{event::{Modifiers, MouseButton, WindowEvent}, event_loop::EventLoopProxy, window::Window};
 
 const MULTICLICK_DELAY: f64 = 0.4;
 const MULTICLICK_TOLERANCE_SQUARED: f64 = 26.0;
-
 
 #[derive(Debug)]
 pub(crate) struct StyleInner {
@@ -39,6 +40,8 @@ pub struct Text {
     pub(crate) current_frame: u64,
     pub(crate) cursor_blink_start: Option<Instant>,
     pub(crate) cursor_currently_blinked_out: bool,
+    
+    pub(crate) cursor_blink_timer: Option<CursorBlinkTimer>,
 }
 
 /// Handle for a text edit box.
@@ -171,7 +174,55 @@ pub(crate) const DEFAULT_STYLE_I: usize = 0;
 pub const DEFAULT_STYLE_HANDLE: StyleHandle = StyleHandle { i: DEFAULT_STYLE_I as u32 };
 
 impl Text {
-    pub fn new() -> Self {
+    /// Create a new Text instance.
+    /// 
+    /// `event_proxy` is used to allow `Text` to wake up the `winit` event loop when it needs to redraw a blinking cursor, but you will need to call `window.redraw_requested()` when receiving a custom event. See the `smart_event_loop.rs` example to see how to set this up.
+    /// 
+    /// In applications that don't pause their event loops, like games, there is no need to use the wakeup system, so you can use [`Text::new_without_blink_wakeup`] instead.
+    /// 
+    /// If you are using user events for other things, you can use [`Text::new_with_blink_wakeup`] to pass any `EventLoopProxy<T>`.
+    pub fn new(event_proxy: EventLoopProxy<()>) -> Self {
+        Self::new_with_blink_wakeup(event_proxy, ())
+    }
+    
+    /// Create a new Text instance with cursor blink wakeup.
+    /// 
+    /// `user_event` is the value that will be sent as a winit user event to signal that a cursor blink happened. When you receive it, simply call `window.redraw_requested()`. 
+    pub fn new_with_blink_wakeup<T: Send + Clone>(event_proxy: EventLoopProxy<T>, user_event: T) -> Self {
+        let mut styles = Slab::with_capacity(10);
+        let i = styles.insert(StyleInner {
+            text_style: original_default_style(),
+            text_edit_style: TextEditStyle::default(),
+            version: 0,
+        });
+        debug_assert!(i == DEFAULT_STYLE_I);
+
+        let cursor_blink_timer = Some(CursorBlinkTimer::new(event_proxy, user_event));
+
+        Self {
+            text_boxes: Slab::with_capacity(10),
+            text_edits: Slab::with_capacity(10),
+            styles,
+            style_version_id_counter: 0,
+            input_state: TextInputState::new(),
+            focused: None,
+            mouse_hit_stack: Vec::with_capacity(6),
+            text_changed: true,
+            decorations_changed: true,
+            scrolled_moved_indices: Vec::new(),
+            scroll_animations: Vec::new(),
+            current_frame: 1,
+            using_frame_based_visibility: false,
+            cursor_blink_start: None,
+            cursor_currently_blinked_out: false,
+            cursor_blink_timer,
+        }
+    }
+
+    /// Create a new Text instance without cursor blink wakeup.
+    /// 
+    /// Applications that don't pause their event loops can use this function.
+    pub fn new_without_blink_wakeup() -> Self {
         let mut styles = Slab::with_capacity(10);
         let i = styles.insert(StyleInner {
             text_style: original_default_style(),
@@ -196,8 +247,10 @@ impl Text {
             using_frame_based_visibility: false,
             cursor_blink_start: None,
             cursor_currently_blinked_out: false,
+            cursor_blink_timer: None,
         }
     }
+
 
     pub(crate) fn new_style_version(&mut self) -> u64 {
         self.style_version_id_counter += 1;
@@ -444,7 +497,7 @@ impl Text {
 
         
         // decorations
-        let (show_cursor, blink_changed) = self.cursor_blinked_out();
+        let (show_cursor, blink_changed) = self.cursor_blinked_out(true);
 
         if self.text_changed {
             text_renderer.clear();
@@ -553,7 +606,7 @@ impl Text {
     /// 
     /// Any events other than `winit::WindowEvent::MouseInput` can use either this method or the occlusion method interchangeably.
     pub fn handle_event(&mut self, event: &WindowEvent, window: &Window) -> EventResult {
-        let mut result = EventResult { consumed: false, need_rerender: false };
+        let mut result = EventResult::nothing();
         
         self.input_state.handle_event(event);
 
@@ -600,6 +653,15 @@ impl Text {
             result.consumed = true;
             self.handle_focused_event(focused, event, window, &mut result);
         }
+
+        let (_, changed) = self.cursor_blinked_out(false);
+        if changed {
+            // When using EventProxy timer, we don't need to set wake_up_in
+            if self.cursor_blink_timer.is_none() {
+                result.wake_up_event_loop_in = Some(Duration::from_millis(CURSOR_BLINK_TIME_MILLIS));
+            }
+            // result.need_rerender = true;
+        }
         
         result
     }
@@ -636,7 +698,7 @@ impl Text {
     /// 
     /// If the text box is occluded, this function should still be called with `None`, so that text boxes can defocus.
     pub fn handle_event_with_topmost(&mut self, event: &WindowEvent, window: &Window, topmost_text_box: Option<AnyBox>) -> EventResult {
-        let mut result = EventResult { consumed: false, need_rerender: false };
+        let mut result = EventResult::nothing();
         
         self.input_state.handle_event(event);
 
@@ -709,6 +771,10 @@ impl Text {
 
     fn refocus(&mut self, new_focus: Option<AnyBox>) {
         if new_focus != self.focused {
+            if let Some(_old_focus) = self.focused {
+                self.stop_cursor_blink();
+            }
+            
             if let Some(old_focus) = self.focused {
                 self.remove_focus(old_focus);
             }
@@ -1038,13 +1104,16 @@ impl Text {
     }
 
     // result: (currently blinked, changed).
-    pub(crate) fn cursor_blinked_out(&mut self) -> (bool, bool) {
+    pub(crate) fn cursor_blinked_out(&mut self, update: bool) -> (bool, bool) {
         if let Some(start_time) = self.cursor_blink_start {
             let elapsed = Instant::now().duration_since(start_time);
-            let blink_period = Duration::from_millis(500);
+            let blink_period = Duration::from_millis(CURSOR_BLINK_TIME_MILLIS);
             let blinked_out = (elapsed.as_millis() / blink_period.as_millis()) % 2 == 0;
             let changed = blinked_out != self.cursor_currently_blinked_out;
-            self.cursor_currently_blinked_out = blinked_out;
+            if update {
+                self.cursor_currently_blinked_out = blinked_out;
+                dbg!(changed);
+            }
             return (blinked_out, changed);
         } else {
             (false, false)
@@ -1054,6 +1123,22 @@ impl Text {
     fn reset_cursor_blink(&mut self) {
         self.cursor_blink_start = Some(Instant::now());
         self.decorations_changed = true;
+        
+        // Start the cursor blink timer if we have one and there's a focused text edit
+        if let Some(timer) = &self.cursor_blink_timer {
+            if self.focused.is_some() {
+                timer.start_timer();
+            }
+        }
+    }
+    
+    fn stop_cursor_blink(&mut self) {
+        self.cursor_blink_start = None;
+        
+        // Stop the cursor blink timer if we have one
+        if let Some(timer) = &self.cursor_blink_timer {
+            timer.stop_timer();
+        }
     }
 }
 
@@ -1123,6 +1208,87 @@ fn move_quads_for_scroll(text_renderer: &mut TextRenderer, quad_storage: &mut Qu
 pub struct EventResult {
     /// Whether the event was consumed by a text widget
     pub consumed: bool,
-    /// Whether the user should rerender/redraw the UI
+    /// Whether the user should rerender the text
     pub need_rerender: bool,
+    /// Whether the event loop should be set to wake up after a duration. This is set when the cursor should blink.
+    /// 
+    /// Using this value is not recommended: instead, you can set up the winit event loop to wake automatically when needed. See the `smart_event_loop.rs` example for how to do this.
+    pub wake_up_event_loop_in: Option<Duration>,
+}
+impl EventResult {
+    fn nothing() -> EventResult {
+        EventResult {
+            consumed: false,
+            need_rerender: false,
+            wake_up_event_loop_in: None,
+        }
+    }
+}
+
+
+const CURSOR_BLINK_TIME_MILLIS: u64 = 500;
+
+#[derive(Debug)]
+enum TimerCommand {
+    Start,
+    Stop,
+    Exit,
+}
+
+pub(crate) struct CursorBlinkTimer {
+    command_sender: mpsc::Sender<TimerCommand>,
+}
+
+impl Drop for CursorBlinkTimer {
+    fn drop(&mut self) {
+        // Signal the thread to exit
+        let _ = self.command_sender.send(TimerCommand::Exit);
+    }
+}
+
+impl CursorBlinkTimer {
+    fn new<T: Send + Clone>(event_proxy: EventLoopProxy<T>, user_event: T) -> Self {
+        let (command_sender, command_receiver) = mpsc::channel();
+        
+        thread::spawn(move || {
+            let mut is_running = false;
+            
+            loop {
+                if is_running {
+                    // While running, wait for either a command or timeout
+                    match command_receiver.recv_timeout(Duration::from_millis(CURSOR_BLINK_TIME_MILLIS)) {
+                        Ok(TimerCommand::Start) => {}
+                        Ok(TimerCommand::Stop) => is_running = false,
+                        Ok(TimerCommand::Exit) => return,
+                        Err(mpsc::RecvTimeoutError::Timeout) => {
+                            // Timeout occurred, send the wakeup event
+                            let res = event_proxy.send_event(user_event.clone());
+                            if res.is_err() { return }
+                        }
+                        Err(mpsc::RecvTimeoutError::Disconnected) => return,
+                    }
+                } else {
+                    // While stopped, wait indefinitely for a command
+                    match command_receiver.recv() {
+                        Ok(TimerCommand::Start) => is_running = true,
+                        Ok(TimerCommand::Stop) => {}
+                        Ok(TimerCommand::Exit) => return,
+                        Err(_) => return,
+                    }
+                }
+            }
+        });
+        
+        Self {
+            command_sender,
+        }
+    }
+        
+    fn start_timer(&self) {
+        let _ = self.command_sender.send(TimerCommand::Start);
+    }
+    
+    fn stop_timer(&self) {
+        let _ = self.command_sender.send(TimerCommand::Stop);
+    }
 }

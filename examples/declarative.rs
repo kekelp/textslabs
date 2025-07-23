@@ -79,7 +79,7 @@ struct DeclarativeGrid {
 
 impl DeclarativeGrid {
     fn new(device: &Device, queue: &Queue, format: TextureFormat, width: f32, height: f32) -> Self {
-        let mut text = Text::new();
+        let mut text = Text::new_without_blink_wakeup();
         let mut text_renderer = TextRenderer::new(device, queue, format);
         text_renderer.update_resolution(width, height);
         

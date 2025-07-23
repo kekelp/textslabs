@@ -1,5 +1,16 @@
 // This example shows how to integrate the library with a smarter event loop in applications that pause their event loops when nothing is happening.
-// It's very simple: just check the result of `Text::handle_event()`.
+//
+// Usually, this just means checking the result of `Text::handle_event()`, and calling `Window::request_redraw()` only if `result.need_rerender` is true.
+// This covers normal updates, as well as smooth scroll animations.
+// 
+// For cursor blinking, winit supports a `ControlFlow::WaitUntil` mode that should be ideal for this, but I couldn't get it to work. Instead, for the moment, another method is supported:
+//
+// - Create an event `EventLoopProxy<T>` for your winit event loop
+// - Create the text struct with the `Text::with_event_loop_waker()` function, passing in the event loop proxy, as well as the value of a custom event.
+// - in winit's ApplicationHandler, implement `user_event()` and make it call `redraw_requested()` when receiving the custom event passed before.
+// 
+// The text struct will spawn a thread that will wake up the event loop when needed.
+
 
 use parley2::*;
 use std::sync::Arc;
@@ -13,8 +24,13 @@ use winit::{
 
 fn main() {
     let event_loop = EventLoop::new().unwrap();
+    let event_proxy = event_loop.create_proxy();
+    
     event_loop
-        .run_app(&mut Application { state: None })
+        .run_app(&mut Application { 
+            state: None, 
+            event_proxy,
+        })
         .unwrap();
 }
 
@@ -33,7 +49,7 @@ struct State {
 }
 
 impl State {
-    fn new(window: Arc<Window>) -> Self {
+    fn new(window: Arc<Window>, event_proxy: winit::event_loop::EventLoopProxy<()>) -> Self {
         let physical_size = window.inner_size();
         let instance = Instance::new(InstanceDescriptor::default());
         let adapter =
@@ -75,7 +91,8 @@ impl State {
 
         let text_renderer = TextRenderer::new(&device, &queue, surface_format);
 
-        let mut text = Text::new();
+        let wakeup_event_value = ();
+        let mut text = Text::new_with_blink_wakeup(event_proxy, wakeup_event_value);
         
         let text_edit = text.add_text_edit("This is a text edit box with a bunch of text that can be scrolled. Use the mouse wheel to get a smooth scroll animation. And you can check the console output to see that we're only rerendering when needed.".to_string(), (50.0, 50.0), (400.0, 80.0), 0.0,);
         let text_box = text.add_text_box("This is a regular non-editable text box.", (50.0, 180.0), (500.0, 120.0), 0.0,);
@@ -145,9 +162,10 @@ impl State {
 
 struct Application {
     state: Option<State>,
+    event_proxy: winit::event_loop::EventLoopProxy<()>,
 }
 
-impl winit::application::ApplicationHandler for Application {
+impl winit::application::ApplicationHandler<()> for Application {
     fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
         if self.state.is_some() {
             return;
@@ -157,7 +175,7 @@ impl winit::application::ApplicationHandler for Application {
             .with_title("Smart render loop")
             .with_inner_size(LogicalSize::new(800, 600));
         let window = Arc::new(event_loop.create_window(window_attributes).unwrap());
-        self.state = Some(State::new(window));
+        self.state = Some(State::new(window, self.event_proxy.clone()));
     }
 
     fn window_event(
@@ -186,6 +204,14 @@ impl winit::application::ApplicationHandler for Application {
         }
 
         if result.need_rerender {
+            state.window.request_redraw();
+        }
+
+    }
+
+    fn user_event(&mut self, _event_loop: &winit::event_loop::ActiveEventLoop, _event: ()) {
+        if let Some(state) = &mut self.state {
+            // If we were using user events for other things, we would do this only when _event and matches the wakeup value that we passed to Text::new().
             state.window.request_redraw();
         }
     }
