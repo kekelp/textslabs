@@ -122,6 +122,21 @@ pub(crate) fn original_default_style() -> TextStyle2 {
     } 
 }
 
+pub(crate) struct ScrollRequest {
+    pub scroll_x: Option<f32>,
+    pub scroll_y: Option<f32>,
+}
+
+impl ScrollRequest {
+    pub fn none() -> Self {
+        Self { scroll_x: None, scroll_y: None }
+    }
+    
+    pub fn has_scroll(&self) -> bool {
+        self.scroll_x.is_some() || self.scroll_y.is_some()
+    }
+}
+
 // todo: this struct is now useless.
 pub(crate) struct SelectionState {
     pub selection: Selection,
@@ -211,7 +226,10 @@ impl<'a> TextBox<'a> {
         
         let mut result = TextEventResult::nothing();
 
-        self.handle_event_no_edit_inner(event, input_state, false);
+        let did_scroll = self.handle_event_no_edit_inner(event, input_state, false);
+        if did_scroll {
+            result.scrolled = true;
+        }
 
         // Handle mouse wheel scrolling for multi-line text boxes with auto_clip
         if let WindowEvent::MouseWheel { delta, .. } = event {
@@ -252,16 +270,16 @@ impl<'a> TextBox<'a> {
         return result;
     }
 
-    pub(crate) fn handle_event_no_edit_inner(&mut self, event: &WindowEvent, input_state: &TextInputState, edit_showing_placeholder: bool) {
+    pub(crate) fn handle_event_no_edit_inner(&mut self, event: &WindowEvent, input_state: &TextInputState, edit_showing_placeholder: bool) -> bool {
         if self.inner.hidden {
-            return;
+            return false;
         }
         if !self.inner.selectable {
             self.reset_selection();
-            return;
+            return false;
         }
         
-        self.inner.selection.handle_event(
+        let scroll_request = self.inner.selection.handle_event(
             event,
             input_state,
             &self.inner.layout,
@@ -269,8 +287,18 @@ impl<'a> TextBox<'a> {
             self.inner.top as f32,
             self.inner.scroll_offset.0,
             self.inner.scroll_offset.1,
+            self.inner.max_advance,
+            self.inner.height,
             edit_showing_placeholder
         );
+        
+        // Apply any requested scroll changes
+        let did_scroll = scroll_request.has_scroll();
+        if did_scroll {
+            let new_scroll_x = scroll_request.scroll_x.unwrap_or(self.inner.scroll_offset.0);
+            let new_scroll_y = scroll_request.scroll_y.unwrap_or(self.inner.scroll_offset.1);
+            self.set_scroll_offset((new_scroll_x, new_scroll_y));
+        }
         
         match event {
             WindowEvent::KeyboardInput { event, .. } => {
@@ -306,6 +334,8 @@ impl<'a> TextBox<'a> {
             }
             _ => {}
         }
+        
+        did_scroll
     }
 
     pub(crate) fn reset_selection(&mut self) {
@@ -797,13 +827,15 @@ impl SelectionState {
         top: f32,
         scroll_offset_x: f32,
         scroll_offset_y: f32,
+        max_advance: f32,
+        height: f32,
         edit_showing_placeholder: bool
-    ) {
+    ) -> ScrollRequest {
         if edit_showing_placeholder {
             if let WindowEvent::MouseInput { state, button, .. } = event {
                 if *button == winit::event::MouseButton::Left && state.is_pressed() {
                     self.selection = Selection::zero();
-                    return
+                    return ScrollRequest::none();
                 }
             }
         }
@@ -813,15 +845,59 @@ impl SelectionState {
                 let cursor_pos = (position.x as f32, position.y as f32);
                 // macOS seems to generate a spurious move after selecting word?
                 if input_state.mouse.pointer_down {
+                    // Check for auto-scroll when dragging near borders
+                    let scroll_margin = 20.0; // Distance from border to trigger auto-scroll
+                    let scroll_speed = 10.0; // Scroll speed in pixels
+                    let mut scroll_request = ScrollRequest::none();
+                    
+                    // Check horizontal auto-scroll
+                    if cursor_pos.0 - left < scroll_margin {
+                        // Near left border - scroll left
+                        let new_scroll_x = (scroll_offset_x - scroll_speed).max(0.0);
+                        if new_scroll_x != scroll_offset_x {
+                            scroll_request.scroll_x = Some(new_scroll_x);
+                        }
+                    } else if cursor_pos.0 > (left + max_advance) - scroll_margin {
+                        // Near right border - scroll right
+                        let total_text_width = layout.full_width();
+                        let max_scroll_x = (total_text_width - max_advance).max(0.0);
+                        let new_scroll_x = (scroll_offset_x + scroll_speed).min(max_scroll_x);
+                        if new_scroll_x != scroll_offset_x {
+                            scroll_request.scroll_x = Some(new_scroll_x);
+                        }
+                    }
+                    
+                    // Check vertical auto-scroll
+                    if cursor_pos.1 - top < scroll_margin {
+                        // Near top border - scroll up
+                        let new_scroll_y = (scroll_offset_y - scroll_speed).max(0.0);
+                        if new_scroll_y != scroll_offset_y {
+                            scroll_request.scroll_y = Some(new_scroll_y);
+                        }
+                    } else if cursor_pos.1 > (top + height) - scroll_margin {
+                        // Near bottom border - scroll down
+                        let total_text_height = layout.height();
+                        let max_scroll_y = (total_text_height - height).max(0.0);
+                        let new_scroll_y = (scroll_offset_y + scroll_speed).min(max_scroll_y);
+                        if new_scroll_y != scroll_offset_y {
+                            scroll_request.scroll_y = Some(new_scroll_y);
+                        }
+                    }
+                    
+                    // Use the updated scroll offsets for cursor position calculation
+                    let final_scroll_x = scroll_request.scroll_x.unwrap_or(scroll_offset_x);
+                    let final_scroll_y = scroll_request.scroll_y.unwrap_or(scroll_offset_y);
+                    
                     let cursor_pos = (
-                        cursor_pos.0 - left as f32 + scroll_offset_x,
-                        cursor_pos.1 - top as f32 + scroll_offset_y,
+                        cursor_pos.0 - left as f32 + final_scroll_x,
+                        cursor_pos.1 - top as f32 + final_scroll_y,
                     );
                     self.extend_selection_to_point(
                         &layout,
                         cursor_pos.0,
                         cursor_pos.1,
                     );
+                    return scroll_request;
                 }
             }
             WindowEvent::MouseInput { state, button, .. } => {
@@ -855,7 +931,7 @@ impl SelectionState {
             }
             WindowEvent::KeyboardInput { event, .. } => {
                 if !event.state.is_pressed() {
-                    return;
+                    return ScrollRequest::none();
                 }
                 let mods_state = input_state.modifiers.state();
                 let shift = mods_state.shift_key();
@@ -907,6 +983,8 @@ impl SelectionState {
             }
             _ => {}
         }
+        
+        ScrollRequest::none()
     }
 
     /// Move the cursor to the cluster boundary nearest this point in the layout.
