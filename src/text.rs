@@ -34,6 +34,7 @@ pub struct Text {
     pub(crate) decorations_changed: bool,
     
     pub(crate) scrolled_moved_indices: Vec<AnyBox>,
+    pub(crate) scroll_animations: Vec<ScrollAnimation>,
 
     pub(crate) current_frame: u64,
 }
@@ -43,7 +44,7 @@ pub struct Text {
 /// Obtained when creating a text edit box with [`Text::add_text_edit()`].
 /// 
 /// Use with [`Text::get_text_edit()`] to get a reference to the corresponding [`TextEdit`]. 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TextEditHandle {
     pub(crate) i: u32,
 }
@@ -188,6 +189,7 @@ impl Text {
             text_changed: true,
             decorations_changed: true,
             scrolled_moved_indices: Vec::new(),
+            scroll_animations: Vec::new(),
             current_frame: 1,
             using_frame_based_visibility: false,
         }
@@ -526,12 +528,8 @@ impl Text {
         self.scrolled_moved_indices.retain(|any_box| {
             match any_box {
                 AnyBox::TextEdit(i) => {
-                    if let Some((text_edit_inner, _text_box_inner)) = self.text_edits.get(*i as usize) {
-                        // Keep in list if any animation is still running
-                        text_edit_inner.scroll_animation.is_some() || text_edit_inner.horizontal_scroll_animation.is_some()
-                    } else {
-                        false // Remove if text edit no longer exists
-                    }
+                    // Keep in list if any animation is still running for this text edit
+                    self.scroll_animations.iter().any(|anim| anim.handle.i == *i)
                 },
                 AnyBox::TextBox(_i) => {
                     // Text boxes don't have animations, so they can be cleared immediately
@@ -552,6 +550,14 @@ impl Text {
 
         if let WindowEvent::Resized(_) = event {
             self.text_changed = true;
+        }
+
+        // update smooth scrolling animations
+        if let WindowEvent::RedrawRequested = event {
+            let animation_updated = self.update_smooth_scrolling();
+            if animation_updated {
+                window.request_redraw();
+            }
         }
 
         if let WindowEvent::MouseInput { state, button, .. } = event {
@@ -608,6 +614,14 @@ impl Text {
     /// If the text box is occluded, this function should still be called with `None`, so that text boxes can defocus.
     pub fn handle_event_with_topmost(&mut self, event: &WindowEvent, window: &Window, topmost_text_box: Option<AnyBox>) {
         self.input_state.handle_event(event);
+
+        // update smooth scrolling animations
+        if let WindowEvent::RedrawRequested = event {
+            let animation_updated = self.update_smooth_scrolling();
+            if animation_updated {
+                window.request_redraw();
+            }
+        }
 
         if let WindowEvent::MouseInput { state, button, .. } = event {
             if state.is_pressed() && *button == MouseButton::Left {
@@ -717,9 +731,7 @@ impl Text {
             match hovered {
                 AnyBox::TextEdit(i) => {
                     let handle = TextEditHandle { i: i as u32 };
-                    let mut text_edit = get_full_text_edit_free(&mut self.text_edits, &mut self.styles, &handle);
-
-                    let result = text_edit.handle_scroll_event(event, window, &self.input_state);
+                    let result = self.handle_text_edit_scroll_event(&handle, event, window);
                     if result {
                         self.decorations_changed = true;
                         self.scrolled_moved_indices.push(AnyBox::TextEdit(i));
@@ -815,40 +827,139 @@ impl Text {
         get_full_text_edit_free(&mut self.text_edits, &mut self.styles, i)
     }
 
-    /// Update smooth scrolling animations for all text edits. Call this every frame.
+    /// Add a scroll animation for a text edit
+    pub(crate) fn add_scroll_animation(&mut self, handle: TextEditHandle, start_offset: f32, target_offset: f32, duration: std::time::Duration, direction: ScrollDirection) {
+        // Remove any existing animation for this handle and direction
+        self.scroll_animations.retain(|anim| !(anim.handle.i == handle.i && anim.direction == direction));
+        
+        let animation = ScrollAnimation {
+            start_offset,
+            target_offset,
+            start_time: std::time::Instant::now(),
+            duration,
+            direction,
+            handle,
+        };
+        
+        self.scroll_animations.push(animation);
+    }
+
+    /// Update smooth scrolling animations for all text edits automatically.
     /// Returns true if any text edit animations were updated and require redrawing.
-    pub fn update_smooth_scrolling(&mut self) -> bool {
+    fn update_smooth_scrolling(&mut self) -> bool {
         let mut needs_redraw = false;
         
-        for (_index, (text_edit_inner, text_box_inner)) in self.text_edits.iter_mut() {
-            if text_edit_inner.single_line {
-                // Handle horizontal scroll animation for single-line text boxes
-                if let Some(animation) = &text_edit_inner.horizontal_scroll_animation {
-                    let current_offset = animation.get_current_offset();
-                    text_box_inner.scroll_offset.0 = current_offset;
-
-                    if animation.is_finished() {
-                        text_edit_inner.horizontal_scroll_animation = None;
+        // Update all active animations
+        let mut i = 0;
+        while i < self.scroll_animations.len() {
+            let animation = &self.scroll_animations[i];
+            let handle = TextEditHandle { i: animation.handle.i };
+            
+            if let Some((_text_edit_inner, text_box_inner)) = self.text_edits.get_mut(handle.i as usize) {
+                let current_offset = animation.get_current_offset();
+                
+                match animation.direction {
+                    ScrollDirection::Horizontal => {
+                        text_box_inner.scroll_offset.0 = current_offset;
                     }
-                    
-                    needs_redraw = true;
+                    ScrollDirection::Vertical => {
+                        text_box_inner.scroll_offset.1 = current_offset;
+                    }
                 }
+                
+                if animation.is_finished() {
+                    self.scroll_animations.remove(i);
+                    // Don't increment i since we removed an element
+                } else {
+                    i += 1;
+                }
+                
+                needs_redraw = true;
             } else {
-                // Handle vertical scroll animation for multi-line text boxes
-                if let Some(animation) = &text_edit_inner.scroll_animation {
-                    let current_offset = animation.get_current_offset();
-                    text_box_inner.scroll_offset.1 = current_offset;
-
-                    if animation.is_finished() {
-                        text_edit_inner.scroll_animation = None;
-                    }
-                    
-                    needs_redraw = true;
-                }
+                // Text edit doesn't exist anymore, remove the animation
+                self.scroll_animations.remove(i);
             }
         }
         
         needs_redraw
+    }
+
+    fn handle_text_edit_scroll_event(&mut self, handle: &TextEditHandle, event: &WindowEvent, _window: &Window) -> bool {
+        let mut did_scroll = false;
+
+        if let WindowEvent::MouseWheel { delta, .. } = event {
+            let shift_held = self.input_state.modifiers.state().shift_key();
+            
+            if let Some((text_edit_inner, text_box_inner)) = self.text_edits.get_mut(handle.i as usize) {
+                if text_edit_inner.single_line {
+                    // Single-line horizontal scrolling
+                    let scroll_amount = match delta {
+                        winit::event::MouseScrollDelta::LineDelta(x, y) => {
+                            if shift_held {
+                                y * 120.0
+                            } else {
+                                x * 120.0
+                            }
+                        },
+                        winit::event::MouseScrollDelta::PixelDelta(pos) => {
+                            if shift_held {
+                                pos.y as f32 
+                            } else {
+                                pos.x as f32
+                            }
+                        },
+                    };
+                    
+                    if scroll_amount != 0.0 {
+                        let current_scroll = text_box_inner.scroll_offset.0;
+                        let target_scroll = current_scroll - scroll_amount;
+                        
+                        let total_text_width = text_box_inner.layout.full_width();
+                        let text_width = text_box_inner.max_advance;
+                        let max_scroll = (total_text_width - text_width).max(0.0).round() + crate::text_edit::CURSOR_WIDTH;
+                        let clamped_target = target_scroll.clamp(0.0, max_scroll).round();
+                        
+                        if (clamped_target - current_scroll).abs() > 0.1 {
+                            if should_use_animation(delta, shift_held) {
+                                let animation_duration = std::time::Duration::from_millis(200);
+                                self.add_scroll_animation(handle.clone(), current_scroll, clamped_target, animation_duration, ScrollDirection::Horizontal);
+                            } else {
+                                text_box_inner.scroll_offset.0 = clamped_target;
+                            }
+                            did_scroll = true;
+                        }
+                    }
+                } else {
+                    // Multi-line vertical scrolling
+                    let scroll_amount = match delta {
+                        winit::event::MouseScrollDelta::LineDelta(_x, y) => y * 120.0,
+                        winit::event::MouseScrollDelta::PixelDelta(pos) => pos.y as f32,
+                    };
+                    
+                    if scroll_amount != 0.0 {
+                        let current_scroll = text_box_inner.scroll_offset.1;
+                        let target_scroll = current_scroll - scroll_amount;
+                        
+                        let total_text_height = text_box_inner.layout.height();
+                        let text_height = text_box_inner.height;
+                        let max_scroll = (total_text_height - text_height).max(0.0).round();
+                        let clamped_target = target_scroll.clamp(0.0, max_scroll).round();
+                        
+                        if (clamped_target - current_scroll).abs() > 0.1 {
+                            if should_use_animation(delta, true) {
+                                let animation_duration = std::time::Duration::from_millis(200);
+                                self.add_scroll_animation(handle.clone(), current_scroll, clamped_target, animation_duration, ScrollDirection::Vertical);
+                            } else {
+                                text_box_inner.scroll_offset.1 = clamped_target;
+                            }
+                            did_scroll = true;
+                        }
+                    }
+                }
+            }
+        }
+
+        did_scroll
     }
 }
 
