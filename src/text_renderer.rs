@@ -393,7 +393,7 @@ impl TextRenderer {
         self.capture_quad_ranges_after(&mut text_edit.text_box.inner.quad_storage, scroll_offset);
     }
 
-    pub fn prepare_text_box_decorations(&mut self, text_box: &TextBox, editable: bool) {
+    pub fn prepare_text_box_decorations(&mut self, text_box: &TextBox, show_cursor: bool) {
         let (left, top) = text_box.pos();
         let (left, top) = (left as f32, top as f32);
         let clip_rect = text_box.effective_clip_rect();
@@ -408,7 +408,7 @@ impl TextRenderer {
             self.text_renderer.add_selection_rect(rect, content_left, content_top, selection_color, clip_rect);
         });
         
-        let show_cursor = editable && text_box.selection().is_collapsed(); 
+        let show_cursor = show_cursor && text_box.selection().is_collapsed();
         if show_cursor {
             let size = CURSOR_WIDTH;
             let cursor_rect = text_box.selection().focus().geometry(&text_box.inner.layout, size);

@@ -37,6 +37,8 @@ pub struct Text {
     pub(crate) scroll_animations: Vec<ScrollAnimation>,
 
     pub(crate) current_frame: u64,
+    pub(crate) cursor_blink_start: Option<Instant>,
+    pub(crate) cursor_currently_blinked_out: bool,
 }
 
 /// Handle for a text edit box.
@@ -192,6 +194,8 @@ impl Text {
             scroll_animations: Vec::new(),
             current_frame: 1,
             using_frame_based_visibility: false,
+            cursor_blink_start: None,
+            cursor_currently_blinked_out: false,
         }
     }
 
@@ -437,21 +441,24 @@ impl Text {
 
             }
         }
-                
+
+        
+        // decorations
+        let (show_cursor, blink_changed) = self.cursor_blinked_out();
+
         if self.text_changed {
             text_renderer.clear();
-        } else if self.decorations_changed || !self.scrolled_moved_indices.is_empty() {
+        } else if self.decorations_changed || !self.scrolled_moved_indices.is_empty() || blink_changed {
             text_renderer.clear_decorations_only();
         }
 
-        // decorations
-        if self.decorations_changed || self.text_changed  || !self.scrolled_moved_indices.is_empty(){
+        if self.decorations_changed || self.text_changed  || !self.scrolled_moved_indices.is_empty() || blink_changed {
             if let Some(focused) = self.focused {
                 match focused {
                     AnyBox::TextEdit(i) => {
                         let handle = TextEditHandle { i: i as u32 };
                         let text_edit = self.get_full_text_edit(&handle);
-                        text_renderer.prepare_text_box_decorations(&text_edit.text_box, true);
+                        text_renderer.prepare_text_box_decorations(&text_edit.text_box, show_cursor);
                     },
                     AnyBox::TextBox(i) => {
                         let handle = TextBoxHandle { i: i as u32 };
@@ -705,6 +712,10 @@ impl Text {
             if let Some(old_focus) = self.focused {
                 self.remove_focus(old_focus);
             }
+            
+            if new_focus.is_some() {
+                self.reset_cursor_blink();
+            }
         }
         self.focused = new_focus;
         // todo: could skip some rerenders here if the old focus wasn't editable and had collapsed selection.
@@ -784,10 +795,12 @@ impl Text {
                 if text_result.text_changed {
                     self.text_changed = true;
                     result.need_rerender = true;
+                    self.reset_cursor_blink();
                 }
                 if text_result.decorations_changed {
                     self.decorations_changed = true;
                     result.need_rerender = true;
+                    self.reset_cursor_blink();
                 }
                 if !text_result.text_changed && text_result.scrolled {
                     self.scrolled_moved_indices.push(AnyBox::TextEdit(i));
@@ -1022,6 +1035,25 @@ impl Text {
         }
 
         did_scroll
+    }
+
+    // result: (currently blinked, changed).
+    pub(crate) fn cursor_blinked_out(&mut self) -> (bool, bool) {
+        if let Some(start_time) = self.cursor_blink_start {
+            let elapsed = Instant::now().duration_since(start_time);
+            let blink_period = Duration::from_millis(500);
+            let blinked_out = (elapsed.as_millis() / blink_period.as_millis()) % 2 == 0;
+            let changed = blinked_out != self.cursor_currently_blinked_out;
+            self.cursor_currently_blinked_out = blinked_out;
+            return (blinked_out, changed);
+        } else {
+            (false, false)
+        }
+    }
+
+    fn reset_cursor_blink(&mut self) {
+        self.cursor_blink_start = Some(Instant::now());
+        self.decorations_changed = true;
     }
 }
 
