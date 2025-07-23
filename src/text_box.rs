@@ -212,7 +212,7 @@ impl<'a> TextBox<'a> {
         
         let mut result = TextEventResult::nothing();
 
-        let did_scroll = self.handle_event_no_edit_inner(event, input_state, false, false);
+        let did_scroll = self.handle_event_no_edit(event, input_state, false, false);
         if did_scroll {
             result.scrolled = true;
         }
@@ -257,7 +257,7 @@ impl<'a> TextBox<'a> {
     }
 
     /// The output bool says if the text box scrolled as a result of a selection drag.
-    pub(crate) fn handle_event_no_edit_inner(&mut self, event: &WindowEvent, input_state: &TextInputState, edit_showing_placeholder: bool, enable_auto_scroll: bool) -> bool {
+    pub(crate) fn handle_event_no_edit(&mut self, event: &WindowEvent, input_state: &TextInputState, edit_showing_placeholder: bool, enable_auto_scroll: bool) -> bool {
         if self.inner.hidden {
             return false;
         }
