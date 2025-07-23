@@ -1,6 +1,8 @@
-use parley::TextStyle;
+// This example shows how to integrate the library with a smarter event loop in applications that pause their event loops when nothing is happening.
+// It's very simple: just check the result of `Text::handle_event()`.
+
 use parley2::*;
-use std::{sync::Arc, time::Instant};
+use std::sync::Arc;
 use wgpu::*;
 use winit::{
     dpi::LogicalSize,
@@ -10,11 +12,6 @@ use winit::{
 };
 
 fn main() {
-    println!("EventResult Test Example Starting...");
-    println!("- Type in the text edit to see events being consumed");
-    println!("- Move mouse around to see events NOT being consumed");
-    println!("- Watch render statistics every second");
-    
     let event_loop = EventLoop::new().unwrap();
     event_loop
         .run_app(&mut Application { state: None })
@@ -33,11 +30,6 @@ struct State {
 
     _text_edit: TextEditHandle,
     _text_box: TextBoxHandle,
-    
-    // Track render statistics
-    last_render_time: Instant,
-    render_count: u32,
-    frame_skip_count: u32,
 }
 
 impl State {
@@ -81,12 +73,12 @@ impl State {
 
         surface.configure(&device, &surface_config);
 
-        let mut text_renderer = TextRenderer::new(&device, &queue, surface_format);
+        let text_renderer = TextRenderer::new(&device, &queue, surface_format);
 
         let mut text = Text::new();
         
-        let text_edit = text.add_text_edit("Type here to test EventResult!".to_string(), (50.0, 50.0), (400.0, 30.0), 0.0,);
-        let text_box = text.add_text_box("This text box shows EventResult in action. Watch the console for render statistics!", (50.0, 120.0), (500.0, 100.0), 0.0,);
+        let text_edit = text.add_text_edit("This is a text edit box with a bunch of text that can be scrolled. Use the mouse wheel to get a smooth scroll animation. And you can check the console output to see that we're only rerendering when needed.".to_string(), (50.0, 50.0), (400.0, 80.0), 0.0,);
+        let text_box = text.add_text_box("This is a regular non-editable text box.", (50.0, 180.0), (500.0, 120.0), 0.0,);
 
         Self {
             device,
@@ -98,33 +90,16 @@ impl State {
             text,
             _text_edit: text_edit,
             _text_box: text_box,
-            last_render_time: Instant::now(),
-            render_count: 0,
-            frame_skip_count: 0,
         }
     }
 
-    fn handle_window_event(&mut self, event: &WindowEvent) -> bool {
-        // Handle the event and get the result
-        let result = self.text.handle_event(event, &self.window);
+    fn render(&mut self) {
+        println!("Rerender at {:?}", std::time::Instant::now());
         
-        // Log all events for debugging
-        match event {
-            WindowEvent::CursorMoved { .. } => {
-                // Don't log cursor moves, too noisy
-            }
-            _ => {
-                println!("Event: {:?} -> consumed: {}, need_rerender: {}", 
-                    std::mem::discriminant(event), result.consumed, result.need_rerender);
-            }
-        }
-        
-        // Return whether a redraw is needed
-        result.need_rerender
-    }
+        self.text.prepare_all(&mut self.text_renderer);
+        self.text_renderer.gpu_load(&self.device, &self.queue);
 
-    fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
-        let output = self.surface.get_current_texture()?;
+        let output = self.surface.get_current_texture().unwrap();
         let view = output
             .texture
             .create_view(&TextureViewDescriptor::default());
@@ -142,12 +117,7 @@ impl State {
                     view: &view,
                     resolve_target: None,
                     ops: Operations {
-                        load: LoadOp::Clear(Color {
-                            r: 0.1,
-                            g: 0.1,
-                            b: 0.1,
-                            a: 1.0,
-                        }),
+                        load: LoadOp::Clear(Color::BLUE),
                         store: StoreOp::Store,
                     },
                 })],
@@ -161,21 +131,6 @@ impl State {
 
         self.queue.submit(std::iter::once(encoder.finish()));
         output.present();
-
-        // Update render statistics
-        self.render_count += 1;
-        let now = Instant::now();
-        if now.duration_since(self.last_render_time).as_secs() >= 1 {
-            println!(
-                "Rendered {} frames, skipped {} frames in the last second",
-                self.render_count, self.frame_skip_count
-            );
-            self.render_count = 0;
-            self.frame_skip_count = 0;
-            self.last_render_time = now;
-        }
-
-        Ok(())
     }
 
     fn resize(&mut self, new_size: LogicalSize<u32>) {
@@ -183,8 +138,7 @@ impl State {
             self.surface_config.width = new_size.width;
             self.surface_config.height = new_size.height;
             self.surface.configure(&self.device, &self.surface_config);
-            self.text_renderer
-                .update_resolution(new_size.width as f32, new_size.height as f32);
+            self.text_renderer.update_resolution(new_size.width as f32, new_size.height as f32);
         }
     }
 }
@@ -200,7 +154,7 @@ impl winit::application::ApplicationHandler for Application {
         }
 
         let window_attributes = Window::default_attributes()
-            .with_title("EventResult Test - Selective Rendering")
+            .with_title("Smart render loop")
             .with_inner_size(LogicalSize::new(800, 600));
         let window = Arc::new(event_loop.create_window(window_attributes).unwrap());
         self.state = Some(State::new(window));
@@ -213,8 +167,11 @@ impl winit::application::ApplicationHandler for Application {
         event: WindowEvent,
     ) {
         let state = self.state.as_mut().unwrap();
-        
-        let mut should_redraw = false;
+        let result = state.text.handle_event(&event, &state.window);
+
+        if event == winit::event::WindowEvent::RedrawRequested {
+            _ = state.render();
+        }
 
         match &event {
             WindowEvent::CloseRequested => {
@@ -224,46 +181,12 @@ impl winit::application::ApplicationHandler for Application {
             WindowEvent::Resized(physical_size) => {
                 let logical_size = LogicalSize::new(physical_size.width, physical_size.height);
                 state.resize(logical_size);
-                should_redraw = true;
             }
-            WindowEvent::RedrawRequested => {
-                // Always prepare text when redraw is requested
-                state.text.prepare_all(&mut state.text_renderer);
-                
-                // Handle the redraw event and check if we need to keep redrawing
-                let result = state.text.handle_event(&event, &state.window);
-                should_redraw = result.need_rerender;
-                
-                // Render
-                match state.render() {
-                    Ok(()) => {}
-                    Err(wgpu::SurfaceError::Lost) => {
-                        let logical_size = LogicalSize::new(
-                            state.surface_config.width,
-                            state.surface_config.height,
-                        );
-                        state.resize(logical_size);
-                    }
-                    Err(wgpu::SurfaceError::OutOfMemory) => {
-                        event_loop.exit();
-                    }
-                    Err(e) => {
-                        eprintln!("{:?}", e);
-                    }
-                }
-            }
-            _ => {
-                // Handle other events through the text system
-                should_redraw = state.handle_window_event(&event);
-            }
+            _ => {}
         }
 
-        // Only request redraw if EventResult says we need to  
-        if should_redraw {
+        if result.need_rerender {
             state.window.request_redraw();
-        } else {
-            // Count skipped frames for statistics
-            state.frame_skip_count += 1;
         }
     }
 }

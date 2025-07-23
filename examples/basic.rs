@@ -17,7 +17,6 @@ fn main() {
         .unwrap();
 }
 
-#[allow(dead_code)]
 struct State {
     device: wgpu::Device,
     queue: wgpu::Queue,
@@ -28,14 +27,8 @@ struct State {
     text_renderer: TextRenderer,
     text: Text,
 
-    // Text edits with explicit names
     single_line_input: TextEditHandle,
-
-    // Text box with explicit name
     clipped_text_box: TextBoxHandle,
-    
-    // Static text box with explicit name
-    justified_static_text: TextBoxHandle,
 
     big_text_style: StyleHandle,
     modifiers: ModifiersState,
@@ -115,7 +108,6 @@ impl State {
 
             single_line_input,
             clipped_text_box,
-            justified_static_text,
             big_text_style: big_text_style_handle,
 
             modifiers: ModifiersState::default(),
