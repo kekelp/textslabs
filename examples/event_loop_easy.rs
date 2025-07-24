@@ -3,12 +3,13 @@
 // Usually, this just means checking the result of `Text::handle_event()`, and calling `Window::request_redraw()` only if `result.need_rerender` is true.
 // This covers normal updates, as well as smooth scroll animations.
 // 
-// For cursor blinking, the text struct takes a window Arc reference and spawns a background thread that calls `window.request_redraw()` when the cursor needs to blink.
+// For cursor blinking, this example uses the auto-wakeup system, where the `Text` struct takes a window Arc reference and spawns a background thread that calls `window.request_redraw()` when the cursor needs to blink.
 //
-// There are at least two other ways to implement the cursor blinking wakeup in winit: ControlFlow::WaitUntil and EventLoopProxy + user events.
-// The Arc way is the simplest to integrate, and from what I've seen, using an Arc for the winit Window is already very common, so this is the main supported way for now.
+// This is a simple system meant to be as easy as possible to integrate, but it doesn't work for multi-window applications.
 //
-// This doesn't work for multi-window applications. 
+// See the `event_loop_smart.rs` example to see a more proper implementation of waking.
+//
+// If you're building an application that never pauses its winit event loop. like a game, you can disregard all the wakeup mechanisms entirely. See the `basic.rs` example.
 
 
 use textslabs::*;

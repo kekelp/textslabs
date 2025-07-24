@@ -42,7 +42,7 @@ pub struct Text {
     pub(crate) cursor_blink_start: Option<Instant>,
     pub(crate) cursor_currently_blinked_out: bool,
     
-    pub(crate) cursor_blink_timer: Option<CursorBlinkTimer>,
+    pub(crate) cursor_blink_timer: Option<CursorBlinkWaker>,
 }
 
 /// Handle for a text edit box.
@@ -177,17 +177,19 @@ pub const DEFAULT_STYLE_HANDLE: StyleHandle = StyleHandle { i: DEFAULT_STYLE_I a
 impl Text {
     /// Create a new Text instance.
     /// 
-    /// `window` is used to allow `Text` to wake up the `winit` event loop when it needs to redraw a blinking cursor.
+    /// `window` is used to allow `Text` to wake up the `winit` event loop automatically when it needs to redraw a blinking cursor.
     /// 
     /// In applications that don't pause their event loops, like games, there is no need to use the wakeup system, so you can use [`Text::new_without_blink_wakeup`] instead.
+    /// 
+    /// You can also handle cursor wakeups manually in your winit event loop with winit's `ControlFlow::WaitUntil` and [`Text::time_until_next_cursor_blink`]. See the `event_loop_smart.rs` example.
     pub fn new(window: Arc<Window>) -> Self {
         Self::new_with_option(Some(window))
     }
 
     /// Create a new Text instance without cursor blink wakeup.
     /// 
-    /// Applications that don't pause their event loops can use this function.
-    pub fn new_without_blink_wakeup() -> Self {
+    /// Use this function for applications that don't pause their event loops, like games, or when handling cursor wakeups manually with winit's `ControlFlow::WaitUntil` and [`Text::time_until_next_cursor_blink`]. See the `event_loop_smart.rs` example.
+    pub fn new_without_auto_wakeup() -> Self {
         Self::new_with_option(None)
     }
 
@@ -200,7 +202,7 @@ impl Text {
         });
         debug_assert!(i == DEFAULT_STYLE_I);
 
-        let cursor_blink_timer = window.map(|window| CursorBlinkTimer::new(Arc::downgrade(&window)));
+        let cursor_blink_timer = window.map(|window| CursorBlinkWaker::new(Arc::downgrade(&window)));
 
         Self {
             text_boxes: Slab::with_capacity(10),
@@ -1089,6 +1091,21 @@ impl Text {
         }
     }
 
+    /// Returns the duration until the next cursor blink state change.
+    /// 
+    /// Returns `None` if cursor blinking should not be blinking.
+    pub fn time_until_next_cursor_blink(&self) -> Option<Duration> {
+        if let Some(start_time) = self.cursor_blink_start {
+            let elapsed = Instant::now().duration_since(start_time);
+            let blink_period = Duration::from_millis(CURSOR_BLINK_TIME_MILLIS);
+            let elapsed_in_current_cycle = elapsed.as_millis() % blink_period.as_millis();
+            let time_until_next_blink = blink_period.as_millis() - elapsed_in_current_cycle;
+            Some(Duration::from_millis(time_until_next_blink as u64))
+        } else {
+            None
+        }
+    }
+
     // If the cursor needs to be blinking, reset it. Otherwise, stop it.
     fn reset_cursor_blink(&mut self) {
         if let Some(AnyBox::TextEdit(i)) = self.focused {
@@ -1100,15 +1117,16 @@ impl Text {
                 self.decorations_changed = true;
                 
                 if let Some(timer) = &self.cursor_blink_timer {
-                    timer.start_timer();
+                    timer.start_waker();
                 }
 
                 return;             
             }
         }
 
+        self.cursor_blink_start = None;
         if let Some(timer) = &self.cursor_blink_timer {
-            timer.stop_timer();
+            timer.stop_waker();
         }
 
     }
@@ -1197,28 +1215,28 @@ impl EventResult {
     }
 }
 
-
+// todo: get this from system settings.
 const CURSOR_BLINK_TIME_MILLIS: u64 = 500;
 
 #[derive(Debug)]
-enum TimerCommand {
+enum WakerCommand {
     Start,
     Stop,
     Exit,
 }
 
-pub(crate) struct CursorBlinkTimer {
-    command_sender: mpsc::Sender<TimerCommand>,
+pub(crate) struct CursorBlinkWaker {
+    command_sender: mpsc::Sender<WakerCommand>,
 }
 
-impl Drop for CursorBlinkTimer {
+impl Drop for CursorBlinkWaker {
     fn drop(&mut self) {
         // Signal the thread to exit
-        let _ = self.command_sender.send(TimerCommand::Exit);
+        let _ = self.command_sender.send(WakerCommand::Exit);
     }
 }
 
-impl CursorBlinkTimer {
+impl CursorBlinkWaker {
     fn new(window: Weak<Window>) -> Self {
         let (command_sender, command_receiver) = mpsc::channel();
         
@@ -1229,9 +1247,9 @@ impl CursorBlinkTimer {
                 if is_running {
                     // While running, wait for either a command or timeout
                     match command_receiver.recv_timeout(Duration::from_millis(CURSOR_BLINK_TIME_MILLIS)) {
-                        Ok(TimerCommand::Start) => {}
-                        Ok(TimerCommand::Stop) => is_running = false,
-                        Ok(TimerCommand::Exit) => return,
+                        Ok(WakerCommand::Start) => {}
+                        Ok(WakerCommand::Stop) => is_running = false,
+                        Ok(WakerCommand::Exit) => return,
                         Err(mpsc::RecvTimeoutError::Timeout) => {
                             // Timeout occurred, request redraw directly
                             if let Some(window) = window.upgrade() {
@@ -1246,9 +1264,9 @@ impl CursorBlinkTimer {
                 } else {
                     // While stopped, wait indefinitely for a command
                     match command_receiver.recv() {
-                        Ok(TimerCommand::Start) => is_running = true,
-                        Ok(TimerCommand::Stop) => {}
-                        Ok(TimerCommand::Exit) => return,
+                        Ok(WakerCommand::Start) => is_running = true,
+                        Ok(WakerCommand::Stop) => {}
+                        Ok(WakerCommand::Exit) => return,
                         Err(_) => return,
                     }
                 }
@@ -1260,11 +1278,11 @@ impl CursorBlinkTimer {
         }
     }
         
-    fn start_timer(&self) {
-        let _ = self.command_sender.send(TimerCommand::Start);
+    fn start_waker(&self) {
+        let _ = self.command_sender.send(WakerCommand::Start);
     }
     
-    fn stop_timer(&self) {
-        let _ = self.command_sender.send(TimerCommand::Stop);
+    fn stop_waker(&self) {
+        let _ = self.command_sender.send(WakerCommand::Stop);
     }
 }

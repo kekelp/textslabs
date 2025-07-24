@@ -52,7 +52,7 @@ impl State {
         surface.configure(&device, &surface_config);
 
         let white = [255,0,0,255];
-        let mut text = Text::new_without_blink_wakeup();
+        let mut text = Text::new_without_auto_wakeup();
         
         // Create a style
         let big_text_style_handle = text.add_style(TextStyle {
