@@ -342,7 +342,7 @@ impl TextRenderer {
         self.text_renderer.needs_gpu_sync = true;
     }
 
-    pub fn prepare_text_box_layout(&mut self, text_box: &mut TextBox) {
+    pub fn prepare_text_box_layout(&mut self, text_box: &mut TextBoxMut) {
         if text_box.hidden() {
             return;
         }
@@ -393,7 +393,7 @@ impl TextRenderer {
         self.capture_quad_ranges_after(&mut text_edit.text_box.inner.quad_storage, scroll_offset);
     }
 
-    pub fn prepare_text_box_decorations(&mut self, text_box: &TextBox, show_cursor: bool) {
+    pub fn prepare_text_box_decorations(&mut self, text_box: &TextBoxMut, show_cursor: bool) {
         let (left, top) = text_box.pos();
         let (left, top) = (left as f32, top as f32);
         let clip_rect = text_box.effective_clip_rect();

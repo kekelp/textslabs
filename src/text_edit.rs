@@ -1182,7 +1182,7 @@ fn remove_newlines_inplace(text: &mut String) -> bool {
 pub struct TextEdit<'a> {
     pub(crate) inner: &'a mut TextEditInner,
     pub(crate) styles: &'a Slab<StyleInner>,
-    pub(crate) text_box: TextBox<'a>,
+    pub(crate) text_box: TextBoxMut<'a>,
 }
 
 impl<'a> TextEdit<'a> {
@@ -1442,11 +1442,11 @@ impl<'a> TextEdit<'a> {
 }
 
 impl<'a> TextEdit<'a> {
-    pub fn get_text_box_mut(&mut self) -> &mut TextBox<'a> {
+    pub fn get_text_box_mut(&mut self) -> &mut TextBoxMut<'a> {
         return &mut self.text_box;
     }
 
-    pub fn get_text_box(&self) -> &TextBox<'a> {
+    pub fn get_text_box(&self) -> &TextBoxMut<'a> {
         return &self.text_box;
     }
 

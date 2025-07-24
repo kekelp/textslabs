@@ -921,9 +921,9 @@ impl Text {
     /// `handle` is the handle that was returned when first creating the text box with [`Text::add_text_box()`].
     /// 
     /// This is a fast lookup operation that does not require any hashing.
-    pub fn get_text_box_mut(&mut self, handle: &TextBoxHandle) -> TextBox {
+    pub fn get_text_box_mut(&mut self, handle: &TextBoxHandle) -> TextBoxMut {
         let text_box_inner = &mut self.text_boxes[handle.i as usize];
-        TextBox { inner: text_box_inner, styles: &self.styles }
+        TextBoxMut { inner: text_box_inner, styles: &self.styles }
     }
 
     /// Get a mutable reference to a text box wrapped with its style.
@@ -931,12 +931,12 @@ impl Text {
     /// `handle` is the handle that was returned when first creating the text box with [`Text::add_text_box()`].
     /// 
     /// This is a fast lookup operation that does not require any hashing.
-    pub fn get_text_box(&mut self, handle: &TextBoxHandle) -> TextBox {
-        let text_box_inner = &mut self.text_boxes[handle.i as usize];
+    pub fn get_text_box(&self, handle: &TextBoxHandle) -> TextBox {
+        let text_box_inner = &self.text_boxes[handle.i as usize];
         TextBox { inner: text_box_inner, styles: &self.styles }
     }
 
-    pub(crate) fn get_full_text_box(&mut self, i: &TextBoxHandle) -> TextBox<'_> {
+    pub(crate) fn get_full_text_box(&mut self, i: &TextBoxHandle) -> TextBoxMut<'_> {
         get_full_text_box_free(&mut self.text_boxes, &mut self.styles, i)
     }
 
@@ -1147,9 +1147,9 @@ pub(crate) fn get_full_text_box_free<'a>(
     text_boxes: &'a mut Slab<TextBoxInner>,
     styles: &'a Slab<StyleInner>,
     i: &TextBoxHandle,
-) -> TextBox<'a> {
+) -> TextBoxMut<'a> {
     let text_box_inner = &mut text_boxes[i.i as usize];
-    TextBox { inner: text_box_inner, styles }
+    TextBoxMut { inner: text_box_inner, styles }
 }
 
 // I LOVE PARTIAL BORROWS!
@@ -1159,7 +1159,7 @@ pub(crate) fn get_full_text_edit_free<'a>(
     i: &TextEditHandle,
 ) -> TextEdit<'a> {
     let (text_edit_inner, text_box_inner) = text_edits.get_mut(i.i as usize).unwrap();
-    let text_box = TextBox { inner: text_box_inner, styles };
+    let text_box = TextBoxMut { inner: text_box_inner, styles };
     TextEdit { inner: text_edit_inner, styles, text_box }
 }
 

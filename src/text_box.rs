@@ -107,8 +107,14 @@ pub(crate) struct TextBoxInner {
 /// This struct can't be created directly. Instead, use [`Text::add_text_box()`] to create one within [`Text`] and get a [`TextBoxHandle`] back.
 /// 
 /// Then, the handle can be used to get a `TextBox` with [`Text::get_text_box()`].
-pub struct TextBox<'a> {
+pub struct TextBoxMut<'a> {
     pub(crate) inner: &'a mut TextBoxInner,
+    pub(crate) styles: &'a Slab<StyleInner>,
+}
+
+#[derive(Clone, Copy)]
+pub struct TextBox<'a> {
+    pub(crate) inner: &'a TextBoxInner,
     pub(crate) styles: &'a Slab<StyleInner>,
 }
 
@@ -184,24 +190,140 @@ impl TextBoxInner {
     }    
 }
 
-impl<'a> TextBox<'a> {
-    pub(crate) fn style(&self) -> &TextStyle2 {
+
+macro_rules! impl_for_textbox_and_textboxmut {
+    ($($(#[$attr:meta])* $visibility:vis fn $fn_name:ident $(<$($generic:tt),*>)? ($(& $($lt:lifetime)?)? $self:ident $(, $param:ident: $param_ty:ty)*) $(-> $ret_ty:ty)? $body:block)*) => {
+        impl<'a> TextBox<'a> {
+            $(
+                $(#[$attr])*
+                $visibility fn $fn_name $(<$($generic),*>)? ($(& $($lt)?)? $self $(, $param: $param_ty)*) $(-> $ret_ty)? $body
+            )*
+        }
+        
+        impl<'a> TextBoxMut<'a> {
+            $(
+                $(#[$attr])*
+                $visibility fn $fn_name $(<$($generic),*>)? ($(& $($lt)?)? $self $(, $param: $param_ty)*) $(-> $ret_ty)? $body
+            )*
+        }
+    };
+}
+
+impl_for_textbox_and_textboxmut! {
+    pub fn style(&self) -> &'a TextStyle2 {
         &self.styles[self.inner.style.i as usize].text_style
     }
 
-    pub(crate) fn style_version(&self) -> u64 {
-        self.styles[self.inner.style.i as usize].version
+    pub fn hidden(&self) -> bool {
+        self.inner.hidden
     }
 
-    pub(crate) fn style_version_changed(&self) -> bool {
-        self.style_version() != self.inner.style_version
+    pub fn depth(&self) -> f32 {
+        self.inner.depth
     }
 
-    #[must_use]
-    pub(crate) fn hit_full_rect(&self, cursor_pos: (f64, f64)) -> bool {
-        self.inner.hit_full_rect(cursor_pos)
+    pub fn text(self) -> &'a str {
+        &self.inner.text
     }
 
+    pub fn pos(&self) -> (f64, f64) {
+        (self.inner.left, self.inner.top)
+    }
+
+    pub fn clip_rect(&self) -> Option<parley::Rect> {
+        self.inner.clip_rect
+    }
+
+    pub fn fadeout_clipping(&self) -> bool {
+        self.inner.fadeout_clipping
+    }
+
+    pub fn auto_clip(&self) -> bool {
+        self.inner.auto_clip
+    }
+
+    pub fn selected_text(&self) -> Option<&str> {
+        if !self.inner.selection.selection.is_collapsed() {
+            self.inner.text.get(self.inner.selection.selection.text_range())
+        } else {
+            None
+        }
+    }
+
+    pub fn selection(&self) -> Selection {
+        self.inner.selection.selection
+    }
+
+    pub fn scroll_offset(&self) -> (f32, f32) {
+        self.inner.scroll_offset
+    }
+
+    pub fn selection_geometry(&self) -> Vec<(Rect, usize)> {
+        self.inner.selection.selection.geometry(&self.inner.layout)
+    }
+
+    pub fn selection_geometry_with(&self, f: impl FnMut(Rect, usize)) {
+        self.inner.selection.selection.geometry_with(&self.inner.layout, f);
+    }
+
+    pub fn effective_clip_rect(&self) -> Option<parley::Rect> {
+        let auto_clip_rect = if self.inner.auto_clip {
+            Some(parley::Rect {
+                x0: self.inner.scroll_offset.0 as f64,
+                y0: self.inner.scroll_offset.1 as f64,
+                x1: (self.inner.scroll_offset.0 + self.inner.max_advance) as f64,
+                y1: (self.inner.scroll_offset.1 + self.inner.height) as f64,
+            })
+        } else {
+            None
+        };
+
+        let clip_rect = self.inner.clip_rect.map(|explicit| {
+            parley::Rect {
+                x0: explicit.x0 + self.inner.scroll_offset.0 as f64,
+                y0: explicit.y0 + self.inner.scroll_offset.1 as f64,
+                x1: explicit.x1 + self.inner.scroll_offset.0 as f64,
+                y1: explicit.y1 + self.inner.scroll_offset.1 as f64,
+            }
+        });
+
+        match (auto_clip_rect, clip_rect) {
+            (None, None) => None,
+            (Some(auto), None) => Some(auto),
+            (None, Some(explicit)) => Some(explicit),
+            (Some(auto), Some(explicit)) => {
+                let x0 = auto.x0.max(explicit.x0);
+                let y0 = auto.y0.max(explicit.y0);
+                let x1 = auto.x1.min(explicit.x1);
+                let y1 = auto.y1.min(explicit.y1);
+                
+                if x0 < x1 && y0 < y1 {
+                    Some(parley::Rect { x0, y0, x1, y1 })
+                } else {
+                    Some(parley::Rect { x0: 0.0, y0: 0.0, x1: 0.0, y1: 0.0 })
+                }
+            }
+        }
+    }
+
+    pub fn selectable(&self) -> bool {
+        self.inner.selectable
+    }
+}
+
+impl<'a> TextBox<'a> {
+    pub fn can_hide(&self) -> bool {
+        self.inner.can_hide
+    }
+}
+
+impl<'a> TextBoxMut<'a> {
+    pub fn as_text_box(&'a self) -> TextBox<'a> {
+        TextBox {
+            inner: self.inner,
+            styles: self.styles,
+        }
+    }
 
     pub(crate) fn handle_event(&mut self, event: &WindowEvent, _window: &Window, input_state: &TextInputState) -> TextEventResult {
         if self.inner.hidden {
@@ -459,70 +581,13 @@ impl<'a> TextBox<'a> {
         self.set_selection(self.inner.selection.selection.collapse());
     }
 
-    pub fn hidden(&self) -> bool {
-        self.inner.hidden
-    }
-
-    pub fn depth(&self) -> f32 {
-        self.inner.depth
-    }
-
-    pub(crate) fn text_inner(&self) -> &str {
-        &self.inner.text
-    }
-
-    // todo: this consuming crap works for now but surely there's a way to annotate the lifetimes properly
-    pub fn text(self) -> &'a str {
-        &self.inner.text
-    }
-
     pub fn text_mut(&mut self) -> &mut String {
         self.inner.needs_relayout = true;
         self.inner.text.to_mut()
     }
 
-    pub fn pos(&self) -> (f64, f64) {
-        (self.inner.left, self.inner.top)
-    }
-
-    pub fn clip_rect(&self) -> Option<parley::Rect> {
-        self.inner.clip_rect
-    }
-
-    pub fn fadeout_clipping(&self) -> bool {
-        self.inner.fadeout_clipping
-    }
-
-    pub fn auto_clip(&self) -> bool {
-        self.inner.auto_clip
-    }
-
     pub fn set_auto_clip(&mut self, auto_clip: bool) {
         self.inner.auto_clip = auto_clip;
-    }
-
-    pub fn selected_text(&self) -> Option<&str> {
-        if !self.inner.selection.selection.is_collapsed() {
-            self.inner.text.get(self.inner.selection.selection.text_range())
-        } else {
-            None
-        }
-    }
-
-    pub fn selection(&self) -> Selection {
-        self.inner.selection.selection
-    }
-
-    pub fn scroll_offset(&self) -> (f32, f32) {
-        self.inner.scroll_offset
-    }
-
-    pub fn selection_geometry(&self) -> Vec<(Rect, usize)> {
-        self.inner.selection.selection.geometry(&self.inner.layout)
-    }
-
-    pub fn selection_geometry_with(&self, f: impl FnMut(Rect, usize)) {
-        self.inner.selection.selection.geometry_with(&self.inner.layout, f);
     }
 
     pub fn set_pos(&mut self, pos: (f64, f64)) {
@@ -563,58 +628,28 @@ impl<'a> TextBox<'a> {
         self.inner.scroll_offset = offset;
     }
 
-    // todo: this isn't very good, it remains borrowed with the wrong style
     pub fn set_style(&mut self, style: &StyleHandle) {
         self.inner.style = style.sneak_clone();
         self.inner.style_version = self.style_version();
         self.inner.needs_relayout = true;
     }
 
-    /// Computes the effective clip rectangle, combining auto-clipping with explicit clip_rect
-    pub fn effective_clip_rect(&self) -> Option<parley::Rect> {
-        let auto_clip_rect = if self.inner.auto_clip {
-            Some(parley::Rect {
-                x0: self.inner.scroll_offset.0 as f64,
-                y0: self.inner.scroll_offset.1 as f64,
-                x1: (self.inner.scroll_offset.0 + self.inner.max_advance) as f64,
-                y1: (self.inner.scroll_offset.1 + self.inner.height) as f64,
-            })
-        } else {
-            None
-        };
-
-
-        let clip_rect = self.inner.clip_rect.map(|explicit| {
-            parley::Rect {
-                x0: explicit.x0 + self.inner.scroll_offset.0 as f64,
-                y0: explicit.y0 + self.inner.scroll_offset.1 as f64,
-                x1: explicit.x1 + self.inner.scroll_offset.0 as f64,
-                y1: explicit.y1 + self.inner.scroll_offset.1 as f64,
-            }
-        });
-
-        match (auto_clip_rect, clip_rect) {
-            (None, None) => None,
-            (Some(auto), None) => Some(auto),
-            (None, Some(explicit)) => Some(explicit),
-            (Some(auto), Some(explicit)) => {
-                // Intersect the rectangles
-                let x0 = auto.x0.max(explicit.x0);
-                let y0 = auto.y0.max(explicit.y0);
-                let x1 = auto.x1.min(explicit.x1);
-                let y1 = auto.y1.min(explicit.y1);
-                
-                if x0 < x1 && y0 < y1 {
-                    Some(parley::Rect { x0, y0, x1, y1 })
-                } else {
-                    // No intersection - empty rectangle
-                    Some(parley::Rect { x0: 0.0, y0: 0.0, x1: 0.0, y1: 0.0 })
-                }
-            }
-        }
+    pub(crate) fn style_version(&self) -> u64 {
+        self.styles[self.inner.style.i as usize].version
     }
 
+    pub(crate) fn style_version_changed(&self) -> bool {
+        self.style_version() != self.inner.style_version
+    }
 
+    #[must_use]
+    pub(crate) fn hit_full_rect(&self, cursor_pos: (f64, f64)) -> bool {
+        self.inner.hit_full_rect(cursor_pos)
+    }
+
+    pub(crate) fn text_inner(&self) -> &str {
+        &self.inner.text
+    }
 
     pub(crate) fn rebuild_layout(
         &mut self,
@@ -903,11 +938,11 @@ impl<'a> TextBox<'a> {
     pub fn set_selectable(&mut self, selectable: bool) {
         self.inner.selectable = selectable;
     }
-
-    pub fn selectable(&mut self) -> bool {
-        self.inner.selectable
-    }
 }
+
+
+
+
 
 
 
