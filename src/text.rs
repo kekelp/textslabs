@@ -741,22 +741,21 @@ impl Text {
     }
 
     fn refocus(&mut self, new_focus: Option<AnyBox>) {
-        if new_focus != self.focused {
-            if let Some(_old_focus) = self.focused {
-                self.stop_cursor_blink();
-            }
-            
+        let focus_changed = new_focus != self.focused;
+        
+        if focus_changed {
             if let Some(old_focus) = self.focused {
                 self.remove_focus(old_focus);
             }
-            
-            if new_focus.is_some() {
-                self.reset_cursor_blink();
-            }
         }
+
         self.focused = new_focus;
-        // todo: could skip some rerenders here if the old focus wasn't editable and had collapsed selection.
-        self.decorations_changed = true;
+        
+        if focus_changed {
+            // todo: could skip some rerenders here if the old focus wasn't editable and had collapsed selection.
+            self.decorations_changed = true;
+            self.reset_cursor_blink();
+        }
     }
 
     fn handle_click_counting(&mut self) {
@@ -1090,25 +1089,28 @@ impl Text {
         }
     }
 
+    // If the cursor needs to be blinking, reset it. Otherwise, stop it.
     fn reset_cursor_blink(&mut self) {
-        self.cursor_blink_start = Some(Instant::now());
-        self.decorations_changed = true;
-        
-        // Start the cursor blink timer if we have one and there's a focused text edit
-        if let Some(timer) = &self.cursor_blink_timer {
-            if self.focused.is_some() {
-                timer.start_timer();
+        if let Some(AnyBox::TextEdit(i)) = self.focused {
+            let handle = TextEditHandle { i: i as u32 };
+            let text_edit = self.get_full_text_edit(&handle);
+            if text_edit.text_box.selection().is_collapsed() {
+                
+                self.cursor_blink_start = Some(Instant::now());
+                self.decorations_changed = true;
+                
+                if let Some(timer) = &self.cursor_blink_timer {
+                    timer.start_timer();
+                }
+
+                return;             
             }
         }
-    }
-    
-    fn stop_cursor_blink(&mut self) {
-        self.cursor_blink_start = None;
-        
-        // Stop the cursor blink timer if we have one
+
         if let Some(timer) = &self.cursor_blink_timer {
             timer.stop_timer();
         }
+
     }
 }
 

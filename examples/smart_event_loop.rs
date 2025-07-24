@@ -7,7 +7,8 @@
 //
 // There are at least two other ways to implement the cursor blinking wakeup in winit: ControlFlow::WaitUntil and EventLoopProxy + user events.
 // The Arc way is the simplest to integrate, and from what I've seen, using an Arc for the winit Window is already very common, so this is the main supported way for now.
-
+//
+// This doesn't work for multi-window applications. 
 
 
 use textslabs::*;
