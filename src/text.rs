@@ -3,7 +3,8 @@ use slab::Slab;
 use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
-use winit::{event::{Modifiers, MouseButton, WindowEvent}, event_loop::EventLoopProxy, window::Window};
+use winit::{event::{Modifiers, MouseButton, WindowEvent}, window::Window};
+use std::sync::{Arc, Weak};
 
 const MULTICLICK_DELAY: f64 = 0.4;
 const MULTICLICK_TOLERANCE_SQUARED: f64 = 26.0;
@@ -176,19 +177,21 @@ pub const DEFAULT_STYLE_HANDLE: StyleHandle = StyleHandle { i: DEFAULT_STYLE_I a
 impl Text {
     /// Create a new Text instance.
     /// 
-    /// `event_proxy` is used to allow `Text` to wake up the `winit` event loop when it needs to redraw a blinking cursor, but you will need to call `window.redraw_requested()` when receiving a custom event. See the `smart_event_loop.rs` example to see how to set this up.
+    /// `window` is used to allow `Text` to wake up the `winit` event loop when it needs to redraw a blinking cursor.
     /// 
     /// In applications that don't pause their event loops, like games, there is no need to use the wakeup system, so you can use [`Text::new_without_blink_wakeup`] instead.
-    /// 
-    /// If you are using user events for other things, you can use [`Text::new_with_blink_wakeup`] to pass any `EventLoopProxy<T>`.
-    pub fn new(event_proxy: EventLoopProxy<()>) -> Self {
-        Self::new_with_blink_wakeup(event_proxy, ())
+    pub fn new(window: Arc<Window>) -> Self {
+        Self::new_with_option(Some(window))
     }
-    
-    /// Create a new Text instance with cursor blink wakeup.
+
+    /// Create a new Text instance without cursor blink wakeup.
     /// 
-    /// `user_event` is the value that will be sent as a winit user event to signal that a cursor blink happened. When you receive it, simply call `window.redraw_requested()`. 
-    pub fn new_with_blink_wakeup<T: Send + Clone>(event_proxy: EventLoopProxy<T>, user_event: T) -> Self {
+    /// Applications that don't pause their event loops can use this function.
+    pub fn new_without_blink_wakeup() -> Self {
+        Self::new_with_option(None)
+    }
+
+    pub(crate) fn new_with_option(window: Option<Arc<Window>>) -> Self {
         let mut styles = Slab::with_capacity(10);
         let i = styles.insert(StyleInner {
             text_style: original_default_style(),
@@ -197,7 +200,7 @@ impl Text {
         });
         debug_assert!(i == DEFAULT_STYLE_I);
 
-        let cursor_blink_timer = Some(CursorBlinkTimer::new(event_proxy, user_event));
+        let cursor_blink_timer = window.map(|window| CursorBlinkTimer::new(Arc::downgrade(&window)));
 
         Self {
             text_boxes: Slab::with_capacity(10),
@@ -216,38 +219,6 @@ impl Text {
             cursor_blink_start: None,
             cursor_currently_blinked_out: false,
             cursor_blink_timer,
-        }
-    }
-
-    /// Create a new Text instance without cursor blink wakeup.
-    /// 
-    /// Applications that don't pause their event loops can use this function.
-    pub fn new_without_blink_wakeup() -> Self {
-        let mut styles = Slab::with_capacity(10);
-        let i = styles.insert(StyleInner {
-            text_style: original_default_style(),
-            text_edit_style: TextEditStyle::default(),
-            version: 0,
-        });
-        debug_assert!(i == DEFAULT_STYLE_I);
-
-        Self {
-            text_boxes: Slab::with_capacity(10),
-            text_edits: Slab::with_capacity(10),
-            styles,
-            style_version_id_counter: 0,
-            input_state: TextInputState::new(),
-            focused: None,
-            mouse_hit_stack: Vec::with_capacity(6),
-            text_changed: true,
-            decorations_changed: true,
-            scrolled_moved_indices: Vec::new(),
-            scroll_animations: Vec::new(),
-            current_frame: 1,
-            using_frame_based_visibility: false,
-            cursor_blink_start: None,
-            cursor_currently_blinked_out: false,
-            cursor_blink_timer: None,
         }
     }
 
@@ -1112,7 +1083,6 @@ impl Text {
             let changed = blinked_out != self.cursor_currently_blinked_out;
             if update {
                 self.cursor_currently_blinked_out = blinked_out;
-                dbg!(changed);
             }
             return (blinked_out, changed);
         } else {
@@ -1247,7 +1217,7 @@ impl Drop for CursorBlinkTimer {
 }
 
 impl CursorBlinkTimer {
-    fn new<T: Send + Clone>(event_proxy: EventLoopProxy<T>, user_event: T) -> Self {
+    fn new(window: Weak<Window>) -> Self {
         let (command_sender, command_receiver) = mpsc::channel();
         
         thread::spawn(move || {
@@ -1261,9 +1231,13 @@ impl CursorBlinkTimer {
                         Ok(TimerCommand::Stop) => is_running = false,
                         Ok(TimerCommand::Exit) => return,
                         Err(mpsc::RecvTimeoutError::Timeout) => {
-                            // Timeout occurred, send the wakeup event
-                            let res = event_proxy.send_event(user_event.clone());
-                            if res.is_err() { return }
+                            // Timeout occurred, request redraw directly
+                            if let Some(window) = window.upgrade() {
+                                window.request_redraw();
+                            } else {
+                                // Window has been dropped, exit thread
+                                return;
+                            }
                         }
                         Err(mpsc::RecvTimeoutError::Disconnected) => return,
                     }

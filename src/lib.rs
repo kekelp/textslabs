@@ -29,17 +29,17 @@
 //! 
 //! The main way to use the library is imperative with a handle-based system:
 //! 
-//! ```rust
-//! let mut text = Text::new(None, ());
+//! ```rust,no_run
+//! use textslabs::*;
+//! let mut text = Text::new_without_blink_wakeup();
 //! 
 //! // Add text boxes and get handles
 //! let handle = text.add_text_box("Hello", (10.0, 10.0), (200.0, 50.0), 0.0);
-//! let edit_handle = text.add_text_edit("Type here", (10.0, 70.0), (200.0, 30.0), 0.0);
+//! let edit_handle = text.add_text_edit("Type here".to_string(), (10.0, 70.0), (200.0, 30.0), 0.0);
 //! 
 //! // Use handles to access and modify the boxes
-//! text.get_text_box_mut(&handle).set_style(&my_style);
-//! text.get_text_box_mut(&handle).raw_text_mut().push_str("... World");
-//! text.get_text_box_mut(&handle).set_hidden(true);
+//! // text.get_text_box_mut(&handle).set_style(&my_style);
+//! text.get_text_box_mut(&handle).text_mut().push_str("... World");
 //! 
 //! // Manually remove text boxes
 //! text.remove_text_box(handle);
