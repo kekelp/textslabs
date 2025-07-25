@@ -1,12 +1,15 @@
 use crate::*;
 
-// Flag bit constants
-const FLAG_CONTENT_TYPE_MASK: u32 = 0x0F;
-const FLAG_FADE_ENABLED_BIT: u32 = 4;
+// Content type constants
+const CONTENT_TYPE_MASK: u32 = 0;
+const CONTENT_TYPE_COLOR: u32 = 1;
+const CONTENT_TYPE_DECORATION: u32 = 2;
+
+// Flag bits
+const FADE_ENABLED_BIT: u32 = 4;
 
 fn pack_flags(content_type: u32, fade_enabled: bool) -> u32 {
-    (content_type & FLAG_CONTENT_TYPE_MASK) | 
-    if fade_enabled { 1 << FLAG_FADE_ENABLED_BIT } else { 0 }
+    content_type | if fade_enabled { 1 << FADE_ENABLED_BIT } else { 0 }
 }
 
 
@@ -128,7 +131,7 @@ impl ContextlessTextRenderer {
             color,
             uv_origin: [0, 0],
             depth: 0.0,
-            flags: pack_flags(2, false), // todo make names for these
+            flags: pack_flags(CONTENT_TYPE_DECORATION, false),
             clip_rect: [0, 0, 32767, 32767], // No clipping for decorations
         };
         self.decorations.push(quad);
@@ -200,8 +203,8 @@ fn make_quad(glyph: &GlyphWithContext, stored_glyph: &StoredGlyph) -> Quad {
     let (size_x, size_y) = (stored_glyph.size.width, stored_glyph.size.height);
 
     let (color, flags) = match stored_glyph.content_type {
-        Content::Mask => (glyph.color, 0),
-        Content::Color => (0xff_ff_ff_ff, 1), // todo funny blending?
+        Content::Mask => (glyph.color, CONTENT_TYPE_MASK),
+        Content::Color => (0xff_ff_ff_ff, CONTENT_TYPE_COLOR),
         Content::SubpixelMask => unreachable!(),
     };
     return Quad {
@@ -236,7 +239,7 @@ fn clip_quad(quad: Quad, left: f32, top: f32, clip_rect: Option<parley::Rect>, f
         ];
 
         // Extract content type from existing flags
-        let content_type = quad.flags & FLAG_CONTENT_TYPE_MASK;
+        let content_type = quad.flags & 0x0F;
         
         // Pack flags with fade enabled boolean
         quad.flags = pack_flags(content_type, fade);
@@ -424,7 +427,7 @@ impl TextRenderer {
                 uv_origin: [0, 0],
                 color: 0xff0000ff,
                 depth: 0.0,
-                flags: pack_flags(0, false),
+                flags: pack_flags(CONTENT_TYPE_MASK, false),
                 clip_rect: [0, 0, 32767, 32767]
             }];
         }
@@ -438,7 +441,7 @@ impl TextRenderer {
                 uv_origin: [0, 0],
                 color: 0xffffffff,
                 depth: 0.0,
-                flags: pack_flags(1, false),
+                flags: pack_flags(CONTENT_TYPE_COLOR, false),
                 clip_rect: [0, 0, 32767, 32767]
             }];
         }
