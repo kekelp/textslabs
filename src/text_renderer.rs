@@ -2,11 +2,11 @@ use crate::*;
 
 // Flag bit constants
 const FLAG_CONTENT_TYPE_MASK: u32 = 0x0F;
-const FLAG_FADE_EDGES_SHIFT: u32 = 4;
+const FLAG_FADE_ENABLED_BIT: u32 = 4;
 
-fn pack_flags(content_type: u32, fade_edges: u32) -> u32 {
+fn pack_flags(content_type: u32, fade_enabled: bool) -> u32 {
     (content_type & FLAG_CONTENT_TYPE_MASK) | 
-    ((fade_edges & 0x0F) << FLAG_FADE_EDGES_SHIFT)
+    if fade_enabled { 1 << FLAG_FADE_ENABLED_BIT } else { 0 }
 }
 
 
@@ -128,7 +128,7 @@ impl ContextlessTextRenderer {
             color,
             uv_origin: [0, 0],
             depth: 0.0,
-            flags: pack_flags(2, 0), // todo make names for these
+            flags: pack_flags(2, false), // todo make names for these
             clip_rect: [0, 0, 32767, 32767], // No clipping for decorations
         };
         self.decorations.push(quad);
@@ -209,7 +209,7 @@ fn make_quad(glyph: &GlyphWithContext, stored_glyph: &StoredGlyph) -> Quad {
         dim: [size_x as u16, size_y as u16],
         uv_origin: [uv_x as u16, uv_y as u16],
         color,
-        flags: pack_flags(flags, 0), // No fade by default
+        flags: pack_flags(flags, false), // No fade by default
         depth: 0.0,
         clip_rect: [0, 0, 32767, 32767], // No clipping (will be set later)
     };
@@ -227,11 +227,6 @@ fn clip_quad(quad: Quad, left: f32, top: f32, clip_rect: Option<parley::Rect>, f
         let clip_y0 = top + clip.y0 as i32;
         let clip_y1 = top + clip.y1 as i32;
 
-        let quad_x0 = quad.pos[0];
-        let quad_y0 = quad.pos[1];
-        let quad_x1 = quad_x0 + quad.dim[0] as i32;
-        let quad_y1 = quad_y0 + quad.dim[1] as i32;
-
         // Set the GPU clip rectangle
         quad.clip_rect = [
             clip_x0 as i16,
@@ -243,16 +238,8 @@ fn clip_quad(quad: Quad, left: f32, top: f32, clip_rect: Option<parley::Rect>, f
         // Extract content type from existing flags
         let content_type = quad.flags & FLAG_CONTENT_TYPE_MASK;
         
-        // Build fade edges bitmask (only if fade is enabled)
-        let mut fade_edges = 0u32;
-        if fade {
-            if quad_x0 < clip_x0 { fade_edges |= 1; }
-            if quad_x1 > clip_x1 { fade_edges |= 2; }
-            if quad_y0 < clip_y0 { fade_edges |= 4; }
-            if quad_y1 > clip_y1 { fade_edges |= 8; }
-        }
-        
-        quad.flags = pack_flags(content_type, fade_edges);
+        // Pack flags with fade enabled boolean
+        quad.flags = pack_flags(content_type, fade);
     } else {
         // No clipping - use maximum clip rectangle
         quad.clip_rect = [0, 0, 32767, 32767];
@@ -437,7 +424,7 @@ impl TextRenderer {
                 uv_origin: [0, 0],
                 color: 0xff0000ff,
                 depth: 0.0,
-                flags: pack_flags(0, 0),
+                flags: pack_flags(0, false),
                 clip_rect: [0, 0, 32767, 32767]
             }];
         }
@@ -451,7 +438,7 @@ impl TextRenderer {
                 uv_origin: [0, 0],
                 color: 0xffffffff,
                 depth: 0.0,
-                flags: pack_flags(1, 0),
+                flags: pack_flags(1, false),
                 clip_rect: [0, 0, 32767, 32767]
             }];
         }

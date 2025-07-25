@@ -452,7 +452,6 @@ impl Text {
     }
 
     pub fn prepare_all(&mut self, text_renderer: &mut TextRenderer) {
-
         if ! self.text_changed && self.using_frame_based_visibility {
             // see if any text boxes were just hidden
             for (_i, (_text_edit, text_box)) in self.text_edits.iter_mut() {

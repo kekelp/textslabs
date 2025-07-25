@@ -17,6 +17,7 @@ struct VertexOutput {
     @location(3) quad_pos: vec2<f32>,
     @location(4) @interpolate(flat) quad_size: vec2<f32>,
     @location(5) @interpolate(flat) clip_rect: vec4<f32>,
+    @location(6) screen_pos: vec2<f32>,
 };
 
 struct Params {
@@ -52,9 +53,10 @@ fn get_content_type(flags: u32) -> u32 {
     return flags & 0x0Fu;
 }
 
-fn get_fade_edges(flags: u32) -> u32 {
-    return (flags >> 4u) & 0x0Fu;
+fn get_fade_enabled(flags: u32) -> bool {
+    return (flags & (1u << 4u)) != 0u;
 }
+
 
 @vertex
 fn vs_main(input: VertexInput) -> VertexOutput {
@@ -118,38 +120,34 @@ fn vs_main(input: VertexInput) -> VertexOutput {
     vert_output.quad_pos = coords;
     vert_output.quad_size = clipped_dim;
     vert_output.clip_rect = clip_rect;
+    vert_output.screen_pos = clipped_pos;
 
     return vert_output;
 }
 
-fn calculate_fade_alpha(quad_pos: vec2<f32>, fade_edges: u32, quad_size: vec2<f32>) -> f32 {
+fn calculate_fade_alpha(screen_pos: vec2<f32>, clip_rect: vec4<f32>) -> f32 {
     let fade_distance = 15.0;
-    var alpha = 1.0;
     
-    let pixel_pos = quad_pos * quad_size;
+    // Calculate distance to each edge of the clip rect
+    let dist_to_left = screen_pos.x - clip_rect.x;
+    let dist_to_right = clip_rect.z - screen_pos.x;
+    let dist_to_top = screen_pos.y - clip_rect.y;
+    let dist_to_bottom = clip_rect.w - screen_pos.y;
     
-    // Check each edge: left=1, right=2, top=4, bottom=8
-    if (fade_edges & 1u) != 0u {
-        alpha = min(alpha, pixel_pos.x / fade_distance);
-    }
-    if (fade_edges & 2u) != 0u {
-        alpha = min(alpha, (quad_size.x - pixel_pos.x) / fade_distance);
-    }
-    if (fade_edges & 4u) != 0u {
-        alpha = min(alpha, pixel_pos.y / fade_distance);
-    }
-    if (fade_edges & 8u) != 0u {
-        alpha = min(alpha, (quad_size.y - pixel_pos.y) / fade_distance);
-    }
+    // Calculate alpha based on minimum distance to any clip edge
+    let min_dist = min(min(dist_to_left, dist_to_right), min(dist_to_top, dist_to_bottom));
     
-    return clamp(alpha, 0.0, 1.0);
+    return clamp(min_dist / fade_distance, 0.0, 1.0);
 }
 
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     let content_type = get_content_type(input.flags);
-    let fade_edges = get_fade_edges(input.flags);
-    var fade_alpha = calculate_fade_alpha(input.quad_pos, fade_edges, input.quad_size);
+    let fade_enabled = get_fade_enabled(input.flags);
+    var fade_alpha = 1.0;
+    if fade_enabled {
+        fade_alpha = calculate_fade_alpha(input.screen_pos, input.clip_rect);
+    }
     
     if content_type == 1 {
         var color = textureSampleLevel(mask_atlas_texture, atlas_sampler, input.uv, 0.0);
