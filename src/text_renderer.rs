@@ -354,7 +354,7 @@ impl TextRenderer {
         self.capture_quad_ranges_after(&mut text_box.inner.quad_storage, scroll_offset);
     }
 
-    pub fn prepare_text_edit_layout(&mut self, text_edit: &mut TextEdit) {
+    pub fn prepare_text_edit_layout(&mut self, text_edit: &mut TextEditMut) {
         if text_edit.hidden() {
             return;
         }

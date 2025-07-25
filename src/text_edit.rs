@@ -199,7 +199,7 @@ impl ScrollAnimation {
     }
 }
 
-impl<'a> TextEdit<'a> {
+impl<'a> TextEditMut<'a> {
 
 
     #[must_use]
@@ -1137,14 +1137,14 @@ fn remove_newlines_inplace(text: &mut String) -> bool {
 
 macro_rules! impl_for_textedit_and_texteditnon_mut {
     ($($(#[$attr:meta])* $visibility:vis fn $fn_name:ident $(<$($generic:tt),*>)? ($(& $($lt:lifetime)?)? $self:ident $(, $param:ident: $param_ty:ty)*) $(-> $ret_ty:ty)? $body:block)*) => {
-        impl<'a> TextEdit<'a> {
+        impl<'a> TextEditMut<'a> {
             $(
                 $(#[$attr])*
                 $visibility fn $fn_name $(<$($generic),*>)? ($(& $($lt)?)? $self $(, $param: $param_ty)*) $(-> $ret_ty)? $body
             )*
         }
         
-        impl<'a> TextEditNonMut<'a> {
+        impl<'a> TextEdit<'a> {
             $(
                 $(#[$attr])*
                 $visibility fn $fn_name $(<$($generic),*>)? ($(& $($lt)?)? $self $(, $param: $param_ty)*) $(-> $ret_ty)? $body
@@ -1235,7 +1235,7 @@ impl_for_textedit_and_texteditnon_mut! {
 /// 
 /// Instances of this struct are returned by [`Text::get_text_edit()`] and [`Text::get_text_edit_mut()`].
 /// It provides methods to access and modify the text edit's content, styling, and positioning.
-pub struct TextEdit<'a> {
+pub struct TextEditMut<'a> {
     pub(crate) inner: &'a mut TextEditInner,
     pub(crate) text_box: TextBoxMut<'a>,
 }
@@ -1247,12 +1247,12 @@ pub struct TextEdit<'a> {
 /// 
 /// Instances of this struct are returned by [`Text::get_text_edit()`] for read-only access.
 #[derive(Clone, Copy)]
-pub struct TextEditNonMut<'a> {
+pub struct TextEdit<'a> {
     pub(crate) inner: &'a TextEditInner,
     pub(crate) text_box: TextBox<'a>,
 }
 
-impl<'a> TextEdit<'a> {
+impl<'a> TextEditMut<'a> {
     pub(crate) fn text_edit_style(&self) -> &TextEditStyle {
         &self.text_box.shared.styles[self.text_box.inner.style.i as usize].text_edit_style
     }
@@ -1467,7 +1467,7 @@ impl<'a> TextEdit<'a> {
 }
 
 // todo: should these methods really be public?
-impl<'a> TextEdit<'a> {
+impl<'a> TextEditMut<'a> {
     pub fn get_text_box_mut(&mut self) -> &mut TextBoxMut<'a> {
         return &mut self.text_box;
     }

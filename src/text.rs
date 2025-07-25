@@ -283,7 +283,7 @@ impl Text {
     /// `handle` is the handle that was returned when first creating the text edit with [`Text::add_text_edit()`] or similar functions.
     ///    
     /// This is a fast lookup operation that does not require any hashing.
-    pub fn get_text_edit_mut(&mut self, handle: &TextEditHandle) -> TextEdit {
+    pub fn get_text_edit_mut(&mut self, handle: &TextEditHandle) -> TextEditMut {
         self.shared.text_changed = true;
         self.get_full_text_edit(handle)
     }
@@ -293,10 +293,10 @@ impl Text {
     /// `handle` is the handle that was returned when first creating the text edit with [`Text::add_text_edit()`] or similar functions.
     ///    
     /// This is a fast lookup operation that does not require any hashing.
-    pub fn get_text_edit(&mut self, handle: &TextEditHandle) -> TextEditNonMut {
+    pub fn get_text_edit(&mut self, handle: &TextEditHandle) -> TextEdit {
         let (text_edit_inner, text_box_inner) = self.text_edits.get_mut(handle.i as usize).unwrap();
         let text_box = TextBox { inner: text_box_inner, shared: &mut self.shared };
-        TextEditNonMut { inner: text_edit_inner, text_box }
+        TextEdit { inner: text_edit_inner, text_box }
     }
 
     #[must_use]
@@ -946,7 +946,7 @@ impl Text {
         get_full_text_box_free_function(&mut self.text_boxes, &mut self.shared, i)
     }
 
-    pub(crate) fn get_full_text_edit(&mut self, i: &TextEditHandle) -> TextEdit<'_> {
+    pub(crate) fn get_full_text_edit(&mut self, i: &TextEditHandle) -> TextEditMut<'_> {
         get_full_text_edit_free_function(&mut self.text_edits, &mut self.shared, i)
     }
 
@@ -1180,19 +1180,19 @@ pub(crate) fn get_full_text_edit_free_function<'a>(
     text_edits: &'a mut Slab<(TextEditInner, TextBoxInner)>,
     shared: &'a mut Shared,
     i: &TextEditHandle,
-) -> TextEdit<'a> {
+) -> TextEditMut<'a> {
     let (text_edit_inner, text_box_inner) = text_edits.get_mut(i.i as usize).unwrap();
     let text_box = TextBoxMut { inner: text_box_inner, shared };
-    TextEdit { inner: text_edit_inner, text_box }
+    TextEditMut { inner: text_edit_inner, text_box }
 }
 
 pub(crate) fn get_full_text_edit_free_function_but_for_iterating<'a>(
     text_edit: (&'a mut TextEditInner, &'a mut TextBoxInner),
     shared: &'a mut Shared,
-) -> TextEdit<'a> {
+) -> TextEditMut<'a> {
     let (text_edit_inner, text_box_inner) = text_edit;
     let text_box = TextBoxMut { inner: text_box_inner, shared };
-    TextEdit { inner: text_edit_inner, text_box }
+    TextEditMut { inner: text_edit_inner, text_box }
 }
 
 pub(crate) fn get_full_text_box_free_function_but_for_iterating<'a>(
