@@ -10,7 +10,6 @@ use winit::{
 pub(crate) const CURSOR_WIDTH: f32 = 3.0;
 
 use crate::*;
-use slab::Slab;
 
 // I love partial borrows!
 macro_rules! clear_placeholder {
@@ -1184,17 +1183,16 @@ fn remove_newlines_inplace(text: &mut String) -> bool {
 /// It provides methods to access and modify the text edit's content, styling, and positioning.
 pub struct TextEdit<'a> {
     pub(crate) inner: &'a mut TextEditInner,
-    pub(crate) styles: &'a Slab<StyleInner>,
     pub(crate) text_box: TextBoxMut<'a>,
 }
 
 impl<'a> TextEdit<'a> {
-    pub(crate) fn edit_style(&self) -> &TextEditStyle {
-        &self.styles[self.text_box.inner.style.i as usize].text_edit_style
+    pub(crate) fn text_edit_style(&self) -> &TextEditStyle {
+        &self.text_box.shared.styles[self.text_box.inner.style.i as usize].text_edit_style
     }
 
     pub(crate) fn style_version(&self) -> u64 {
-        self.styles[self.text_box.inner.style.i as usize].version
+        self.text_box.shared.styles[self.text_box.inner.style.i as usize].version
     }
 
     pub(crate) fn style_version_changed(&self) -> bool {
@@ -1377,9 +1375,9 @@ impl<'a> TextEdit<'a> {
 
     pub fn refresh_layout(&mut self) {
         let color_override = if self.inner.disabled {
-            Some(self.edit_style().disabled_text_color)
+            Some(self.text_edit_style().disabled_text_color)
         } else if self.inner.showing_placeholder {
-            Some(self.edit_style().placeholder_text_color)
+            Some(self.text_edit_style().placeholder_text_color)
         } else {
             None
         };

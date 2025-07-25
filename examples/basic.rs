@@ -27,7 +27,7 @@ struct State {
     text_renderer: TextRenderer,
     text: Text,
 
-    // single_line_input: TextEditHandle,
+    single_line_input: TextEditHandle,
     clipped_text_box: TextBoxHandle,
 
     big_text_style: StyleHandle,
@@ -63,22 +63,22 @@ impl State {
         }, None);
 
         // Create text boxes and get handles. Normally, the handle would be owned by a higher level struct representing a node in a GUI tree or something similar.
-        // let single_line_input = text.add_text_edit("".to_string(), (10.0, 15.0), (200.0, 35.0), 0.0);
-        // let editable_text_with_unicode = text.add_text_edit("Editable text 無限での座を含む全てのEditable text 無限での座を含む全てのEditable text 無限での座を含む全てのEditable text 無限での座を含む全てのEditable text 無限での座を含む全ての".to_string(), (300.0, 200.0), (400.0, 200.0), 0.0);
-        // let _info = text.add_text_box("Press Ctrl + D to disable the top edit box. Press Ctrl + H to toggle the fade effect on the clipped text box".to_string(), (10.0, 60.0), (200.0, 100.0), 0.0);
-        // let _help_text_edit = text.add_text_edit("Press Ctrl + Plus and Ctrl + Minus to adjust the size of the big text.".to_string(), (470.0, 60.0), (200.0, 100.0), 0.0);
-        // let shift_enter_text_edit = text.add_text_edit("Use Shift+Enter for newlines here".to_string(), (250.0, 60.0), (200.0, 100.0), 0.0);
+        let single_line_input = text.add_text_edit("".to_string(), (10.0, 15.0), (200.0, 35.0), 0.0);
+        let editable_text_with_unicode = text.add_text_edit("Editable text 無限での座を含む全てのEditable text 無限での座を含む全てのEditable text 無限での座を含む全てのEditable text 無限での座を含む全てのEditable text 無限での座を含む全ての".to_string(), (300.0, 200.0), (400.0, 200.0), 0.0);
+        let _info = text.add_text_box("Press Ctrl + D to disable the top edit box. Press Ctrl + H to toggle the fade effect on the clipped text box".to_string(), (10.0, 60.0), (200.0, 100.0), 0.0);
+        let _help_text_edit = text.add_text_edit("Press Ctrl + Plus and Ctrl + Minus to adjust the size of the big text.".to_string(), (470.0, 60.0), (200.0, 100.0), 0.0);
+        let shift_enter_text_edit = text.add_text_edit("Use Shift+Enter for newlines here".to_string(), (250.0, 60.0), (200.0, 100.0), 0.0);
         
         let clipped_text_box = text.add_text_box("Clipped text".to_string(), (10.0, 340.0), (300.0, 50.0), 0.0);
         
         // Using a &'static str here for this non-editable text box.
-        // let justified_static_text = text.add_text_box("Long static words, Long static words, Long static words, Long static words, ... (justified btw) ", (200.0, 400.0), (400.0, 150.0), 0.0);
+        let justified_static_text = text.add_text_box("Long static words, Long static words, Long static words, Long static words, ... (justified btw) ", (200.0, 400.0), (400.0, 150.0), 0.0);
         
-        // // Use the handles to access and edit text boxes. Despite the verbosity, accessing a box through a handle is a very fast operation, basically just an array access. There is no hashing involved.
-        // text.get_text_edit_mut(&single_line_input).set_single_line(true);
-        // text.get_text_edit_mut(&single_line_input).set_placeholder("Single line input".to_string());
-        // text.get_text_edit_mut(&editable_text_with_unicode).set_style(&big_text_style_handle);
-        // text.get_text_edit_mut(&shift_enter_text_edit).set_newline_mode(NewlineMode::ShiftEnter);
+        // Use the handles to access and edit text boxes. Despite the verbosity, accessing a box through a handle is a very fast operation, basically just an array access. There is no hashing involved.
+        text.get_text_edit_mut(&single_line_input).set_single_line(true);
+        text.get_text_edit_mut(&single_line_input).set_placeholder("Single line input".to_string());
+        text.get_text_edit_mut(&editable_text_with_unicode).set_style(&big_text_style_handle);
+        text.get_text_edit_mut(&shift_enter_text_edit).set_newline_mode(NewlineMode::ShiftEnter);
         
         text.get_text_box_mut(&clipped_text_box).set_style(&big_text_style_handle);
         text.get_text_box_mut(&clipped_text_box).text_mut();
@@ -92,8 +92,8 @@ impl State {
 
         text.get_text_style_mut(&big_text_style_handle).font_size = 32.0;
 
-        // text.get_text_box_mut(&justified_static_text).set_style(&big_text_style_handle);
-        // text.get_text_box_mut(&justified_static_text).set_alignment(Alignment::Justify);
+        text.get_text_box_mut(&justified_static_text).set_style(&big_text_style_handle);
+        text.get_text_box_mut(&justified_static_text).set_alignment(Alignment::Justify);
 
         let text_renderer = TextRenderer::new(&device, &queue, surface_config.format);
 
@@ -106,7 +106,7 @@ impl State {
             text_renderer,
             text,
 
-            // single_line_input,
+            single_line_input,
             clipped_text_box,
             big_text_style: big_text_style_handle,
 
@@ -177,8 +177,8 @@ impl State {
                                 }
                             }
                             "d" => {
-                                // let is_disabled = self.text.get_text_edit(&self.single_line_input).disabled();
-                                // self.text.set_text_edit_disabled(&self.single_line_input, !is_disabled);
+                                let is_disabled = self.text.get_text_edit(&self.single_line_input).disabled();
+                                self.text.set_text_edit_disabled(&self.single_line_input, !is_disabled);
                             }
                             "h" => {
                                 let current_fadeout = self.text.get_text_box(&self.clipped_text_box).fadeout_clipping();

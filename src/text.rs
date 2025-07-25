@@ -23,7 +23,8 @@ pub struct Text {
     pub(crate) text_boxes: Slab<TextBoxInner>,
     pub(crate) text_edits: Slab<(TextEditInner, TextBoxInner)>,
 
-    pub(crate) styles: Slab<StyleInner>,
+    pub(crate) shared: Shared,
+
     pub(crate) style_version_id_counter: u64,
 
     pub(crate) input_state: TextInputState,
@@ -31,7 +32,6 @@ pub struct Text {
     pub(crate) focused: Option<AnyBox>,
     pub(crate) mouse_hit_stack: Vec<(AnyBox, f32)>,
     
-    pub(crate) text_changed: bool,
     pub(crate) using_frame_based_visibility: bool,
     pub(crate) decorations_changed: bool,
     
@@ -43,6 +43,14 @@ pub struct Text {
     pub(crate) cursor_currently_blinked_out: bool,
     
     pub(crate) cursor_blink_timer: Option<CursorBlinkWaker>,
+}
+
+/// Data that TextBoxMut and similar things need to have a reference to. Kept all together so that TextBoxMut and similar things can hold a single pointer to all of it.
+/// 
+/// A cooler way to do this would be to make the TextBoxMut be TextBoxMut { i: u32, text: &mut Text }. So you have access to the whole Text struct unconditionally, and you don't have to separate things this way. And to get the actual text box, you do self.text.text_boxes[i] every time. But we're trying this way this time
+pub struct Shared {
+    pub(crate) styles: Slab<StyleInner>,
+    pub(crate) text_changed: bool,
 }
 
 /// Handle for a text edit box.
@@ -207,12 +215,10 @@ impl Text {
         Self {
             text_boxes: Slab::with_capacity(10),
             text_edits: Slab::with_capacity(10),
-            styles,
             style_version_id_counter: 0,
             input_state: TextInputState::new(),
             focused: None,
             mouse_hit_stack: Vec::with_capacity(6),
-            text_changed: true,
             decorations_changed: true,
             scrolled_moved_indices: Vec::new(),
             scroll_animations: Vec::new(),
@@ -221,6 +227,10 @@ impl Text {
             cursor_blink_start: None,
             cursor_currently_blinked_out: false,
             cursor_blink_timer,
+            shared: Shared {
+                styles,
+                text_changed: true,
+            }
         }
     }
 
@@ -241,9 +251,9 @@ impl Text {
     pub fn add_text_box(&mut self, text: impl Into<Cow<'static, str>>, pos: (f64, f64), size: (f32, f32), depth: f32) -> TextBoxHandle {
         let mut text_box = TextBoxInner::new(text, pos, size, depth);
         text_box.last_frame_touched = self.current_frame;
-        text_box.style_version = self.styles[text_box.style.i as usize].version;
+        text_box.style_version = self.shared.styles[text_box.style.i as usize].version;
         let i = self.text_boxes.insert(text_box) as u32;
-        self.text_changed = true;
+        self.shared.text_changed = true;
         TextBoxHandle { i }
     }
 
@@ -256,9 +266,9 @@ impl Text {
     pub fn add_text_edit(&mut self, text: String, pos: (f64, f64), size: (f32, f32), depth: f32) -> TextEditHandle {
         let (text_edit, mut text_box) = TextEditInner::new(text, pos, size, depth);
         text_box.last_frame_touched = self.current_frame;
-        text_box.style_version = self.styles[text_box.style.i as usize].version;
+        text_box.style_version = self.shared.styles[text_box.style.i as usize].version;
         let i = self.text_edits.insert((text_edit, text_box)) as u32;
-        self.text_changed = true;
+        self.shared.text_changed = true;
         TextEditHandle { i }
     }
 
@@ -271,7 +281,7 @@ impl Text {
     ///    
     /// This is a fast lookup operation that does not require any hashing.
     pub fn get_text_edit_mut(&mut self, handle: &TextEditHandle) -> TextEdit {
-        self.text_changed = true;
+        self.shared.text_changed = true;
         self.get_full_text_edit(handle)
     }
 
@@ -288,7 +298,7 @@ impl Text {
     pub fn add_style(&mut self, text_style: TextStyle2, text_edit_style: Option<TextEditStyle>) -> StyleHandle {
         let text_edit_style = text_edit_style.unwrap_or_default();
         let new_version = self.new_style_version();
-        let i = self.styles.insert(StyleInner {
+        let i = self.shared.styles.insert(StyleInner {
             text_style,
             text_edit_style,
             version: new_version,
@@ -297,23 +307,23 @@ impl Text {
     }
 
     pub fn get_text_style(&self, handle: &StyleHandle) -> &TextStyle2 {
-        &self.styles[handle.i as usize].text_style
+        &self.shared.styles[handle.i as usize].text_style
     }
 
     pub fn get_text_style_mut(&mut self, handle: &StyleHandle) -> &mut TextStyle2 {
-        self.styles[handle.i as usize].version = self.new_style_version();
-        self.text_changed = true;
-        &mut self.styles[handle.i as usize].text_style
+        self.shared.styles[handle.i as usize].version = self.new_style_version();
+        self.shared.text_changed = true;
+        &mut self.shared.styles[handle.i as usize].text_style
     }
 
     pub fn get_text_edit_style(&self, handle: &StyleHandle) -> &TextEditStyle {
-        &self.styles[handle.i as usize].text_edit_style
+        &self.shared.styles[handle.i as usize].text_edit_style
     }
 
     pub fn get_text_edit_style_mut(&mut self, handle: &StyleHandle) -> &mut TextEditStyle {
-        self.styles[handle.i as usize].version = self.new_style_version();
-        self.text_changed = true;
-        &mut self.styles[handle.i as usize].text_edit_style
+        self.shared.styles[handle.i as usize].version = self.new_style_version();
+        self.shared.text_changed = true;
+        &mut self.shared.styles[handle.i as usize].text_edit_style
     }
 
     pub fn get_default_text_style(&self) -> &TextStyle2 {
@@ -419,7 +429,7 @@ impl Text {
     /// 
     /// `handle` is the handle that was returned when first creating the text box with [`Text::add_text_box()`].
     pub fn remove_text_box(&mut self, handle: TextBoxHandle) {
-        self.text_changed = true;
+        self.shared.text_changed = true;
         if let Some(AnyBox::TextBox(i)) = self.focused {
             if i == handle.i {
                 self.focused = None;
@@ -434,7 +444,7 @@ impl Text {
     /// 
     /// `handle` is the handle that was returned when first creating the text edit with [`Text::add_text_edit()`] or similar functions.
     pub fn remove_text_edit(&mut self, handle: TextEditHandle) {
-        self.text_changed = true;
+        self.shared.text_changed = true;
         if let Some(AnyBox::TextEdit(i)) = self.focused {
             if i == handle.i {
                 self.focused = None;
@@ -448,20 +458,20 @@ impl Text {
     /// 
     /// If any text boxes are set to this style, they will revert to the default style.
     pub fn remove_style(&mut self, handle: StyleHandle) {
-        self.styles.remove(handle.i as usize);
+        self.shared.styles.remove(handle.i as usize);
     }
 
     pub fn prepare_all(&mut self, text_renderer: &mut TextRenderer) {
-        if ! self.text_changed && self.using_frame_based_visibility {
+        if ! self.shared.text_changed && self.using_frame_based_visibility {
             // see if any text boxes were just hidden
             for (_i, (_text_edit, text_box)) in self.text_edits.iter_mut() {
                 if text_box.last_frame_touched == self.current_frame - 1 {
-                    self.text_changed = true;
+                    self.shared.text_changed = true;
                 }
             }
             for (_i, text_box) in self.text_boxes.iter_mut() {
                 if text_box.last_frame_touched == self.current_frame - 1 {
-                    self.text_changed = true;
+                    self.shared.text_changed = true;
                 }
 
             }
@@ -471,13 +481,13 @@ impl Text {
         // decorations
         let (show_cursor, blink_changed) = self.cursor_blinked_out(true);
 
-        if self.text_changed {
+        if self.shared.text_changed {
             text_renderer.clear();
         } else if self.decorations_changed || !self.scrolled_moved_indices.is_empty() || blink_changed {
             text_renderer.clear_decorations_only();
         }
 
-        if self.decorations_changed || self.text_changed  || !self.scrolled_moved_indices.is_empty() || blink_changed {
+        if self.decorations_changed || self.shared.text_changed  || !self.scrolled_moved_indices.is_empty() || blink_changed {
             if let Some(focused) = self.focused {
                 match focused {
                     AnyBox::TextEdit(i) => {
@@ -495,25 +505,25 @@ impl Text {
         }
 
         // if only scrolling or movement occurred, move quads in-place
-        if !self.text_changed {
+        if !self.shared.text_changed {
             if !self.scrolled_moved_indices.is_empty() {
                 self.handle_scroll_fast_path(text_renderer);
             }
 
         } else {
-        // if self.text_changed || !self.scrolled_moved_indices.is_empty(){
+        // if self.shared.text_changed || !self.scrolled_moved_indices.is_empty(){
 
             let current_frame = self.current_frame;
-            if self.text_changed {
+            if self.shared.text_changed {
                 for (_, text_edit) in self.text_edits.iter_mut() {
-                    let mut text_edit = get_full_text_edit_free_function_but_for_iterating((&mut text_edit.0, &mut text_edit.1), &mut self.styles);
+                    let mut text_edit = get_full_text_edit_free_function_but_for_iterating((&mut text_edit.0, &mut text_edit.1), &mut self.shared);
                     if !text_edit.hidden() && text_edit.text_box.inner.last_frame_touched == current_frame {
                         text_renderer.prepare_text_edit_layout(&mut text_edit);
                     }
                 }
 
                 for (_, text_box) in self.text_boxes.iter_mut() {
-                    let mut text_box = get_full_text_box_free_function_but_for_iterating(text_box, &mut self.styles);
+                    let mut text_box = get_full_text_box_free_function_but_for_iterating(text_box, &mut self.shared);
                     if !text_box.hidden() && text_box.inner.last_frame_touched == current_frame {
                         text_renderer.prepare_text_box_layout(&mut text_box);
                     }
@@ -521,7 +531,7 @@ impl Text {
             }
         }
 
-        self.text_changed = false;
+        self.shared.text_changed = false;
         self.decorations_changed = false;
         
         // Only clear scrolled indices when all animations are finished
@@ -576,7 +586,7 @@ impl Text {
         self.input_state.handle_event(event);
 
         if let WindowEvent::Resized(_) = event {
-            self.text_changed = true;
+            self.shared.text_changed = true;
             result.need_rerender = true;
         }
 
@@ -819,11 +829,11 @@ impl Text {
         match focused {
             AnyBox::TextEdit(i) => {
                 let handle = TextEditHandle { i: i as u32 };
-                let mut text_edit = get_full_text_edit_free_function(&mut self.text_edits, &mut self.styles, &handle);
+                let mut text_edit = get_full_text_edit_free_function(&mut self.text_edits, &mut self.shared, &handle);
 
                 let text_result = text_edit.handle_event(event, window, &self.input_state);
                 if text_result.text_changed {
-                    self.text_changed = true;
+                    self.shared.text_changed = true;
                     result.need_rerender = true;
                     self.reset_cursor_blink();
                 }
@@ -839,11 +849,11 @@ impl Text {
             },
             AnyBox::TextBox(i) => {
                 let handle = TextBoxHandle { i: i as u32 };
-                let mut text_box = get_full_text_box_free_function(&mut self.text_boxes, &mut self.styles, &handle);
+                let mut text_box = get_full_text_box_free_function(&mut self.text_boxes, &mut self.shared, &handle);
 
                 let text_result = text_box.handle_event(event, window, &self.input_state);
                 if text_result.text_changed {
-                    self.text_changed = true;
+                    self.shared.text_changed = true;
                     result.need_rerender = true;
                 }
                 if text_result.decorations_changed {
@@ -877,7 +887,7 @@ impl Text {
 
     /// Returns whether any text was changed in the last frame.
     pub fn get_text_changed(&self) -> bool {
-        self.text_changed
+        self.shared.text_changed
     }
 
     /// Get a mutable reference to a text box wrapped with its style.
@@ -887,7 +897,7 @@ impl Text {
     /// This is a fast lookup operation that does not require any hashing.
     pub fn get_text_box_mut(&mut self, handle: &TextBoxHandle) -> TextBoxMut {
         let text_box_inner = &mut self.text_boxes[handle.i as usize];
-        TextBoxMut { inner: text_box_inner, styles: &self.styles }
+        TextBoxMut { inner: text_box_inner, shared: &mut self.shared }
     }
 
     /// Get a mutable reference to a text box wrapped with its style.
@@ -897,15 +907,15 @@ impl Text {
     /// This is a fast lookup operation that does not require any hashing.
     pub fn get_text_box(&self, handle: &TextBoxHandle) -> TextBox {
         let text_box_inner = &self.text_boxes[handle.i as usize];
-        TextBox { inner: text_box_inner, styles: &self.styles }
+        TextBox { inner: text_box_inner, shared: &self.shared }
     }
 
     pub(crate) fn get_full_text_box(&mut self, i: &TextBoxHandle) -> TextBoxMut<'_> {
-        get_full_text_box_free_function(&mut self.text_boxes, &mut self.styles, i)
+        get_full_text_box_free_function(&mut self.text_boxes, &mut self.shared, i)
     }
 
     pub(crate) fn get_full_text_edit(&mut self, i: &TextEditHandle) -> TextEdit<'_> {
-        get_full_text_edit_free_function(&mut self.text_edits, &mut self.styles, i)
+        get_full_text_edit_free_function(&mut self.text_edits, &mut self.shared, i)
     }
 
     /// Add a scroll animation for a text edit
@@ -1127,37 +1137,37 @@ impl Text {
 // I love partial borrows!
 pub(crate) fn get_full_text_box_free_function<'a>(
     text_boxes: &'a mut Slab<TextBoxInner>,
-    styles: &'a Slab<StyleInner>,
+    shared: &'a mut Shared,
     i: &TextBoxHandle,
 ) -> TextBoxMut<'a> {
     let text_box_inner = &mut text_boxes[i.i as usize];
-    TextBoxMut { inner: text_box_inner, styles }
+    TextBoxMut { inner: text_box_inner, shared }
 }
 
 pub(crate) fn get_full_text_edit_free_function<'a>(
     text_edits: &'a mut Slab<(TextEditInner, TextBoxInner)>,
-    styles: &'a Slab<StyleInner>,
+    shared: &'a mut Shared,
     i: &TextEditHandle,
 ) -> TextEdit<'a> {
     let (text_edit_inner, text_box_inner) = text_edits.get_mut(i.i as usize).unwrap();
-    let text_box = TextBoxMut { inner: text_box_inner, styles };
-    TextEdit { inner: text_edit_inner, styles, text_box }
+    let text_box = TextBoxMut { inner: text_box_inner, shared };
+    TextEdit { inner: text_edit_inner, text_box }
 }
 
 pub(crate) fn get_full_text_edit_free_function_but_for_iterating<'a>(
     text_edit: (&'a mut TextEditInner, &'a mut TextBoxInner),
-    styles: &'a Slab<StyleInner>,
+    shared: &'a mut Shared,
 ) -> TextEdit<'a> {
     let (text_edit_inner, text_box_inner) = text_edit;
-    let text_box = TextBoxMut { inner: text_box_inner, styles };
-    TextEdit { inner: text_edit_inner, styles, text_box }
+    let text_box = TextBoxMut { inner: text_box_inner, shared };
+    TextEdit { inner: text_edit_inner, text_box }
 }
 
 pub(crate) fn get_full_text_box_free_function_but_for_iterating<'a>(
     text_box_inner: &'a mut TextBoxInner,
-    styles: &'a Slab<StyleInner>,
+    shared: &'a mut Shared,
 ) -> TextBoxMut<'a> {
-    TextBoxMut { inner: text_box_inner, styles }
+    TextBoxMut { inner: text_box_inner, shared }
 }
 
 /// Move quads in atlas pages to reflect new scroll position

@@ -9,7 +9,6 @@ use arboard::Clipboard;
 use parley::{Affinity, Alignment, Selection};
 
 use crate::*;
-use slab::Slab;
 use smallvec::SmallVec;
 
 const X_TOLERANCE: f64 = 35.0;
@@ -109,13 +108,13 @@ pub(crate) struct TextBoxInner {
 /// Then, the handle can be used to get a `TextBox` with [`Text::get_text_box()`].
 pub struct TextBoxMut<'a> {
     pub(crate) inner: &'a mut TextBoxInner,
-    pub(crate) styles: &'a Slab<StyleInner>,
+    pub(crate) shared: &'a mut Shared,
 }
 
 #[derive(Clone, Copy)]
 pub struct TextBox<'a> {
     pub(crate) inner: &'a TextBoxInner,
-    pub(crate) styles: &'a Slab<StyleInner>,
+    pub(crate) shared: &'a Shared,
 }
 
 
@@ -209,9 +208,10 @@ macro_rules! impl_for_textbox_and_textboxmut {
     };
 }
 
+
 impl_for_textbox_and_textboxmut! {
-    pub fn style(&self) -> &'a TextStyle2 {
-        &self.styles[self.inner.style.i as usize].text_style
+    pub fn style(&'a self) -> &'a TextStyle2 {
+        &self.shared.styles[self.inner.style.i as usize].text_style
     }
 
     pub fn hidden(&self) -> bool {
@@ -318,13 +318,6 @@ impl<'a> TextBox<'a> {
 }
 
 impl<'a> TextBoxMut<'a> {
-    pub fn as_text_box(&'a self) -> TextBox<'a> {
-        TextBox {
-            inner: self.inner,
-            styles: self.styles,
-        }
-    }
-
     pub(crate) fn handle_event(&mut self, event: &WindowEvent, _window: &Window, input_state: &TextInputState) -> TextEventResult {
         if self.inner.hidden {
             return TextEventResult::nothing();
@@ -578,18 +571,21 @@ impl<'a> TextBoxMut<'a> {
 
     pub fn set_auto_clip(&mut self, auto_clip: bool) {
         self.inner.auto_clip = auto_clip;
+        self.shared.text_changed = true;
     }
 
     pub fn set_pos(&mut self, pos: (f64, f64)) {
         (self.inner.left, self.inner.top) = pos;
+        self.shared.text_changed = true;
     }
 
-    pub fn can_hide(&mut self) -> bool {
+    pub fn can_hide(&self) -> bool {
         self.inner.can_hide
     }
 
     pub fn set_can_hide(&mut self, can_hide: bool) {
         self.inner.can_hide = can_hide;
+        self.shared.text_changed = true;
     }
 
     pub(crate) fn set_hidden(&mut self, hidden: bool) {
@@ -600,22 +596,27 @@ impl<'a> TextBoxMut<'a> {
                 self.reset_selection();
             }
         }
+        self.shared.text_changed = true;
     }
 
     pub fn set_depth(&mut self, depth: f32) {
         self.inner.depth = depth;
+        self.shared.text_changed = true;
     }
 
     pub fn set_clip_rect(&mut self, clip_rect: Option<parley::Rect>) {
         self.inner.clip_rect = clip_rect;
+        self.shared.text_changed = true;
     }
 
     pub fn set_fadeout_clipping(&mut self, fadeout_clipping: bool) {
         self.inner.fadeout_clipping = fadeout_clipping;
+        self.shared.text_changed = true;
     }
 
     pub fn set_scroll_offset(&mut self, offset: (f32, f32)) {
         self.inner.scroll_offset = offset;
+        self.shared.text_changed = true;
     }
 
     pub fn set_style(&mut self, style: &StyleHandle) {
@@ -625,7 +626,7 @@ impl<'a> TextBoxMut<'a> {
     }
 
     pub(crate) fn style_version(&self) -> u64 {
-        self.styles[self.inner.style.i as usize].version
+        self.shared.styles[self.inner.style.i as usize].version
     }
 
     pub(crate) fn style_version_changed(&self) -> bool {
