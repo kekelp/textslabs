@@ -506,24 +506,17 @@ impl Text {
 
             let current_frame = self.current_frame;
             if self.text_changed {
-                // todo: figure out some other way to cheat partial borrowing
-                for i in 0..self.text_edits.capacity() {
-                    if self.text_edits.contains(i) {
-                        let handle = TextEditHandle { i: i as u32 };
-                        let mut text_edit = self.get_full_text_edit(&handle);
-                        if !text_edit.hidden() && text_edit.text_box.inner.last_frame_touched == current_frame {
-                            text_renderer.prepare_text_edit_layout(&mut text_edit);
-                        }
+                for (_, text_edit) in self.text_edits.iter_mut() {
+                    let mut text_edit = get_full_text_edit_free_function_but_for_iterating((&mut text_edit.0, &mut text_edit.1), &mut self.styles);
+                    if !text_edit.hidden() && text_edit.text_box.inner.last_frame_touched == current_frame {
+                        text_renderer.prepare_text_edit_layout(&mut text_edit);
                     }
                 }
 
-                for i in 0..self.text_boxes.capacity() {
-                    if self.text_boxes.contains(i) {
-                        let handle = TextBoxHandle { i: i as u32 };
-                        let mut text_edit = self.get_full_text_box(&handle);
-                        if !text_edit.hidden() && text_edit.inner.last_frame_touched == current_frame {
-                            text_renderer.prepare_text_box_layout(&mut text_edit);
-                        }
+                for (_, text_box) in self.text_boxes.iter_mut() {
+                    let mut text_box = get_full_text_box_free_function_but_for_iterating(text_box, &mut self.styles);
+                    if !text_box.hidden() && text_box.inner.last_frame_touched == current_frame {
+                        text_renderer.prepare_text_box_layout(&mut text_box);
                     }
                 }
             }
@@ -827,7 +820,7 @@ impl Text {
         match focused {
             AnyBox::TextEdit(i) => {
                 let handle = TextEditHandle { i: i as u32 };
-                let mut text_edit = get_full_text_edit_free(&mut self.text_edits, &mut self.styles, &handle);
+                let mut text_edit = get_full_text_edit_free_function(&mut self.text_edits, &mut self.styles, &handle);
 
                 let text_result = text_edit.handle_event(event, window, &self.input_state);
                 if text_result.text_changed {
@@ -847,7 +840,7 @@ impl Text {
             },
             AnyBox::TextBox(i) => {
                 let handle = TextBoxHandle { i: i as u32 };
-                let mut text_box = get_full_text_box_free(&mut self.text_boxes, &mut self.styles, &handle);
+                let mut text_box = get_full_text_box_free_function(&mut self.text_boxes, &mut self.styles, &handle);
 
                 let text_result = text_box.handle_event(event, window, &self.input_state);
                 if text_result.text_changed {
@@ -909,11 +902,11 @@ impl Text {
     }
 
     pub(crate) fn get_full_text_box(&mut self, i: &TextBoxHandle) -> TextBoxMut<'_> {
-        get_full_text_box_free(&mut self.text_boxes, &mut self.styles, i)
+        get_full_text_box_free_function(&mut self.text_boxes, &mut self.styles, i)
     }
 
     pub(crate) fn get_full_text_edit(&mut self, i: &TextEditHandle) -> TextEdit<'_> {
-        get_full_text_edit_free(&mut self.text_edits, &mut self.styles, i)
+        get_full_text_edit_free_function(&mut self.text_edits, &mut self.styles, i)
     }
 
     /// Add a scroll animation for a text edit
@@ -1132,8 +1125,8 @@ impl Text {
     }
 }
 
-// I LOVE PARTIAL BORROWS!
-pub(crate) fn get_full_text_box_free<'a>(
+// I love partial borrows!
+pub(crate) fn get_full_text_box_free_function<'a>(
     text_boxes: &'a mut Slab<TextBoxInner>,
     styles: &'a Slab<StyleInner>,
     i: &TextBoxHandle,
@@ -1142,8 +1135,7 @@ pub(crate) fn get_full_text_box_free<'a>(
     TextBoxMut { inner: text_box_inner, styles }
 }
 
-// I LOVE PARTIAL BORROWS!
-pub(crate) fn get_full_text_edit_free<'a>(
+pub(crate) fn get_full_text_edit_free_function<'a>(
     text_edits: &'a mut Slab<(TextEditInner, TextBoxInner)>,
     styles: &'a Slab<StyleInner>,
     i: &TextEditHandle,
@@ -1151,6 +1143,22 @@ pub(crate) fn get_full_text_edit_free<'a>(
     let (text_edit_inner, text_box_inner) = text_edits.get_mut(i.i as usize).unwrap();
     let text_box = TextBoxMut { inner: text_box_inner, styles };
     TextEdit { inner: text_edit_inner, styles, text_box }
+}
+
+pub(crate) fn get_full_text_edit_free_function_but_for_iterating<'a>(
+    text_edit: (&'a mut TextEditInner, &'a mut TextBoxInner),
+    styles: &'a Slab<StyleInner>,
+) -> TextEdit<'a> {
+    let (text_edit_inner, text_box_inner) = text_edit;
+    let text_box = TextBoxMut { inner: text_box_inner, styles };
+    TextEdit { inner: text_edit_inner, styles, text_box }
+}
+
+pub(crate) fn get_full_text_box_free_function_but_for_iterating<'a>(
+    text_box_inner: &'a mut TextBoxInner,
+    styles: &'a Slab<StyleInner>,
+) -> TextBoxMut<'a> {
+    TextBoxMut { inner: text_box_inner, styles }
 }
 
 /// Move quads in atlas pages to reflect new scroll position

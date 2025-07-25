@@ -334,7 +334,7 @@ impl<'a> TextBoxMut<'a> {
         
         let mut result = TextEventResult::nothing();
 
-        let did_scroll = self.handle_event_no_edit(event, input_state, false, false);
+        let did_scroll = self.handle_event_no_edit(event, input_state, false);
         if did_scroll {
             result.scrolled = true;
         }
@@ -379,7 +379,7 @@ impl<'a> TextBoxMut<'a> {
     }
 
     /// The output bool says if the text box scrolled as a result of a selection drag.
-    pub(crate) fn handle_event_no_edit(&mut self, event: &WindowEvent, input_state: &TextInputState, edit_showing_placeholder: bool, enable_auto_scroll: bool) -> bool {
+    pub(crate) fn handle_event_no_edit(&mut self, event: &WindowEvent, input_state: &TextInputState, enable_auto_scroll: bool) -> bool {
         if self.inner.hidden {
             return false;
         }
@@ -389,16 +389,6 @@ impl<'a> TextBoxMut<'a> {
         }
         
         let mut did_scroll = false;
-        
-        // Handle placeholder clearing on mouse click
-        if edit_showing_placeholder {
-            if let WindowEvent::MouseInput { state, button, .. } = event {
-                if *button == winit::event::MouseButton::Left && state.is_pressed() {
-                    self.inner.selection.selection = Selection::zero();
-                    return false;
-                }
-            }
-        }
 
         match event {
             WindowEvent::CursorMoved { position, .. } => {

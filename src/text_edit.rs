@@ -309,9 +309,8 @@ impl<'a> TextEdit<'a> {
         let mut result = TextEventResult::nothing();
         let mut scroll_to_cursor = false;
 
-        let showing_placeholder = self.inner.showing_placeholder;
         if ! self.inner.showing_placeholder {
-            let did_scroll = self.text_box.handle_event_no_edit(event, input_state, showing_placeholder, true);
+            let did_scroll = self.text_box.handle_event_no_edit(event, input_state, true);
             if did_scroll {
                 result.scrolled = true;
             }
