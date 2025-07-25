@@ -293,8 +293,10 @@ impl Text {
     /// `handle` is the handle that was returned when first creating the text edit with [`Text::add_text_edit()`] or similar functions.
     ///    
     /// This is a fast lookup operation that does not require any hashing.
-    pub fn get_text_edit(&mut self, handle: &TextEditHandle) -> TextEdit {
-        self.get_full_text_edit(handle)
+    pub fn get_text_edit(&mut self, handle: &TextEditHandle) -> TextEditNonMut {
+        let (text_edit_inner, text_box_inner) = self.text_edits.get_mut(handle.i as usize).unwrap();
+        let text_box = TextBox { inner: text_box_inner, shared: &mut self.shared };
+        TextEditNonMut { inner: text_edit_inner, text_box }
     }
 
     #[must_use]

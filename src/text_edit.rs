@@ -212,10 +212,6 @@ impl<'a> TextEdit<'a> {
         }
     }
 
-    pub fn is_composing(&self) -> bool {
-        self.inner.compose.is_some()
-    }
-
     pub fn set_single_line(&mut self, single_line: bool) {
         if self.inner.single_line != single_line {
             self.inner.single_line = single_line;
@@ -230,10 +226,6 @@ impl<'a> TextEdit<'a> {
         }
     }
 
-    pub fn is_single_line(&self) -> bool {
-        self.inner.single_line
-    }
-
     pub fn set_newline_mode(&mut self, mode: NewlineMode) {
         // Don't allow changing newline mode in single line mode (it's always None)
         if !self.inner.single_line {
@@ -241,28 +233,9 @@ impl<'a> TextEdit<'a> {
         }
     }
 
-    pub fn newline_mode(&self) -> NewlineMode {
-        self.inner.newline_mode
-    }
-
     pub fn set_disabled(&mut self, disabled: bool) {
         self.inner.disabled = disabled;
     }
-
-    pub fn disabled(&self) -> bool {
-        self.inner.disabled
-    }
-
-
-
-    /// Check if placeholder text is currently being shown
-    pub fn showing_placeholder(&self) -> bool {
-        self.inner.showing_placeholder
-    }
-
-
-
-
 
     // Cursor blinking methods
     pub fn cursor_reset(&mut self) {
@@ -281,18 +254,6 @@ impl<'a> TextEdit<'a> {
             let elapsed = Instant::now().duration_since(start_time);
             (elapsed.as_millis() / self.inner.blink_period.as_millis()) % 2 == 0
         });
-    }
-
-    pub fn next_blink_time(&self) -> Option<Instant> {
-        self.inner.start_time.map(|start_time| {
-            let phase = Instant::now().duration_since(start_time);
-
-            start_time
-                + Duration::from_nanos(
-                    ((phase.as_nanos() / self.inner.blink_period.as_nanos() + 1)
-                        * self.inner.blink_period.as_nanos()) as u64,
-                )
-        })
     }
 
     #[must_use]
@@ -1174,29 +1135,56 @@ fn remove_newlines_inplace(text: &mut String) -> bool {
     return changed;
 }
 
-/// A text edit with access to both inner data and style.
-/// 
-/// This struct provides a convenient interface for working with text edits
-/// while having access to the style for operations like layout refresh.
-/// 
-/// Instances of this struct are returned by [`Text::get_text_edit()`] and [`Text::get_text_edit_mut()`].
-/// It provides methods to access and modify the text edit's content, styling, and positioning.
-pub struct TextEdit<'a> {
-    pub(crate) inner: &'a mut TextEditInner,
-    pub(crate) text_box: TextBoxMut<'a>,
+macro_rules! impl_for_textedit_and_texteditnon_mut {
+    ($($(#[$attr:meta])* $visibility:vis fn $fn_name:ident $(<$($generic:tt),*>)? ($(& $($lt:lifetime)?)? $self:ident $(, $param:ident: $param_ty:ty)*) $(-> $ret_ty:ty)? $body:block)*) => {
+        impl<'a> TextEdit<'a> {
+            $(
+                $(#[$attr])*
+                $visibility fn $fn_name $(<$($generic),*>)? ($(& $($lt)?)? $self $(, $param: $param_ty)*) $(-> $ret_ty)? $body
+            )*
+        }
+        
+        impl<'a> TextEditNonMut<'a> {
+            $(
+                $(#[$attr])*
+                $visibility fn $fn_name $(<$($generic),*>)? ($(& $($lt)?)? $self $(, $param: $param_ty)*) $(-> $ret_ty)? $body
+            )*
+        }
+    };
 }
 
-impl<'a> TextEdit<'a> {
-    pub(crate) fn text_edit_style(&self) -> &TextEditStyle {
-        &self.text_box.shared.styles[self.text_box.inner.style.i as usize].text_edit_style
+impl_for_textedit_and_texteditnon_mut! {
+    pub fn is_composing(&self) -> bool {
+        self.inner.compose.is_some()
     }
 
-    pub(crate) fn style_version(&self) -> u64 {
-        self.text_box.shared.styles[self.text_box.inner.style.i as usize].version
+    pub fn is_single_line(&self) -> bool {
+        self.inner.single_line
     }
 
-    pub(crate) fn style_version_changed(&self) -> bool {
-        self.style_version() != self.text_box.inner.style_version
+    pub fn newline_mode(&self) -> NewlineMode {
+        self.inner.newline_mode
+    }
+
+    pub fn disabled(&self) -> bool {
+        self.inner.disabled
+    }
+
+    /// Check if placeholder text is currently being shown
+    pub fn showing_placeholder(&self) -> bool {
+        self.inner.showing_placeholder
+    }
+
+    pub fn next_blink_time(&self) -> Option<Instant> {
+        self.inner.start_time.map(|start_time| {
+            let phase = Instant::now().duration_since(start_time);
+
+            start_time
+                + Duration::from_nanos(
+                    ((phase.as_nanos() / self.inner.blink_period.as_nanos() + 1)
+                        * self.inner.blink_period.as_nanos()) as u64,
+                )
+        })
     }
 
     pub fn raw_text(self) -> &'a str {
@@ -1235,12 +1223,48 @@ impl<'a> TextEdit<'a> {
         self.text_box.scroll_offset()
     }
 
-    
     pub fn selection(&self) -> Selection {
         self.text_box.selection()
     }
-    
-    
+}
+
+/// A text edit with access to both inner data and style.
+/// 
+/// This struct provides a convenient interface for working with text edits
+/// while having access to the style for operations like layout refresh.
+/// 
+/// Instances of this struct are returned by [`Text::get_text_edit()`] and [`Text::get_text_edit_mut()`].
+/// It provides methods to access and modify the text edit's content, styling, and positioning.
+pub struct TextEdit<'a> {
+    pub(crate) inner: &'a mut TextEditInner,
+    pub(crate) text_box: TextBoxMut<'a>,
+}
+
+/// A non-mutable text edit with access to both inner data and style.
+/// 
+/// This struct provides a convenient interface for working with text edits
+/// while having access to the style for read-only operations.
+/// 
+/// Instances of this struct are returned by [`Text::get_text_edit()`] for read-only access.
+#[derive(Clone, Copy)]
+pub struct TextEditNonMut<'a> {
+    pub(crate) inner: &'a TextEditInner,
+    pub(crate) text_box: TextBox<'a>,
+}
+
+impl<'a> TextEdit<'a> {
+    pub(crate) fn text_edit_style(&self) -> &TextEditStyle {
+        &self.text_box.shared.styles[self.text_box.inner.style.i as usize].text_edit_style
+    }
+
+    pub(crate) fn style_version(&self) -> u64 {
+        self.text_box.shared.styles[self.text_box.inner.style.i as usize].version
+    }
+
+    pub(crate) fn style_version_changed(&self) -> bool {
+        self.style_version() != self.text_box.inner.style_version
+    }
+
     pub fn set_pos(&mut self, pos: (f64, f64)) {
         self.text_box.set_pos(pos);
     }
@@ -1442,6 +1466,7 @@ impl<'a> TextEdit<'a> {
     }
 }
 
+// todo: should these methods really be public?
 impl<'a> TextEdit<'a> {
     pub fn get_text_box_mut(&mut self) -> &mut TextBoxMut<'a> {
         return &mut self.text_box;
