@@ -18,8 +18,8 @@ macro_rules! clear_placeholder {
         if $self.inner.showing_placeholder {
             $self.text_box.text_mut().clear();
             $self.inner.showing_placeholder = false;
-            $self.text_box.inner.needs_relayout = true;
-            $self.text_box.inner.selection.selection = Selection::zero();
+            $self.text_box.refresh_layout();
+            $self.text_box.move_to_text_start();
         }
     };
 }
@@ -611,13 +611,17 @@ impl<'a> TextEdit<'a> {
     }
 
     pub(crate) fn restore_placeholder_if_any(&mut self) {
-        if let Some(placeholder) = &self.inner.placeholder_text {
-            if self.text_box.text_inner().is_empty() && !self.inner.showing_placeholder {
+        if self.text_box.text_inner().is_empty() && !self.inner.showing_placeholder {
+            if self.inner.placeholder_text.is_some() {
                 self.text_box.text_mut().clear();
+                self.refresh_layout();
+                self.text_box.move_to_text_start();
+            }
+
+            if let Some(placeholder) = &self.inner.placeholder_text {
                 self.text_box.text_mut().push_str(&placeholder);
                 self.inner.showing_placeholder = true;
                 self.refresh_layout();
-                self.text_box.set_selection(Selection::zero());
             }
         }
     }
