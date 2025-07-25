@@ -566,6 +566,7 @@ impl<'a> TextBoxMut<'a> {
 
     pub fn text_mut(&mut self) -> &mut String {
         self.inner.needs_relayout = true;
+        self.shared.text_changed = true;
         self.inner.text.to_mut()
     }
 
@@ -623,6 +624,7 @@ impl<'a> TextBoxMut<'a> {
         self.inner.style = style.sneak_clone();
         self.inner.style_version = self.style_version();
         self.inner.needs_relayout = true;
+        self.shared.text_changed = true;
     }
 
     pub(crate) fn style_version(&self) -> u64 {
@@ -709,12 +711,14 @@ impl<'a> TextBoxMut<'a> {
     pub fn set_alignment(&mut self, alignment: Alignment) {
         self.inner.alignment = alignment;
         self.inner.needs_relayout = true;
+        self.shared.text_changed = true;
     }
 
     /// Set the scale for the layout.
     pub fn set_scale(&mut self, scale: f32) {
         self.inner.scale = scale;
         self.inner.needs_relayout = true;
+        self.shared.text_changed = true;
     }
 
     // #[cfg(feature = "accesskit")]
@@ -1052,7 +1056,6 @@ impl Ext1 for TextBoxInner {
             cursor_pos.1 as f64 - self.top,
         );
 
-        // todo: does this need to refresh layout? if yes, also need to set the stupid thread local style
         assert!(!self.needs_relayout);
         let hit = offset.0 > -X_TOLERANCE
             && offset.0 < self.layout.full_width() as f64 + X_TOLERANCE

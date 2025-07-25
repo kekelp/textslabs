@@ -567,6 +567,7 @@ impl<'a> TextEditMut<'a> {
     pub(crate) fn clear_placeholder(&mut self) {
         // I love partial borrows!
         clear_placeholder!(self);
+        self.text_box.shared.text_changed = true;
     }
 
     pub(crate) fn restore_placeholder_if_any(&mut self) {
@@ -581,6 +582,7 @@ impl<'a> TextEditMut<'a> {
                 self.text_box.text_mut().push_str(&placeholder);
                 self.inner.showing_placeholder = true;
                 self.refresh_layout();
+                self.text_box.shared.text_changed = true;
             }
         }
     }
@@ -734,6 +736,7 @@ impl<'a> TextEditMut<'a> {
         // a caret at the start of the preedit text.
 
         self.refresh_layout();
+        self.text_box.shared.text_changed = true;
 
         let cursor = cursor.unwrap_or((0, 0));
         self.text_box.set_selection(Selection::new(
@@ -761,6 +764,7 @@ impl<'a> TextEditMut<'a> {
 
             self.refresh_layout();
             self.text_box.inner.selection.selection = Cursor::from_byte_index(&self.text_box.inner.layout, index, affinity).into();
+            self.text_box.shared.text_changed = true;
         }
     }
 
@@ -1427,6 +1431,7 @@ impl<'a> TextEditMut<'a> {
         self.cursor_reset();
         // Not showing placeholder anymore since we have real text
         self.inner.showing_placeholder = false;
+        self.text_box.shared.text_changed = true;
     }
 
     /// Set placeholder text that will be shown when the text edit is empty
@@ -1439,6 +1444,7 @@ impl<'a> TextEditMut<'a> {
             self.text_box.inner.needs_relayout = true;
             self.inner.showing_placeholder = true;
             self.text_box.reset_selection();
+            self.text_box.shared.text_changed = true;
         }
     }
 
@@ -1447,6 +1453,7 @@ impl<'a> TextEditMut<'a> {
         let removed = remove_newlines_inplace(self.text_box.text_mut());
         if removed {
             self.text_box.inner.needs_relayout = true;
+            self.text_box.shared.text_changed = true;
         }
     }
 
