@@ -43,6 +43,8 @@ pub struct Text {
     pub(crate) cursor_currently_blinked_out: bool,
     
     pub(crate) cursor_blink_timer: Option<CursorBlinkWaker>,
+
+    pub(crate) slot_for_text_box_mut: Option<TextBoxMut<'static>>,
 }
 
 /// Data that TextBoxMut and similar things need to have a reference to. Kept all together so that TextBoxMut and similar things can hold a single pointer to all of it.
@@ -230,7 +232,8 @@ impl Text {
             shared: Shared {
                 styles,
                 text_changed: true,
-            }
+            },
+            slot_for_text_box_mut: None,
         }
     }
 
@@ -898,6 +901,33 @@ impl Text {
     pub fn get_text_box_mut(&mut self, handle: &TextBoxHandle) -> TextBoxMut {
         let text_box_inner = &mut self.text_boxes[handle.i as usize];
         TextBoxMut { inner: text_box_inner, shared: &mut self.shared }
+    }
+
+    // If we did it this way, we could return a real reference to the fake struct, instead of the fake struct. It would be a much better interface. We could get rid of the TextBox/TextBoxMut split and use normal mutability of reference, just like if we were returning a real reference to a real inner struct.
+    // 
+    // you could do this without unsafe if there was a `self lifetime, but it would still be a bit weird.
+    #[doc(hidden)]
+    pub fn get_text_box_mut_but_epic<'a>(&'a mut self, handle: &TextBoxHandle) -> &'a mut TextBoxMut<'a> {
+        // SAFETY: since this function borrows the whole Text struct, there's no way to call any functions that would invalidate the references.
+        unsafe {
+            let text_box_inner = &mut self.text_boxes[handle.i as usize];
+
+            // Fill the slot with pointers to fields in `self.
+            self.slot_for_text_box_mut = Some(TextBoxMut {
+                inner: std::mem::transmute(text_box_inner),
+                shared: std::mem::transmute(&mut self.shared),
+            });
+
+            // Transmute the TextBoxMut in the slot, which is 'static, to have the lifetime of 'self.
+            // It really does have the lifetime of 'self. We just don't have a way to express it.
+            if let Some(slot) = &mut self.slot_for_text_box_mut {
+                let result: &'a mut TextBoxMut<'a> = std::mem::transmute(slot);
+                return result;
+            } else {
+                unreachable!()
+            }
+        }
+
     }
 
     /// Get a mutable reference to a text box wrapped with its style.

@@ -182,7 +182,7 @@ impl State {
                             }
                             "h" => {
                                 let current_fadeout = self.text.get_text_box(&self.clipped_text_box).fadeout_clipping();
-                                self.text.get_text_box_mut(&self.clipped_text_box).set_fadeout_clipping(!current_fadeout);
+                                self.text.get_text_box_mut_but_epic(&self.clipped_text_box).set_fadeout_clipping(!current_fadeout);
                             }
                             _ => {}
                         }
