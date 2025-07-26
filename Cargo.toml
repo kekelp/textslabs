@@ -24,7 +24,8 @@ image = "0.25.6"
 bytemuck = "1.23.0"
 winit = "0.30.9"
 lazy_static = "1.5.0"
-accesskit = "0.19.0"
+accesskit = "0.18.0"
+accesskit_winit = "0.24.0"
 peniko = "0.4.0"
 arboard = "3.5.0"
 slab = "0.4.10"
@@ -41,4 +42,20 @@ path = "examples/basic.rs"
 [[example]]
 name = "occlusion"
 path = "examples/occlusion.rs"
+
+[[example]]
+name = "accessibility"
+path = "examples/accessibility.rs"
+
+[[example]]
+name = "accessible_basic"
+path = "examples/accessible_basic.rs"
+
+[[example]]
+name = "simple_accessible"
+path = "examples/simple_accessible.rs"
+
+[[example]]
+name = "full_accessible"
+path = "examples/full_accessible.rs"
 

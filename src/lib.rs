@@ -106,6 +106,9 @@ pub use text_box::*;
 mod text_edit;
 pub use text_edit::*;
 
+mod accessibility;
+pub use accessibility::*;
+
 pub use parley::TextStyle as ParleyTextStyle;
 
 /// Text style.

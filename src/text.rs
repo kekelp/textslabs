@@ -905,11 +905,15 @@ impl Text {
         TextBoxMut { inner: text_box_inner, shared: &mut self.shared }
     }
 
-    // If we did it this way, we could return a real reference to the fake struct, instead of the fake struct. It would be a much better interface. We could get rid of the TextBox/TextBoxMut split and use normal mutability of reference, just like if we were returning a real reference to a real inner struct.
-    // 
-    // you could do this without unsafe if there was a `self lifetime, but it would still be a bit weird.
-    #[doc(hidden)]
-    pub fn get_text_box_mut_but_epic<'a>(&'a mut self, handle: &TextBoxHandle) -> &'a mut TextBoxMut<'a> {
+    /// If we did it this way, we could return a real reference to the fake struct, instead of the fake struct. It would be a much better interface. We could get rid of the TextBox/TextBoxMut split and use normal mutability of reference, just like if we were returning a real reference to a real inner struct.
+    /// 
+    /// you could do this without unsafe if there was a `self lifetime, but it would still be a bit weird.
+    ///
+    /// For the non-mut version of this, you'd need a way to have an unbounded number of these fake structs, either in a slab or something or on the heap or on a temporary allocator. That would be crazy though. 
+    /// 
+    /// I guess the real solution would be TextBox having some sort of reference semantics, where you can make &TextBox and &mut TextBox work like the current TextBox and TextBoxMut. And there would be no such thing as a owned TextBox, it would automatically own the two references, just like a reference automatically owns its pointer. 
+    #[allow(dead_code)]
+    pub(crate) fn get_text_box_mut_but_epic<'a>(&'a mut self, handle: &TextBoxHandle) -> &'a mut TextBoxMut<'a> {
         // SAFETY: since this function borrows the whole Text struct, there's no way to call any functions that would invalidate the references.
         unsafe {
             let text_box_inner = &mut self.text_boxes[handle.i as usize];
