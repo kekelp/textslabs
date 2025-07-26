@@ -533,7 +533,7 @@ impl<'a> TextEditMut<'a> {
 
         self.inner.history.record(&old_text, s, old_selection, new_range_start..new_range_end);
 
-        self.replace_selection(s);
+        self.replace_selection_inner(s);
     }
 
     /// Insert at cursor, or replace selection.
@@ -543,6 +543,13 @@ impl<'a> TextEditMut<'a> {
         self.clear_placeholder();
 
         self.replace_selection_and_record(s);
+    }
+
+    pub fn replace_selection(&mut self, string: &str) {
+        if ! self.is_composing() {
+            self.insert_or_replace_selection(string);
+            self.text_box.shared.text_changed = true;
+        }
     }
 
     pub(crate) fn clear_placeholder(&mut self) {
@@ -834,7 +841,7 @@ impl<'a> TextEditMut<'a> {
         }
     }
 
-    fn replace_selection(&mut self, s: &str) {
+    pub fn replace_selection_inner(&mut self, s: &str) {
         let range = self.text_box.selection().text_range();
         let start = range.start;
         if self.text_box.selection().is_collapsed() {

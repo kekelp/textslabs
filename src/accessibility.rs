@@ -104,10 +104,7 @@ impl Text {
                         match focused {
                             AnyBox::TextEdit(i) => {
                                 let handle = TextEditHandle { i };
-                                let mut text_edit = self.get_text_edit_mut(&handle);
-                                text_edit.raw_text_mut().push_str(&text);
-                                self.shared.text_changed = true;
-                                self.decorations_changed = true;
+                                self.get_text_edit_mut(&handle).replace_selection(&text);
                                 return true;
                             }
                             _ => {}
