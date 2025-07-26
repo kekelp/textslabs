@@ -1,0 +1,27 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cargo check:*)",
+      "Bash(cargo test:*)",
+      "Bash(rg:*)",
+      "Bash(cargo run:*)",
+      "Bash(grep:*)",
+      "Bash(cargo build:*)",
+      "Bash(timeout 5 cargo run --example basic)",
+      "Bash(find:*)",
+      "Bash(ls:*)",
+      "Bash(timeout 3 cargo run --example basic)",
+      "Bash(sed:*)",
+      "Bash(timeout 10s cargo run --example basic)",
+      "Bash(timeout 5s cargo run --example basic)",
+      "Bash(timeout 5s cargo run --example event_result)",
+      "Bash(true)",
+      "Bash(cargo doc:*)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(curl:*)",
+      "Bash(cargo:*)"
+    ],
+    "deny": []
+  }
+}

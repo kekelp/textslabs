@@ -237,25 +237,6 @@ impl<'a> TextEditMut<'a> {
         self.inner.disabled = disabled;
     }
 
-    // Cursor blinking methods
-    pub fn cursor_reset(&mut self) {
-        self.inner.start_time = Some(Instant::now());
-        // TODO: for real world use, this should be reading from the system settings
-        self.inner.blink_period = Duration::from_millis(500);
-        self.inner.show_cursor = true;
-    }
-
-    pub fn disable_blink(&mut self) {
-        self.inner.start_time = None;
-    }
-
-    pub fn cursor_blink(&mut self) {
-        self.inner.show_cursor = self.inner.start_time.is_some_and(|start_time| {
-            let elapsed = Instant::now().duration_since(start_time);
-            (elapsed.as_millis() / self.inner.blink_period.as_millis()) % 2 == 0
-        });
-    }
-
     #[must_use]
     pub(crate) fn handle_event_editable(&mut self, event: &WindowEvent, window: &Window, input_state: &TextInputState) -> TextEventResult {
         if self.text_box.hidden() {
@@ -1427,8 +1408,6 @@ impl<'a> TextEditMut<'a> {
         self.text_box.move_to_text_end();
         // Clear any composition state
         self.inner.compose = None;
-        // Reset cursor blinking
-        self.cursor_reset();
         // Not showing placeholder anymore since we have real text
         self.inner.showing_placeholder = false;
         self.text_box.shared.text_changed = true;
@@ -1471,18 +1450,6 @@ impl<'a> TextEditMut<'a> {
             );
         }
     }
-}
-
-// todo: should these methods really be public?
-impl<'a> TextEditMut<'a> {
-    pub fn get_text_box_mut(&mut self) -> &mut TextBoxMut<'a> {
-        return &mut self.text_box;
-    }
-
-    pub fn get_text_box(&self) -> &TextBoxMut<'a> {
-        return &self.text_box;
-    }
-
 }
 
 /// Determine if animation should be used based on delta type and which component is being used
