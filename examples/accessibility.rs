@@ -95,7 +95,7 @@ impl State {
         root.set_children(vec![TEXT_EDIT_ID, INFO_TEXT_ID]);
         root.set_label(WINDOW_TITLE);
 
-        // The accesskit nodes would usually correspond to a struct in the GUI library's tree, not to the text boxes themselves.
+        // In a GUI library, the accesskit nodes would usually correspond to an element in the GUI library's tree, not to the text boxes themselves.
         // configure_text_edit_node() fills a node with the data corresponding to a text edit.
         let mut text_edit = Node::new(Role::TextInput);
         self.text.configure_text_edit_node(&self.text_edit_handle, &mut text_edit);
@@ -117,8 +117,21 @@ impl State {
         result
     }
 
+    // Again, in a gui library, the mapping would have to be from accesskit NodeIds to GUI library element ids, not to text handles directly.
+    fn map_accesskit_node_id_to_text_handle(&mut self, node_id: NodeId) -> AnyBox {
+        match node_id {
+            TEXT_EDIT_ID => self.text_edit_handle.into_anybox(),
+            INFO_TEXT_ID => self.info_text_handle.into_anybox(),
+            _ => panic!(),
+        }
+    }
+
     fn set_focus(&mut self, focus: NodeId) {
         self.focus = focus;
+        
+        let focused_text_handle = self.map_accesskit_node_id_to_text_handle(focus);
+        self.text.set_focus(&focused_text_handle);
+
         self.adapter.update_if_active(|| TreeUpdate {
             nodes: vec![],
             tree: None,
@@ -246,9 +259,7 @@ impl ApplicationHandler<AccessKitEvent> for Application {
                         // Handle actions not covered by the library (like focus changes)
                         match request.action {
                             Action::Focus => {
-                                if request.target == TEXT_EDIT_ID || request.target == INFO_TEXT_ID {
-                                    state.text.set_focus(&state.text_edit_handle);
-                                }
+                                state.set_focus(request.target);
                             }
                             Action::ReplaceSelectedText => {
                                 if request.target == TEXT_EDIT_ID {
