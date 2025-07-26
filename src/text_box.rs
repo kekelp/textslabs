@@ -1,5 +1,6 @@
 use std::cell::RefCell;
 
+use accesskit::{Node, NodeId, TreeUpdate};
 use parley::*;
 use winit::{
     event::WindowEvent, keyboard::{Key, NamedKey}, platform::modifier_supplement::KeyEventExtModifierSupplement, window::Window
@@ -75,6 +76,9 @@ pub(crate) struct TextBoxInner {
     pub(crate) style: StyleHandle,
     pub(crate) style_version: u64,
     pub(crate) layout: Layout<ColorBrush>,
+
+    pub(crate) layout_access: LayoutAccessibility,
+
     pub(crate) needs_relayout: bool,
     pub(crate) left: f64,
     pub(crate) top: f64,
@@ -150,6 +154,7 @@ impl TextBoxInner {
             text: text.into(),
             style_version: 0,
             layout: Layout::new(),
+            layout_access: LayoutAccessibility::default(),
             selectable: true,
             needs_relayout: true,
             left: pos.0,
@@ -886,6 +891,7 @@ impl<'a> TextBoxMut<'a> {
         );
     }
 
+
     /// Move to the next word boundary right.
     pub(crate) fn move_word_right(&mut self) {
         self.set_selection(
@@ -932,6 +938,46 @@ impl<'a> TextBoxMut<'a> {
 
     pub fn set_selectable(&mut self, selectable: bool) {
         self.inner.selectable = selectable;
+    }
+    
+    /// Select inside the editor based on the selection provided by accesskit.
+    pub fn select_from_accesskit(&mut self, selection: &accesskit::TextSelection) {
+        self.refresh_layout();
+        if let Some(selection) = Selection::from_access_selection(
+            selection,
+            &self.inner.layout,
+            &self.inner.layout_access,
+        ) {
+            self.set_selection(selection);
+        }
+    }
+
+    fn update_accessibility(
+        &mut self,
+        update: &mut TreeUpdate,
+        node: &mut Node,
+        next_node_id: impl FnMut() -> NodeId,
+        x_offset: f64,
+        y_offset: f64,
+    ) {
+        self.refresh_layout();
+        self.inner.layout_access.build_nodes(
+            &self.inner.text,
+            &self.inner.layout,
+            update,
+            node,
+            next_node_id,
+            x_offset,
+            y_offset,
+        );
+        if self.inner.selectable {
+            if let Some(selection) = self.inner.selection.selection.to_access_selection(&self.inner.layout, &self.inner.layout_access) {
+                node.set_text_selection(selection);
+            }
+        } else {
+            node.clear_text_selection();
+        }
+        node.add_action(accesskit::Action::SetTextSelection);
     }
 }
 

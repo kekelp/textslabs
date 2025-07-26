@@ -33,7 +33,7 @@ struct State {
     info_text_handle: TextBoxHandle,
     
     adapter: Adapter,
-    focus: NodeId,
+    accesskit_focus: NodeId,
     
     modifiers: ModifiersState,
 }
@@ -85,7 +85,7 @@ impl State {
             text_edit_handle,
             info_text_handle,
             adapter,
-            focus: INITIAL_FOCUS,
+            accesskit_focus: INITIAL_FOCUS,
             modifiers: ModifiersState::default(),
         })
     }
@@ -111,7 +111,7 @@ impl State {
                 (INFO_TEXT_ID, info_text),
             ],
             tree: Some(tree),
-            focus: self.focus,
+            focus: self.accesskit_focus,
         };
 
         result
@@ -127,7 +127,7 @@ impl State {
     }
 
     fn set_focus(&mut self, focus: NodeId) {
-        self.focus = focus;
+        self.accesskit_focus = focus;
         
         let focused_text_handle = self.map_accesskit_node_id_to_text_handle(focus);
         self.text.set_focus(&focused_text_handle);
@@ -189,7 +189,7 @@ impl State {
                 if event.state == ElementState::Pressed {
                     match event.logical_key {
                         Key::Named(winit::keyboard::NamedKey::Tab) => {
-                            let new_focus = if self.focus == TEXT_EDIT_ID {
+                            let new_focus = if self.accesskit_focus == TEXT_EDIT_ID {
                                 INFO_TEXT_ID
                             } else {
                                 TEXT_EDIT_ID
