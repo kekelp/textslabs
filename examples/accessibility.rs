@@ -185,24 +185,19 @@ impl State {
             WindowEvent::ModifiersChanged(modifiers) => {
                 self.modifiers = modifiers.state();
             }
-            WindowEvent::KeyboardInput {
-                event: KeyEvent {
-                    logical_key,
-                    state: ElementState::Pressed,
-                    ..
-                },
-                ..
-            } => {
-                match logical_key {
-                    Key::Named(winit::keyboard::NamedKey::Tab) => {
-                        let new_focus = if self.focus == TEXT_EDIT_ID {
-                            INFO_TEXT_ID
-                        } else {
-                            TEXT_EDIT_ID
-                        };
-                        self.set_focus(new_focus);
+            WindowEvent::KeyboardInput { event, .. } => {
+                if event.state == ElementState::Pressed {
+                    match event.logical_key {
+                        Key::Named(winit::keyboard::NamedKey::Tab) => {
+                            let new_focus = if self.focus == TEXT_EDIT_ID {
+                                INFO_TEXT_ID
+                            } else {
+                                TEXT_EDIT_ID
+                            };
+                            self.set_focus(new_focus);
+                        }
+                        _ => {}
                     }
-                    _ => {}
                 }
             }
             _ => {}
