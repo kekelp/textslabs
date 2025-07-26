@@ -9,30 +9,16 @@ use winit::{
     keyboard::{Key, ModifiersState},
     window::{Window, WindowId},
 };
-use accesskit::{Action, ActionRequest, Live, Node, NodeId, Rect as AccessRect, Role, Tree, TreeUpdate};
+use accesskit::{Action, Node, NodeId, Role, Tree, TreeUpdate};
 use accesskit_winit::{Adapter, Event as AccessKitEvent, WindowEvent as AccessKitWindowEvent};
 
-const WINDOW_TITLE: &str = "Textslabs Accessibility Demo";
+const WINDOW_TITLE: &str = "Accessibility";
 
 const WINDOW_ID: NodeId = NodeId(0);
-const TEXT_INPUT_ID: NodeId = NodeId(1); 
+const TEXT_EDIT_ID: NodeId = NodeId(1);
 const INFO_TEXT_ID: NodeId = NodeId(2);
-const ANNOUNCEMENT_ID: NodeId = NodeId(3);
-const INITIAL_FOCUS: NodeId = TEXT_INPUT_ID;
+const INITIAL_FOCUS: NodeId = TEXT_EDIT_ID;
 
-const TEXT_INPUT_RECT: AccessRect = AccessRect {
-    x0: 50.0,
-    y0: 100.0,
-    x1: 350.0,
-    y1: 135.0,
-};
-
-const INFO_TEXT_RECT: AccessRect = AccessRect {
-    x0: 50.0,
-    y0: 200.0,
-    x1: 450.0,
-    y1: 300.0,
-};
 
 struct State {
     window: Arc<Window>,
@@ -43,11 +29,11 @@ struct State {
     
     text_renderer: TextRenderer,
     text: Text,
+    text_edit_handle: TextEditHandle,
+    info_text_handle: TextBoxHandle,
     
     adapter: Adapter,
     focus: NodeId,
-    announcement: Option<String>,
-    current_text: String,
     
     modifiers: ModifiersState,
 }
@@ -64,24 +50,22 @@ impl State {
 
         let window = Arc::new(event_loop.create_window(window_attributes)?);
         let adapter = Adapter::with_event_loop_proxy(event_loop, &window, event_loop_proxy);
-        
-        // Setup wgpu
-        let physical_size = window.inner_size();
+
+        // wgpu boilerplate
         let instance = Instance::new(InstanceDescriptor::default());
         let wgpu_adapter = pollster::block_on(instance.request_adapter(&RequestAdapterOptions::default())).unwrap();
         let (device, queue) = pollster::block_on(wgpu_adapter.request_device(&DeviceDescriptor::default(), None)).unwrap();
         let surface = instance.create_surface(window.clone()).expect("Create surface");
-        let surface_config = surface.get_default_config(&wgpu_adapter, physical_size.width, physical_size.height).unwrap();
+        let surface_config = surface.get_default_config(&wgpu_adapter, window.inner_size().width, window.inner_size().height).unwrap();
         surface.configure(&device, &surface_config);
 
-        // Setup textslabs
         let mut text = Text::new_without_auto_wakeup();
-        let text_edit_handle = text.add_text_edit("".to_string(), (TEXT_INPUT_RECT.x0, TEXT_INPUT_RECT.y0), (TEXT_INPUT_RECT.size().width as f32, TEXT_INPUT_RECT.size().height as f32), 0.0);
+        let text_edit_handle = text.add_text_edit("".to_string(), (50.0, 100.0), (300.0, 35.0), 0.0);
         text.get_text_edit_mut(&text_edit_handle).set_single_line(true);
-        text.get_text_edit_mut(&text_edit_handle).set_placeholder("Type here - accessible to screen readers!".to_string());
+        text.get_text_edit_mut(&text_edit_handle).set_placeholder("Type here".to_string());
         
-        let _info_text_handle = text.add_text_box(
-            "This is a Textslabs accessibility demo. The text input above is fully accessible to screen readers. Try typing and using Tab to navigate.".to_string(),
+        let info_text_handle = text.add_text_box(
+            "This is a Textslabs accessibility demo. Try typing and using Tab to navigate.".to_string(),
             (50.0, 200.0), (400.0, 100.0), 0.0
         );
 
@@ -98,72 +82,38 @@ impl State {
             surface_config,
             text_renderer,
             text,
+            text_edit_handle,
+            info_text_handle,
             adapter,
             focus: INITIAL_FOCUS,
-            announcement: None,
-            current_text: String::new(),
             modifiers: ModifiersState::default(),
         })
     }
 
-    fn build_announcement(text: &str) -> Node {
-        let mut node = Node::new(Role::Label);
-        node.set_value(text);
-        node.set_live(Live::Polite);
-        node
-    }
-
-    fn build_root(&mut self) -> Node {
-        let mut node = Node::new(Role::Window);
-        node.set_children(vec![TEXT_INPUT_ID, INFO_TEXT_ID]);
-        if self.announcement.is_some() {
-            node.push_child(ANNOUNCEMENT_ID);
-        }
-        node.set_label(WINDOW_TITLE);
-        node
-    }
-
-    fn build_text_input(&self) -> Node {
-        let mut node = Node::new(Role::TextInput);
-        node.set_bounds(TEXT_INPUT_RECT);
-        node.set_label("Text Input Field");
-        node.set_value(self.current_text.clone());
-        if self.current_text.is_empty() {
-            node.set_description("Type here to test accessibility - press Tab to navigate");
-        }
-        node.add_action(Action::Focus);
-        node.add_action(Action::SetTextSelection);
-        node.add_action(Action::ReplaceSelectedText);
-        node
-    }
-
-    fn build_info_text(&self) -> Node {
-        let mut node = Node::new(Role::Label);
-        node.set_bounds(INFO_TEXT_RECT);
-        node.set_label("Information");
-        node.set_value("Accessibility demo. Try typing and using Tab to navigate.");
-        node
-    }
-
     fn build_initial_tree(&mut self) -> TreeUpdate {
-        let root = self.build_root();
-        let text_input = self.build_text_input();
-        let info_text = self.build_info_text();
+        let mut root = Node::new(Role::Window);
+        root.set_children(vec![TEXT_EDIT_ID, INFO_TEXT_ID]);
+        root.set_label(WINDOW_TITLE);
+
+        // The accesskit nodes would usually correspond to a struct in the GUI library's tree, not to the text boxes themselves.
+        // configure_text_edit_node() fills a node with the data corresponding to a text edit.
+        let mut text_edit = Node::new(Role::TextInput);
+        self.text.configure_text_edit_node(&self.text_edit_handle, &mut text_edit);
+
+        let mut info_text = Node::new(Role::Label);
+        self.text.configure_text_box_node(&self.info_text_handle, &mut info_text);
+
         let tree = Tree::new(WINDOW_ID);
-        let mut result = TreeUpdate {
+        let result = TreeUpdate {
             nodes: vec![
                 (WINDOW_ID, root),
-                (TEXT_INPUT_ID, text_input),
+                (TEXT_EDIT_ID, text_edit),
                 (INFO_TEXT_ID, info_text),
             ],
             tree: Some(tree),
             focus: self.focus,
         };
-        if let Some(announcement) = &self.announcement {
-            result
-                .nodes
-                .push((ANNOUNCEMENT_ID, Self::build_announcement(announcement)));
-        }
+
         result
     }
 
@@ -176,36 +126,10 @@ impl State {
         });
     }
 
-    fn update_text(&mut self, new_text: String) {
-        self.current_text = new_text;
-        self.announcement = Some(format!("Text updated: {}", self.current_text));
-        
-        // Build the update outside the closure to avoid borrowing issues
-        let text_input = self.build_text_input();
-        let announcement = Self::build_announcement(&self.announcement.as_ref().unwrap());
-        let root = self.build_root();
-        let focus = self.focus;
-        
-        self.adapter.update_if_active(move || TreeUpdate {
-            nodes: vec![
-                (TEXT_INPUT_ID, text_input),
-                (ANNOUNCEMENT_ID, announcement),
-                (WINDOW_ID, root)
-            ],
-            tree: None,
-            focus,
-        });
-    }
-
     fn handle_window_event(&mut self, event: &WindowEvent) {
-        // Handle text events first
-        let result = self.text.handle_event(event, &self.window);
+        self.text.handle_event(event, &self.window);
         
-        // Update accessibility if text changed
-        if result.need_rerender {
-            let current_text = "".to_string(); // Placeholder - would need to access actual text
-            self.update_text(current_text);
-        }
+        self.adapter.process_event(&self.window, event);
 
         match event {
             WindowEvent::Resized(size) => {
@@ -258,10 +182,10 @@ impl State {
             } => {
                 match logical_key {
                     Key::Named(winit::keyboard::NamedKey::Tab) => {
-                        let new_focus = if self.focus == TEXT_INPUT_ID {
+                        let new_focus = if self.focus == TEXT_EDIT_ID {
                             INFO_TEXT_ID
                         } else {
-                            TEXT_INPUT_ID
+                            TEXT_EDIT_ID
                         };
                         self.set_focus(new_focus);
                     }
@@ -269,31 +193,6 @@ impl State {
                 }
             }
             _ => {}
-        }
-    }
-
-    fn handle_accessibility_event(&mut self, user_event: AccessKitEvent) {
-        match user_event.window_event {
-            AccessKitWindowEvent::InitialTreeRequested => {
-                let initial_tree = self.build_initial_tree();
-                self.adapter.update_if_active(move || initial_tree);
-            }
-            AccessKitWindowEvent::ActionRequested(ActionRequest { action, target, .. }) => {
-                match action {
-                    Action::Focus => {
-                        if target == TEXT_INPUT_ID || target == INFO_TEXT_ID {
-                            self.set_focus(target);
-                        }
-                    }
-                    Action::ReplaceSelectedText => {
-                        if target == TEXT_INPUT_ID {
-                            println!("Screen reader requested text replacement");
-                        }
-                    }
-                    _ => {}
-                }
-            }
-            AccessKitWindowEvent::AccessibilityDeactivated => {}
         }
     }
 }
@@ -313,6 +212,11 @@ impl Application {
 }
 
 impl ApplicationHandler<AccessKitEvent> for Application {
+    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+        self.state = Some(State::new(event_loop, self.event_loop_proxy.clone())
+            .expect("failed to create initial window"));
+    }
+    
     fn window_event(&mut self, _: &ActiveEventLoop, _: WindowId, event: WindowEvent) {
         if let Some(state) = &mut self.state {
             state.adapter.process_event(&state.window, &event);
@@ -330,18 +234,33 @@ impl ApplicationHandler<AccessKitEvent> for Application {
 
     fn user_event(&mut self, _: &ActiveEventLoop, user_event: AccessKitEvent) {
         if let Some(state) = &mut self.state {
-            state.handle_accessibility_event(user_event);
-        }
-    }
-
-    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        self.state = Some(State::new(event_loop, self.event_loop_proxy.clone())
-            .expect("failed to create initial window"));
-    }
-
-    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
-        if self.state.is_none() {
-            event_loop.exit();
+            match user_event.window_event {
+                AccessKitWindowEvent::InitialTreeRequested => {
+                    let initial_tree = state.build_initial_tree();
+                    state.adapter.update_if_active(move || initial_tree);
+                }
+                AccessKitWindowEvent::ActionRequested(request) => {
+                    let handled = state.text.handle_accessibility_action(&request);
+                    
+                    if !handled {
+                        // Handle actions not covered by the library (like focus changes)
+                        match request.action {
+                            Action::Focus => {
+                                if request.target == TEXT_EDIT_ID || request.target == INFO_TEXT_ID {
+                                    // self.set_focus(request.target);
+                                }
+                            }
+                            Action::ReplaceSelectedText => {
+                                if request.target == TEXT_EDIT_ID {
+                                    println!("Screen reader requested text replacement");
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                AccessKitWindowEvent::AccessibilityDeactivated => {}
+            }
         }
     }
 }
