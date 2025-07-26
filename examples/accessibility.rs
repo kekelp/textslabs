@@ -34,26 +34,83 @@ const INFO_TEXT_RECT: AccessRect = AccessRect {
     y1: 300.0,
 };
 
-fn build_announcement(text: &str) -> Node {
-    let mut node = Node::new(Role::Label);
-    node.set_value(text);
-    node.set_live(Live::Polite);
-    node
-}
-
-struct TextslabsUiState {
+struct State {
+    window: Arc<Window>,
+    device: wgpu::Device,
+    queue: wgpu::Queue,
+    surface: wgpu::Surface<'static>,
+    surface_config: SurfaceConfiguration,
+    
+    text_renderer: TextRenderer,
+    text: Text,
+    
+    adapter: Adapter,
     focus: NodeId,
     announcement: Option<String>,
     current_text: String,
+    
+    modifiers: ModifiersState,
 }
 
-impl TextslabsUiState {
-    fn new() -> Self {
-        Self {
+impl State {
+    fn new(
+        event_loop: &ActiveEventLoop, 
+        event_loop_proxy: EventLoopProxy<AccessKitEvent>
+    ) -> Result<Self, Box<dyn Error>> {
+        let window_attributes = Window::default_attributes()
+            .with_title(WINDOW_TITLE)
+            .with_inner_size(LogicalSize::new(600, 400))
+            .with_visible(false);
+
+        let window = Arc::new(event_loop.create_window(window_attributes)?);
+        let adapter = Adapter::with_event_loop_proxy(event_loop, &window, event_loop_proxy);
+        
+        // Setup wgpu
+        let physical_size = window.inner_size();
+        let instance = Instance::new(InstanceDescriptor::default());
+        let wgpu_adapter = pollster::block_on(instance.request_adapter(&RequestAdapterOptions::default())).unwrap();
+        let (device, queue) = pollster::block_on(wgpu_adapter.request_device(&DeviceDescriptor::default(), None)).unwrap();
+        let surface = instance.create_surface(window.clone()).expect("Create surface");
+        let surface_config = surface.get_default_config(&wgpu_adapter, physical_size.width, physical_size.height).unwrap();
+        surface.configure(&device, &surface_config);
+
+        // Setup textslabs
+        let mut text = Text::new_without_auto_wakeup();
+        let text_edit_handle = text.add_text_edit("".to_string(), (TEXT_INPUT_RECT.x0, TEXT_INPUT_RECT.y0), (TEXT_INPUT_RECT.size().width as f32, TEXT_INPUT_RECT.size().height as f32), 0.0);
+        text.get_text_edit_mut(&text_edit_handle).set_single_line(true);
+        text.get_text_edit_mut(&text_edit_handle).set_placeholder("Type here - accessible to screen readers!".to_string());
+        
+        let _info_text_handle = text.add_text_box(
+            "This is a Textslabs accessibility demo. The text input above is fully accessible to screen readers. Try typing and using Tab to navigate.".to_string(),
+            (50.0, 200.0), (400.0, 100.0), 0.0
+        );
+
+        let text_renderer = TextRenderer::new(&device, &queue, surface_config.format);
+        
+        window.set_visible(true);
+        window.set_ime_allowed(true);
+
+        Ok(Self {
+            window,
+            device,
+            queue,
+            surface,
+            surface_config,
+            text_renderer,
+            text,
+            adapter,
             focus: INITIAL_FOCUS,
             announcement: None,
             current_text: String::new(),
-        }
+            modifiers: ModifiersState::default(),
+        })
+    }
+
+    fn build_announcement(text: &str) -> Node {
+        let mut node = Node::new(Role::Label);
+        node.set_value(text);
+        node.set_live(Live::Polite);
+        node
     }
 
     fn build_root(&mut self) -> Node {
@@ -105,91 +162,49 @@ impl TextslabsUiState {
         if let Some(announcement) = &self.announcement {
             result
                 .nodes
-                .push((ANNOUNCEMENT_ID, build_announcement(announcement)));
+                .push((ANNOUNCEMENT_ID, Self::build_announcement(announcement)));
         }
         result
     }
 
-    fn set_focus(&mut self, adapter: &mut Adapter, focus: NodeId) {
+    fn set_focus(&mut self, focus: NodeId) {
         self.focus = focus;
-        adapter.update_if_active(|| TreeUpdate {
+        self.adapter.update_if_active(|| TreeUpdate {
             nodes: vec![],
             tree: None,
             focus,
         });
     }
 
-    fn update_text(&mut self, adapter: &mut Adapter, new_text: String) {
+    fn update_text(&mut self, new_text: String) {
         self.current_text = new_text;
         self.announcement = Some(format!("Text updated: {}", self.current_text));
         
-        adapter.update_if_active(|| {
-            let text_input = self.build_text_input();
-            let announcement = build_announcement(&self.announcement.as_ref().unwrap());
-            let root = self.build_root();
-            TreeUpdate {
-                nodes: vec![
-                    (TEXT_INPUT_ID, text_input),
-                    (ANNOUNCEMENT_ID, announcement),
-                    (WINDOW_ID, root)
-                ],
-                tree: None,
-                focus: self.focus,
-            }
+        // Build the update outside the closure to avoid borrowing issues
+        let text_input = self.build_text_input();
+        let announcement = Self::build_announcement(&self.announcement.as_ref().unwrap());
+        let root = self.build_root();
+        let focus = self.focus;
+        
+        self.adapter.update_if_active(move || TreeUpdate {
+            nodes: vec![
+                (TEXT_INPUT_ID, text_input),
+                (ANNOUNCEMENT_ID, announcement),
+                (WINDOW_ID, root)
+            ],
+            tree: None,
+            focus,
         });
-    }
-}
-
-struct WindowState {
-    device: wgpu::Device,
-    queue: wgpu::Queue,
-    surface: wgpu::Surface<'static>,
-    surface_config: SurfaceConfiguration,
-    window: Arc<Window>,
-    adapter: Adapter,
-    ui: TextslabsUiState,
-    
-    text_renderer: TextRenderer,
-    text: Text,
-    modifiers: ModifiersState,
-}
-
-impl WindowState {
-    fn new(
-        window: Arc<Window>, 
-        adapter: Adapter, 
-        ui: TextslabsUiState,
-        device: wgpu::Device,
-        queue: wgpu::Queue,
-        surface: wgpu::Surface<'static>,
-        surface_config: SurfaceConfiguration,
-        text_renderer: TextRenderer,
-        text: Text,
-    ) -> Self {
-        Self {
-            device,
-            queue,
-            surface,
-            surface_config,
-            window,
-            adapter,
-            ui,
-            text_renderer,
-            text,
-            modifiers: ModifiersState::default(),
-        }
     }
 
     fn handle_window_event(&mut self, event: &WindowEvent) {
         // Handle text events first
         let result = self.text.handle_event(event, &self.window);
         
-        // Update accessibility if text changed (detecting via need_rerender as a proxy)
+        // Update accessibility if text changed
         if result.need_rerender {
-            // For now, just assume text may have changed if rerender is needed
-            // In a real implementation, you'd want better change detection
             let current_text = "".to_string(); // Placeholder - would need to access actual text
-            self.ui.update_text(&mut self.adapter, current_text);
+            self.update_text(current_text);
         }
 
         match event {
@@ -243,12 +258,12 @@ impl WindowState {
             } => {
                 match logical_key {
                     Key::Named(winit::keyboard::NamedKey::Tab) => {
-                        let new_focus = if self.ui.focus == TEXT_INPUT_ID {
+                        let new_focus = if self.focus == TEXT_INPUT_ID {
                             INFO_TEXT_ID
                         } else {
                             TEXT_INPUT_ID
                         };
-                        self.ui.set_focus(&mut self.adapter, new_focus);
+                        self.set_focus(new_focus);
                     }
                     _ => {}
                 }
@@ -256,106 +271,22 @@ impl WindowState {
             _ => {}
         }
     }
-}
 
-struct State {
-    event_loop_proxy: EventLoopProxy<AccessKitEvent>,
-    window_state: Option<WindowState>,
-}
-
-impl State {
-    fn new(event_loop_proxy: EventLoopProxy<AccessKitEvent>) -> Self {
-        Self {
-            event_loop_proxy,
-            window_state: None,
-        }
-    }
-
-    fn create_window(&mut self, event_loop: &ActiveEventLoop) -> Result<(), Box<dyn Error>> {
-        let window_attributes = Window::default_attributes()
-            .with_title(WINDOW_TITLE)
-            .with_inner_size(LogicalSize::new(600, 400))
-            .with_visible(false);
-
-        let window = Arc::new(event_loop.create_window(window_attributes)?);
-        let adapter = Adapter::with_event_loop_proxy(event_loop, &window, self.event_loop_proxy.clone());
-        
-        // Setup wgpu
-        let physical_size = window.inner_size();
-        let instance = Instance::new(InstanceDescriptor::default());
-        let wgpu_adapter = pollster::block_on(instance.request_adapter(&RequestAdapterOptions::default())).unwrap();
-        let (device, queue) = pollster::block_on(wgpu_adapter.request_device(&DeviceDescriptor::default(), None)).unwrap();
-        let surface = instance.create_surface(window.clone()).expect("Create surface");
-        let surface_config = surface.get_default_config(&wgpu_adapter, physical_size.width, physical_size.height).unwrap();
-        surface.configure(&device, &surface_config);
-
-        // Setup textslabs
-        let mut text = Text::new_without_auto_wakeup();
-        let text_edit_handle = text.add_text_edit("".to_string(), (TEXT_INPUT_RECT.x0, TEXT_INPUT_RECT.y0), (TEXT_INPUT_RECT.size().width as f32, TEXT_INPUT_RECT.size().height as f32), 0.0);
-        text.get_text_edit_mut(&text_edit_handle).set_single_line(true);
-        text.get_text_edit_mut(&text_edit_handle).set_placeholder("Type here - accessible to screen readers!".to_string());
-        
-        let _info_text_handle = text.add_text_box(
-            "This is a Textslabs accessibility demo. The text input above is fully accessible to screen readers. Try typing and using Tab to navigate.".to_string(),
-            (50.0, 200.0), (400.0, 100.0), 0.0
-        );
-
-        let text_renderer = TextRenderer::new(&device, &queue, surface_config.format);
-        
-        window.set_visible(true);
-        window.set_ime_allowed(true);
-
-        self.window_state = Some(WindowState::new(
-            window, adapter, TextslabsUiState::new(),
-            device, queue, surface, surface_config,
-            text_renderer, text,
-        ));
-        
-        Ok(())
-    }
-}
-
-impl ApplicationHandler<AccessKitEvent> for State {
-    fn window_event(&mut self, _: &ActiveEventLoop, _: WindowId, event: WindowEvent) {
-        let window_state = match &mut self.window_state {
-            Some(state) => state,
-            None => return,
-        };
-        
-        window_state.adapter.process_event(&window_state.window, &event);
-        
-        match event {
-            WindowEvent::CloseRequested => {
-                self.window_state = None;
-            }
-            _ => {
-                window_state.handle_window_event(&event);
-            }
-        }
-    }
-
-    fn user_event(&mut self, _: &ActiveEventLoop, user_event: AccessKitEvent) {
-        let window_state = match &mut self.window_state {
-            Some(state) => state,
-            None => return,
-        };
-        let adapter = &mut window_state.adapter;
-        let ui = &mut window_state.ui;
-
+    fn handle_accessibility_event(&mut self, user_event: AccessKitEvent) {
         match user_event.window_event {
             AccessKitWindowEvent::InitialTreeRequested => {
-                adapter.update_if_active(|| ui.build_initial_tree());
+                let initial_tree = self.build_initial_tree();
+                self.adapter.update_if_active(move || initial_tree);
             }
             AccessKitWindowEvent::ActionRequested(ActionRequest { action, target, .. }) => {
                 match action {
                     Action::Focus => {
                         if target == TEXT_INPUT_ID || target == INFO_TEXT_ID {
-                            ui.set_focus(adapter, target);
+                            self.set_focus(target);
                         }
                     }
                     Action::ReplaceSelectedText => {
                         if target == TEXT_INPUT_ID {
-                            // Handle text replacement from screen reader
                             println!("Screen reader requested text replacement");
                         }
                     }
@@ -365,14 +296,51 @@ impl ApplicationHandler<AccessKitEvent> for State {
             AccessKitWindowEvent::AccessibilityDeactivated => {}
         }
     }
+}
+
+struct Application {
+    event_loop_proxy: EventLoopProxy<AccessKitEvent>,
+    state: Option<State>,
+}
+
+impl Application {
+    fn new(event_loop_proxy: EventLoopProxy<AccessKitEvent>) -> Self {
+        Self {
+            event_loop_proxy,
+            state: None,
+        }
+    }
+}
+
+impl ApplicationHandler<AccessKitEvent> for Application {
+    fn window_event(&mut self, _: &ActiveEventLoop, _: WindowId, event: WindowEvent) {
+        if let Some(state) = &mut self.state {
+            state.adapter.process_event(&state.window, &event);
+            
+            match event {
+                WindowEvent::CloseRequested => {
+                    self.state = None;
+                }
+                _ => {
+                    state.handle_window_event(&event);
+                }
+            }
+        }
+    }
+
+    fn user_event(&mut self, _: &ActiveEventLoop, user_event: AccessKitEvent) {
+        if let Some(state) = &mut self.state {
+            state.handle_accessibility_event(user_event);
+        }
+    }
 
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        self.create_window(event_loop)
-            .expect("failed to create initial window");
+        self.state = Some(State::new(event_loop, self.event_loop_proxy.clone())
+            .expect("failed to create initial window"));
     }
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
-        if self.window_state.is_none() {
+        if self.state.is_none() {
             event_loop.exit();
         }
     }
@@ -380,6 +348,6 @@ impl ApplicationHandler<AccessKitEvent> for State {
 
 fn main() {
     let event_loop = EventLoop::with_user_event().build().unwrap();
-    let mut state = State::new(event_loop.create_proxy());
-    event_loop.run_app(&mut state).unwrap();
+    let mut app = Application::new(event_loop.create_proxy());
+    event_loop.run_app(&mut app).unwrap();
 }
