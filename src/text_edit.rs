@@ -1250,6 +1250,10 @@ impl<'a> TextEditMut<'a> {
         self.style_version() != self.text_box.inner.style_version
     }
 
+    pub fn raw_text_mut(&mut self) -> &mut String {
+        self.text_box.text_mut()
+    }
+
     pub fn set_pos(&mut self, pos: (f64, f64)) {
         self.text_box.set_pos(pos);
     }
