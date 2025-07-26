@@ -216,7 +216,7 @@ impl ApplicationHandler<AccessKitEvent> for Application {
         self.state = Some(State::new(event_loop, self.event_loop_proxy.clone())
             .expect("failed to create initial window"));
     }
-    
+
     fn window_event(&mut self, _: &ActiveEventLoop, _: WindowId, event: WindowEvent) {
         if let Some(state) = &mut self.state {
             state.adapter.process_event(&state.window, &event);
@@ -247,7 +247,7 @@ impl ApplicationHandler<AccessKitEvent> for Application {
                         match request.action {
                             Action::Focus => {
                                 if request.target == TEXT_EDIT_ID || request.target == INFO_TEXT_ID {
-                                    // self.set_focus(request.target);
+                                    state.text.set_focus(&state.text_edit_handle);
                                 }
                             }
                             Action::ReplaceSelectedText => {

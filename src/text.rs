@@ -142,10 +142,27 @@ impl MouseState {
 }
 
 /// Enum that can represent any type of text box (text box or text edit).
+/// 
+///[`TextBoxHandle`] and [`TextEditHandle`] can be converted into `AnyBox`: `handle.into()`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AnyBox {
     TextEdit(u32),
     TextBox(u32),
+}
+
+// todo: you can use this to clone a handle basically
+pub trait IntoAnyBox {
+    fn into_anybox(&self) -> AnyBox;
+}
+impl IntoAnyBox for TextBoxHandle {
+    fn into_anybox(&self) -> AnyBox {
+        AnyBox::TextBox(self.i)
+    }
+}
+impl IntoAnyBox for TextEditHandle {
+    fn into_anybox(&self) -> AnyBox {
+        AnyBox::TextBox(self.i)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -1167,6 +1184,11 @@ impl Text {
             timer.stop_waker();
         }
 
+    }
+    
+    pub fn set_focus<T: IntoAnyBox>(&mut self, handle: &T) {
+        let handle: AnyBox = (*handle).into_anybox();
+        self.refocus(Some(handle));
     }
 }
 
