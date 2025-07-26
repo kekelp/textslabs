@@ -161,7 +161,12 @@ impl IntoAnyBox for TextBoxHandle {
 }
 impl IntoAnyBox for TextEditHandle {
     fn into_anybox(&self) -> AnyBox {
-        AnyBox::TextBox(self.i)
+        AnyBox::TextEdit(self.i)
+    }
+}
+impl IntoAnyBox for AnyBox {
+    fn into_anybox(&self) -> AnyBox {
+        self.clone()
     }
 }
 
@@ -1189,6 +1194,10 @@ impl Text {
     pub fn set_focus<T: IntoAnyBox>(&mut self, handle: &T) {
         let handle: AnyBox = (*handle).into_anybox();
         self.refocus(Some(handle));
+    }
+
+    pub fn focus(&self) -> Option<AnyBox> {
+        self.focused
     }
 }
 
