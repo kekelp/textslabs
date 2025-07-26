@@ -66,42 +66,55 @@ impl Text {
     
     
     
-    /// Handle accessibility action requests
+    /// Handle accessibility action requests for the focused text box or text edit
     /// 
     /// This should be called when AccessKit sends action requests to the application.
     /// Returns true if the action was handled.
     pub fn handle_accessibility_action(&mut self, request: &accesskit::ActionRequest) -> bool {
         match request.action {
-            accesskit::Action::Focus => {
-                // Try to find the text edit that corresponds to this node ID
-                // For now, we'll focus the first editable text box we find
-                // In a real implementation, you'd want to map node IDs to specific text boxes
-                for (key, (text_edit, text_box)) in &self.text_edits {
-                    if !text_box.hidden && !text_edit.disabled {
-                        self.focused = Some(AnyBox::TextEdit(key as u32));
-                        return true;
+            accesskit::Action::SetTextSelection => {
+                // todo: this requires every textbox to have a LayoutAccessibility
+                // if let Some(focused) = self.focused {
+                //     if let Some(accesskit::ActionData::SetTextSelection(selection)) = &request.data {
+                        // if let Some(selection) = Selection::from_access_selection(selection) {
+                        //     match focused {
+                        //         AnyBox::TextEdit(i) => {
+                        //             let handle = TextEditHandle { i };
+                        //             let mut text_edit = self.get_text_edit_mut(&handle);
+                        //             text_edit.text_box.set_selection(selection);
+                        //             self.decorations_changed = true;
+                        //             return true;
+                        //         }
+                        //         AnyBox::TextBox(i) => {
+                        //             let handle = TextBoxHandle { i };
+                        //             let mut text_box = self.get_text_box_mut(&handle);
+                        //             text_box.set_selection(selection);
+                        //             self.decorations_changed = true;
+                        //             return true;
+                        //         }
+                        //     }
+                        // }
+                    // }
+                // }
+                false
+            }
+            accesskit::Action::ReplaceSelectedText => {
+                if let Some(focused) = self.focused {
+                    if let Some(accesskit::ActionData::Value(text)) = &request.data {
+                        match focused {
+                            AnyBox::TextEdit(i) => {
+                                let handle = TextEditHandle { i };
+                                let mut text_edit = self.get_text_edit_mut(&handle);
+                                text_edit.raw_text_mut().push_str(&text);
+                                self.shared.text_changed = true;
+                                self.decorations_changed = true;
+                                return true;
+                            }
+                            _ => {}
+                        }
                     }
                 }
                 false
-            }
-            accesskit::Action::SetTextSelection => {
-                if let Some(accesskit::ActionData::SetTextSelection(_selection)) = &request.data {
-                    // Handle text selection - this would need to be implemented based on
-                    // how you want to map accessibility selections to your text system
-                    // For now, just return true to indicate we "handled" it
-                    true
-                } else {
-                    false
-                }
-            }
-            accesskit::Action::ReplaceSelectedText => {
-                if let Some(accesskit::ActionData::Value(_text)) = &request.data {
-                    // Handle text replacement - similar to SetTextSelection,
-                    // this would need proper implementation
-                    true
-                } else {
-                    false
-                }
             }
             _ => false
         }

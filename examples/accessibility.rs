@@ -4,7 +4,7 @@ use wgpu::*;
 use winit::{
     application::ApplicationHandler,
     dpi::LogicalSize,
-    event::{ElementState, KeyEvent, WindowEvent},
+    event::{ElementState, WindowEvent},
     event_loop::{ActiveEventLoop, EventLoop, EventLoopProxy},
     keyboard::{Key, ModifiersState},
     window::{Window, WindowId},
@@ -250,19 +250,8 @@ impl ApplicationHandler<AccessKitEvent> for Application {
                 AccessKitWindowEvent::ActionRequested(request) => {
                     let handled = state.text.handle_accessibility_action(&request);
                     
-                    if !handled {
-                        // Handle actions not covered by the library (like focus changes)
-                        match request.action {
-                            Action::Focus => {
-                                state.set_focus(request.target);
-                            }
-                            Action::ReplaceSelectedText => {
-                                if request.target == TEXT_EDIT_ID {
-                                    println!("Screen reader requested text replacement");
-                                }
-                            }
-                            _ => {}
-                        }
+                    if !handled && request.action == Action::Focus {
+                        state.set_focus(request.target);
                     }
                 }
                 AccessKitWindowEvent::AccessibilityDeactivated => {}
