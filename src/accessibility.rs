@@ -1,5 +1,14 @@
+use std::sync::atomic::{AtomicU64, Ordering};
+
 use crate::*;
 use accesskit::NodeId;
+
+// Maybe we can get away with this? Just grab a range in the u64 space?
+// Nodoby else would be dumb enough to try this, so it probably works
+pub(crate) fn next_node_id() -> NodeId {
+static NEXT: AtomicU64 = AtomicU64::new(16075019835661180680);
+NodeId(NEXT.fetch_add(1, Ordering::Relaxed))
+}
 
 /// Accessibility support for Textslabs
 impl Text {
