@@ -218,7 +218,6 @@ macro_rules! impl_for_textbox_and_textboxmut {
     };
 }
 
-
 impl_for_textbox_and_textboxmut! {
     pub fn accesskit_node(&self) -> Node {
         let mut node = Node::new(Role::Label);
@@ -347,6 +346,25 @@ impl<'a> TextBox<'a> {
 }
 
 impl<'a> TextBoxMut<'a> {
+    pub fn push_accesskit_update(&mut self) {
+        if let Some(id) = self.inner.accesskit_id {
+            let mut node = self.accesskit_node();
+
+            let (left, top) = self.pos();
+            self.inner.layout_access.build_nodes(
+                &self.inner.text,
+                &self.inner.layout,
+                &mut self.shared.accesskit_tree_update,
+                &mut node,
+                crate::next_node_id,
+                left as f64,
+                top as f64,
+            );
+    
+            self.shared.accesskit_tree_update.nodes.push((id, node))
+        }
+    }
+
     pub(crate) fn handle_event(&mut self, event: &WindowEvent, _window: &Window, input_state: &TextInputState) -> TextEventResult {
         if self.inner.hidden {
             return TextEventResult::nothing();

@@ -63,8 +63,7 @@ impl State {
         let text_edit_handle = text.add_text_edit("".to_string(), (50.0, 100.0), (300.0, 35.0), 0.0);
         text.get_text_edit_mut(&text_edit_handle).set_accesskit_id(TEXT_EDIT_ID);
         text.get_text_edit_mut(&text_edit_handle).set_single_line(true);
-        // todo put this back, the double rebuild layout (remove placeholde + type in) is doing double accesskit update right now
-        // text.get_text_edit_mut(&text_edit_handle).set_placeholder("Type here".to_string());
+        text.get_text_edit_mut(&text_edit_handle).set_placeholder("Type here".to_string());
         
         let info_text_handle = text.add_text_box(
             "This is a Textslabs accessibility demo. Try typing and using Tab to navigate.".to_string(),
