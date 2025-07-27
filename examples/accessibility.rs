@@ -19,7 +19,6 @@ const TEXT_EDIT_ID: NodeId = NodeId(1);
 const INFO_TEXT_ID: NodeId = NodeId(2);
 const INITIAL_FOCUS: NodeId = TEXT_EDIT_ID;
 
-
 struct State {
     window: Arc<Window>,
     device: wgpu::Device,
@@ -33,6 +32,9 @@ struct State {
     info_text_handle: TextBoxHandle,
     
     adapter: Adapter,
+
+    // It seems pretty crazy that this example has to keep a copy of the focus here and painstakingly keep it in sync, but it seems that's what accesskit is expecting.
+    // Every time we want to update something, we have to specify a new focus, even if we don't want to change it. But there's no way to ask accesskit for the current one.
     accesskit_focus: NodeId,
     
     modifiers: ModifiersState,
@@ -141,7 +143,7 @@ impl State {
         self.text.handle_event(event, &self.window);
         
         if let Some((tree_update, focus_update)) = self.text.accesskit_update(self.accesskit_focus, WINDOW_ID) {
-            // I guess as long as self.accesskit_focus is a free variable owned by us, we have to do this manually. This seems wrong though.
+            // I guess as long as self.accesskit_focus is a free variable owned by us, we have to do this manually.
             match focus_update {
                 FocusUpdate::FocusedNewNode(node_id) => self.accesskit_focus = node_id,
                 FocusUpdate::Defocused => self.accesskit_focus = WINDOW_ID,
@@ -230,8 +232,7 @@ impl Application {
 
 impl ApplicationHandler<AccessKitEvent> for Application {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        self.state = Some(State::new(event_loop, self.event_loop_proxy.clone())
-            .expect("failed to create initial window"));
+        self.state = Some(State::new(event_loop, self.event_loop_proxy.clone()).unwrap());
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _: WindowId, event: WindowEvent) {
