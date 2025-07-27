@@ -1286,7 +1286,7 @@ impl Text {
             AnyBox::TextEdit(i) => {
                 let handle = TextEditHandle { i };
                 let mut text_edit = self.get_text_edit_mut(&handle);
-                text_edit.push_accesskit_update();
+                text_edit.push_accesskit_update_to_self();
             },
             AnyBox::TextBox(i) => {
                 let handle = TextBoxHandle { i };
