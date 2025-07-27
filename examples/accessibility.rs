@@ -61,6 +61,7 @@ impl State {
 
         let mut text = Text::new_without_auto_wakeup();
         let text_edit_handle = text.add_text_edit("".to_string(), (50.0, 100.0), (300.0, 35.0), 0.0);
+        text.get_text_edit_mut(&text_edit_handle).set_accesskit_id(TEXT_EDIT_ID);
         text.get_text_edit_mut(&text_edit_handle).set_single_line(true);
         text.get_text_edit_mut(&text_edit_handle).set_placeholder("Type here".to_string());
         
@@ -68,6 +69,7 @@ impl State {
             "This is a Textslabs accessibility demo. Try typing and using Tab to navigate.".to_string(),
             (50.0, 200.0), (400.0, 100.0), 0.0
         );
+        text.get_text_box_mut(&info_text_handle).set_accesskit_id(INFO_TEXT_ID);
 
         let text_renderer = TextRenderer::new(&device, &queue, surface_config.format);
         
@@ -95,13 +97,8 @@ impl State {
         root.set_children(vec![TEXT_EDIT_ID, INFO_TEXT_ID]);
         root.set_label(WINDOW_TITLE);
 
-        // In a GUI library, the accesskit nodes would usually correspond to an element in the GUI library's tree, not to the text boxes themselves.
-        // configure_text_edit_node() fills a node with the data corresponding to a text edit.
-        let mut text_edit = Node::new(Role::TextInput);
-        self.text.configure_text_edit_node(&self.text_edit_handle, &mut text_edit);
-
-        let mut info_text = Node::new(Role::Label);
-        self.text.configure_text_box_node(&self.info_text_handle, &mut info_text);
+        let text_edit = self.text.get_text_edit(&self.text_edit_handle).accesskit_node();
+        let info_text = self.text.get_text_box(&self.info_text_handle).accesskit_node();
 
         let tree = Tree::new(WINDOW_ID);
         let result = TreeUpdate {
@@ -139,9 +136,21 @@ impl State {
         });
     }
 
+    // todo inline this
     fn handle_window_event(&mut self, event: &WindowEvent) {
         self.text.handle_event(event, &self.window);
         
+        if let Some((tree_update, focus_update)) = self.text.accesskit_update(self.accesskit_focus, WINDOW_ID) {
+            // I guess as long as self.accesskit_focus is a free variable owned by us, we have to do this manually. This seems wrong though.
+            match focus_update {
+                FocusUpdate::FocusedNewNode(node_id) => self.accesskit_focus = node_id,
+                FocusUpdate::Defocused => self.accesskit_focus = WINDOW_ID,
+                FocusUpdate::Unchanged => {},
+            }
+
+            self.adapter.update_if_active(|| tree_update);
+        }
+
         self.adapter.process_event(&self.window, event);
 
         match event {
@@ -225,17 +234,14 @@ impl ApplicationHandler<AccessKitEvent> for Application {
             .expect("failed to create initial window"));
     }
 
-    fn window_event(&mut self, _: &ActiveEventLoop, _: WindowId, event: WindowEvent) {
+    fn window_event(&mut self, event_loop: &ActiveEventLoop, _: WindowId, event: WindowEvent) {
         if let Some(state) = &mut self.state {
             state.adapter.process_event(&state.window, &event);
+            state.handle_window_event(&event);
             
             match event {
-                WindowEvent::CloseRequested => {
-                    self.state = None;
-                }
-                _ => {
-                    state.handle_window_event(&event);
-                }
+                WindowEvent::CloseRequested => event_loop.exit(),
+                _ => {}
             }
         }
     }
@@ -251,7 +257,7 @@ impl ApplicationHandler<AccessKitEvent> for Application {
                     let handled = state.text.handle_accessibility_action(&request);
                     
                     if !handled && request.action == Action::Focus {
-                        state.set_focus(request.target);
+                        // state.set_focus(request.target);
                     }
                 }
                 AccessKitWindowEvent::AccessibilityDeactivated => {}

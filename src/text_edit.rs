@@ -2,6 +2,7 @@ use std::{
     fmt::Display, ops::Range, time::{Duration, Instant}
 };
 
+use accesskit::{Node, NodeId, Rect as AccessRect, Role};
 use parley::*;
 use winit::{
     event::{Ime, Touch, WindowEvent}, keyboard::{Key, NamedKey}, platform::modifier_supplement::KeyEventExtModifierSupplement, window::Window
@@ -235,6 +236,14 @@ impl<'a> TextEditMut<'a> {
 
     pub fn set_disabled(&mut self, disabled: bool) {
         self.inner.disabled = disabled;
+    }
+
+    pub fn set_accesskit_id(&mut self, accesskit_id: NodeId) {
+        self.text_box.inner.accesskit_id = Some(accesskit_id);
+    }
+
+    pub fn accesskit_id(&self) -> Option<NodeId> {
+        self.text_box.inner.accesskit_id
     }
 
     #[must_use]
@@ -1127,7 +1136,7 @@ fn remove_newlines_inplace(text: &mut String) -> bool {
     return changed;
 }
 
-macro_rules! impl_for_textedit_and_texteditnon_mut {
+macro_rules! impl_for_textedit_and_texteditmut {
     ($($(#[$attr:meta])* $visibility:vis fn $fn_name:ident $(<$($generic:tt),*>)? ($(& $($lt:lifetime)?)? $self:ident $(, $param:ident: $param_ty:ty)*) $(-> $ret_ty:ty)? $body:block)*) => {
         impl<'a> TextEditMut<'a> {
             $(
@@ -1145,7 +1154,40 @@ macro_rules! impl_for_textedit_and_texteditnon_mut {
     };
 }
 
-impl_for_textedit_and_texteditnon_mut! {
+impl_for_textedit_and_texteditmut! {
+    pub fn accesskit_node(&self) -> Node {
+        let mut node = Node::new(Role::TextInput);
+   
+        let text_content = self.text_box.inner.text.to_string();
+        node.set_value(text_content.clone());
+        
+        if self.showing_placeholder() && !text_content.is_empty() {
+            node.set_description(text_content);
+        }
+        
+        let (left, top) = self.text_box.pos();
+        let bounds = AccessRect::new(
+            left,
+            top,
+            left + self.text_box.inner.max_advance as f64,
+            top + self.text_box.inner.height as f64
+        );
+        node.set_bounds(bounds);
+
+        if self.disabled() {
+            node.set_disabled();
+        }
+        
+        node.add_action(accesskit::Action::Focus);
+        node.add_action(accesskit::Action::SetTextSelection);
+        
+        if !self.disabled() {
+            node.add_action(accesskit::Action::ReplaceSelectedText);
+        }
+
+        return node;
+    }
+    
     pub fn is_composing(&self) -> bool {
         self.inner.compose.is_some()
     }
