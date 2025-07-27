@@ -2,7 +2,7 @@ use std::{
     fmt::Display, ops::Range, time::{Duration, Instant}
 };
 
-use accesskit::{Node, NodeId, Rect as AccessRect, Role};
+use accesskit::{Node, NodeId, Rect as AccessRect, Role, TreeUpdate};
 use parley::*;
 use winit::{
     event::{Ime, Touch, WindowEvent}, keyboard::{Key, NamedKey}, platform::modifier_supplement::KeyEventExtModifierSupplement, window::Window
@@ -887,8 +887,52 @@ impl<'a> TextEditMut<'a> {
         self.text_box.set_size(size)
     }
     
-    pub(crate) fn push_accesskit_update(&mut self) {
-        self.text_box.push_accesskit_update();
+    pub fn push_accesskit_update(&mut self, tree_update: &mut TreeUpdate) {
+        if let Some(id) = self.text_box.inner.accesskit_id {
+            let mut node = self.accesskit_node();
+
+            let (left, top) = self.pos();
+            self.text_box.inner.layout_access.build_nodes(
+                &self.text_box.inner.text,
+                &self.text_box.inner.layout,
+                &mut self.text_box.shared.accesskit_tree_update,
+                &mut node,
+                crate::next_node_id,
+                left as f64,
+                top as f64,
+            );
+    
+            if let Some(ak_sel) = self.text_box.inner.selection.selection.to_access_selection(&self.text_box.inner.layout, &self.text_box.inner.layout_access) {
+                dbg!(&ak_sel);
+                node.set_text_selection(ak_sel);
+            }
+            
+            tree_update.nodes.push((id, node))
+        }
+    }
+    // Partial borrows moment.
+    pub(crate) fn push_accesskit_update_to_self(&mut self) {
+        if let Some(id) = self.text_box.inner.accesskit_id {
+            let mut node = self.accesskit_node();
+
+            let (left, top) = self.pos();
+            self.text_box.inner.layout_access.build_nodes(
+                &self.text_box.inner.text,
+                &self.text_box.inner.layout,
+                &mut self.text_box.shared.accesskit_tree_update,
+                &mut node,
+                crate::next_node_id,
+                left as f64,
+                top as f64,
+            );
+    
+            if let Some(ak_sel) = self.text_box.inner.selection.selection.to_access_selection(&self.text_box.inner.layout, &self.text_box.inner.layout_access) {
+                dbg!(&ak_sel);
+                node.set_text_selection(ak_sel);
+            }
+            
+            self.text_box.shared.accesskit_tree_update.nodes.push((id, node))
+        }
     }
 }
 
@@ -1173,12 +1217,13 @@ impl_for_textedit_and_texteditmut! {
             node.set_description(text_content);
         }
         
+        dbg!(self.text_box.inner.width);
         let (left, top) = self.text_box.pos();
         let bounds = AccessRect::new(
             left,
             top,
-            left + self.text_box.inner.max_advance as f64,
-            top + self.text_box.inner.height as f64
+            left + self.text_box.inner.width as f64,
+            top + self.text_box.inner.height as f64,
         );
         node.set_bounds(bounds);
 

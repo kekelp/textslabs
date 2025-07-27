@@ -29,7 +29,7 @@ pub(crate) struct TextBoxInner {
     pub(crate) max_advance: f32,
     pub(crate) depth: f32,
     pub(crate) selection: SelectionState,
-    pub(crate) width: Option<f32>,
+    pub(crate) width: f32,
     pub(crate) height: f32, 
     pub(crate) alignment: Alignment,
     pub(crate) scale: f32,
@@ -169,7 +169,7 @@ impl TextBoxInner {
             depth,
             selection: SelectionState::new(),
             style: DEFAULT_STYLE_HANDLE,
-            width: Some(size.0), 
+            width: size.0, 
             alignment: Default::default(),
             scale: Default::default(),
             clip_rect: None,
@@ -230,9 +230,10 @@ impl_for_textbox_and_textboxmut! {
         let bounds = AccessRect::new(
             left,
             top,
-            left + self.inner.max_advance as f64,
-            top + self.inner.height as f64
+            left + self.inner.layout.width() as f64,
+            top + self.inner.layout.height() as f64
         );
+
         node.set_bounds(bounds);
 
         return node;
@@ -348,19 +349,25 @@ impl<'a> TextBox<'a> {
 impl<'a> TextBoxMut<'a> {
     pub fn push_accesskit_update(&mut self) {
         if let Some(id) = self.inner.accesskit_id {
-            let mut node = self.accesskit_node();
+            let node = self.accesskit_node();
 
-            let (left, top) = self.pos();
-            self.inner.layout_access.build_nodes(
-                &self.inner.text,
-                &self.inner.layout,
-                &mut self.shared.accesskit_tree_update,
-                &mut node,
-                crate::next_node_id,
-                left as f64,
-                top as f64,
-            );
+            // For normal text boxes, it doesn't look like you have to do this.
+            // let (left, top) = self.pos();
+            // self.inner.layout_access.build_nodes(
+            //     &self.inner.text,
+            //     &self.inner.layout,
+            //     &mut self.shared.accesskit_tree_update,
+            //     &mut node,
+            //     crate::next_node_id,
+            //     left as f64,
+            //     top as f64,
+            // );
     
+            // if let Some(ak_sel) = self.inner.selection.selection.to_access_selection(&self.inner.layout, &self.inner.layout_access) {
+            //     dbg!(&ak_sel);
+            //     node.set_text_selection(ak_sel);
+            // }
+            
             self.shared.accesskit_tree_update.nodes.push((id, node))
         }
     }
@@ -754,8 +761,8 @@ impl<'a> TextBoxMut<'a> {
 
     /// Set the width of the layout.
     pub fn set_size(&mut self, size: (f32, f32)) {
-        let relayout = (self.inner.width != Some(size.0)) || (self.inner.height != size.1) || (self.inner.max_advance != size.0);
-        self.inner.width = Some(size.0);
+        let relayout = (self.inner.width != size.0) || (self.inner.height != size.1) || (self.inner.max_advance != size.0);
+        self.inner.width = size.0;
         self.inner.height = size.1;
         self.inner.max_advance = size.0;
         if relayout {

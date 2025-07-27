@@ -17,6 +17,7 @@ const WINDOW_TITLE: &str = "Accessibility";
 const WINDOW_ID: NodeId = NodeId(0);
 const TEXT_EDIT_ID: NodeId = NodeId(1);
 const INFO_TEXT_ID: NodeId = NodeId(2);
+const MULTILINE_TEXT_ID: NodeId = NodeId(3);
 const INITIAL_FOCUS: NodeId = TEXT_EDIT_ID;
 
 struct State {
@@ -30,6 +31,7 @@ struct State {
     text: Text,
     text_edit_handle: TextEditHandle,
     info_text_handle: TextBoxHandle,
+    multiline_text_handle: TextEditHandle,
     
     adapter: Adapter,
 
@@ -47,7 +49,7 @@ impl State {
     ) -> Result<Self, Box<dyn Error>> {
         let window_attributes = Window::default_attributes()
             .with_title(WINDOW_TITLE)
-            .with_inner_size(LogicalSize::new(600, 400))
+            .with_inner_size(LogicalSize::new(1200, 800))
             .with_visible(false);
 
         let window = Arc::new(event_loop.create_window(window_attributes)?);
@@ -68,10 +70,15 @@ impl State {
         text.get_text_edit_mut(&text_edit_handle).set_placeholder("Type here".to_string());
         
         let info_text_handle = text.add_text_box(
-            "This is a Textslabs accessibility demo. Try typing and using Tab to navigate.".to_string(),
+            "This is a Textslabs accessibility demo. To navigate, try using the platform screen reader's keyboard shortcuts (e.g. Caps Lock + arrow keys on Windows by default), or Tab (implemented by hand in this example).".to_string(),
             (50.0, 200.0), (400.0, 100.0), 0.0
         );
         text.get_text_box_mut(&info_text_handle).set_accesskit_id(INFO_TEXT_ID);
+
+        let multiline_text_handle = text.add_text_edit("".to_string(), (50.0, 450.0), (500.0, 200.0), 0.0);
+        text.get_text_edit_mut(&multiline_text_handle).set_accesskit_id(MULTILINE_TEXT_ID);
+        text.get_text_edit_mut(&multiline_text_handle).set_single_line(false);
+        text.get_text_edit_mut(&multiline_text_handle).set_placeholder("Multiline text edit");
 
         let text_renderer = TextRenderer::new(&device, &queue, surface_config.format);
         
@@ -88,6 +95,7 @@ impl State {
             text,
             text_edit_handle,
             info_text_handle,
+            multiline_text_handle,
             adapter,
             accesskit_focus: INITIAL_FOCUS,
             modifiers: ModifiersState::default(),
@@ -96,22 +104,23 @@ impl State {
 
     fn build_initial_tree(&mut self) -> TreeUpdate {
         let mut root = Node::new(Role::Window);
-        root.set_children(vec![TEXT_EDIT_ID, INFO_TEXT_ID]);
+        root.set_children(vec![TEXT_EDIT_ID, INFO_TEXT_ID, MULTILINE_TEXT_ID]);
         root.set_label(WINDOW_TITLE);
 
-        let text_edit = self.text.get_text_edit(&self.text_edit_handle).accesskit_node();
         let info_text = self.text.get_text_box(&self.info_text_handle).accesskit_node();
 
         let tree = Tree::new(WINDOW_ID);
-        let result = TreeUpdate {
+        let mut result = TreeUpdate {
             nodes: vec![
                 (WINDOW_ID, root),
-                (TEXT_EDIT_ID, text_edit),
                 (INFO_TEXT_ID, info_text),
             ],
             tree: Some(tree),
             focus: self.accesskit_focus,
         };
+
+        self.text.get_text_edit_mut(&self.text_edit_handle).push_accesskit_update(&mut result);
+        self.text.get_text_edit_mut(&self.multiline_text_handle).push_accesskit_update(&mut result);
 
         result
     }
@@ -121,6 +130,7 @@ impl State {
         match node_id {
             TEXT_EDIT_ID => self.text_edit_handle.into_anybox(),
             INFO_TEXT_ID => self.info_text_handle.into_anybox(),
+            MULTILINE_TEXT_ID => self.multiline_text_handle.into_anybox(),
             _ => panic!(),
         }
     }
@@ -200,10 +210,11 @@ impl State {
                 if event.state == ElementState::Pressed {
                     match event.logical_key {
                         Key::Named(winit::keyboard::NamedKey::Tab) => {
-                            let new_focus = if self.accesskit_focus == TEXT_EDIT_ID {
-                                INFO_TEXT_ID
-                            } else {
-                                TEXT_EDIT_ID
+                            let new_focus = match self.accesskit_focus {
+                                TEXT_EDIT_ID => INFO_TEXT_ID,
+                                INFO_TEXT_ID => MULTILINE_TEXT_ID,
+                                MULTILINE_TEXT_ID => TEXT_EDIT_ID,
+                                _ => TEXT_EDIT_ID,
                             };
                             self.set_focus(new_focus);
                         }
