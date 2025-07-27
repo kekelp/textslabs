@@ -14,6 +14,61 @@ use smallvec::SmallVec;
 
 const X_TOLERANCE: f64 = 35.0;
 
+pub(crate) struct TextBoxInner {
+    pub(crate) text: Cow<'static, str>,
+    pub(crate) style: StyleHandle,
+    pub(crate) style_version: u64,
+    pub(crate) layout: Layout<ColorBrush>,
+
+    pub(crate) layout_access: LayoutAccessibility,
+
+    pub(crate) needs_relayout: bool,
+    pub(crate) left: f64,
+    pub(crate) top: f64,
+    pub(crate) max_advance: f32,
+    pub(crate) depth: f32,
+    pub(crate) selection: SelectionState,
+    pub(crate) width: Option<f32>,
+    pub(crate) height: f32, 
+    pub(crate) alignment: Alignment,
+    pub(crate) scale: f32,
+    pub(crate) clip_rect: Option<parley::Rect>,
+    pub(crate) fadeout_clipping: bool,
+    pub(crate) auto_clip: bool,
+    pub(crate) scroll_offset: (f32, f32),
+    
+    pub(crate) selectable: bool,
+
+    pub(crate) hidden: bool,
+    pub(crate) last_frame_touched: u64,
+    pub(crate) can_hide: bool,
+    
+    /// Tracks quad storage for fast scrolling
+    pub(crate) quad_storage: QuadStorage,
+}
+
+/// A struct that refers to a text box stored inside a [`Text`] struct.
+/// 
+/// This struct can't be created directly. Instead, use [`Text::add_text_box()`] to create one within [`Text`] and get a [`TextBoxHandle`] back.
+/// 
+/// Then, the handle can be used to get a `TextBoxMut` with [`Text::get_text_box_mut()`].
+pub struct TextBoxMut<'a> {
+    pub(crate) inner: &'a mut TextBoxInner,
+    pub(crate) shared: &'a mut Shared,
+}
+
+/// A struct that refers to a text box stored inside a [`Text`] struct.
+/// 
+/// This struct can't be created directly. Instead, use [`Text::add_text_box()`] to create one within [`Text`] and get a [`TextBoxHandle`] back.
+/// 
+/// Then, the handle can be used to get a `TextBox` with [`Text::get_text_box()`].
+#[derive(Clone, Copy)]
+pub struct TextBox<'a> {
+    pub(crate) inner: &'a TextBoxInner,
+    pub(crate) shared: &'a Shared,
+}
+
+
 /// Atlas page type discriminator
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum AtlasPageType {
@@ -25,8 +80,8 @@ pub(crate) enum AtlasPageType {
 #[derive(Debug, Clone)]
 pub(crate) struct QuadPageRange {
     pub page_type: AtlasPageType,
-    pub page_index: u16,        // Atlas pages rarely exceed 65k
-    pub quad_start: u32,        // Quad indices in a single page
+    pub page_index: u16,
+    pub quad_start: u32,
     pub quad_end: u32,
 }
 
@@ -69,58 +124,6 @@ pub fn with_clipboard<R>(f: impl FnOnce(&mut Clipboard) -> R) -> R {
     let res = CLIPBOARD.with_borrow_mut(|clipboard| f(clipboard));
     res
 }
-
-
-pub(crate) struct TextBoxInner {
-    pub(crate) text: Cow<'static, str>,
-    pub(crate) style: StyleHandle,
-    pub(crate) style_version: u64,
-    pub(crate) layout: Layout<ColorBrush>,
-
-    pub(crate) layout_access: LayoutAccessibility,
-
-    pub(crate) needs_relayout: bool,
-    pub(crate) left: f64,
-    pub(crate) top: f64,
-    pub(crate) max_advance: f32,
-    pub(crate) depth: f32,
-    pub(crate) selection: SelectionState,
-    pub(crate) width: Option<f32>,
-    pub(crate) height: f32, 
-    pub(crate) alignment: Alignment,
-    pub(crate) scale: f32,
-    pub(crate) clip_rect: Option<parley::Rect>,
-    // todo: the current implementation fadeout can't fade glyphs that get very close to the clip rect edge, but without touching it. Should just switch to passing the whole clip rect to the shader and doing all the math there.
-    pub(crate) fadeout_clipping: bool,
-    pub(crate) auto_clip: bool,
-    pub(crate) scroll_offset: (f32, f32),
-    
-    pub(crate) selectable: bool,
-
-    pub(crate) hidden: bool,
-    pub(crate) last_frame_touched: u64,
-    pub(crate) can_hide: bool,
-    
-    /// Tracks quad storage for fast scrolling
-    pub(crate) quad_storage: QuadStorage,
-}
-
-/// A struct that refers to a text box stored inside a [`Text`] struct.
-/// 
-/// This struct can't be created directly. Instead, use [`Text::add_text_box()`] to create one within [`Text`] and get a [`TextBoxHandle`] back.
-/// 
-/// Then, the handle can be used to get a `TextBox` with [`Text::get_text_box()`].
-pub struct TextBoxMut<'a> {
-    pub(crate) inner: &'a mut TextBoxInner,
-    pub(crate) shared: &'a mut Shared,
-}
-
-#[derive(Clone, Copy)]
-pub struct TextBox<'a> {
-    pub(crate) inner: &'a TextBoxInner,
-    pub(crate) shared: &'a Shared,
-}
-
 
 pub(crate) fn original_default_style() -> TextStyle2 { 
     TextStyle2 { 

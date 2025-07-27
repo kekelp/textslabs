@@ -69,7 +69,7 @@ pub struct TextEditHandle {
 /// 
 /// Obtained when creating a text box with [`Text::add_text_box()`].
 /// 
-/// Use with [`Text::get_text_box()`] to get a reference to the corresponding [`TextBox`]
+/// Use with [`Text::get_text_box()`] to get a reference to the corresponding [`TextBox`].
 #[derive(Debug)]
 pub struct TextBoxHandle {
     pub(crate) i: u32,
