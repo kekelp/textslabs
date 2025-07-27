@@ -714,6 +714,18 @@ impl<'a> TextBoxMut<'a> {
             
             // todo: does this do anything?
             self.inner.selection.selection = self.inner.selection.selection.refresh(&self.inner.layout);
+
+            let node = self.accesskit_node();
+
+            self.inner.layout_access.build_nodes(
+                &self.inner.text,
+                &self.inner.layout,
+                update,
+                &mut node,
+                next_node_id,
+                x_offset,
+                y_offset,
+            );
         });
     }
 

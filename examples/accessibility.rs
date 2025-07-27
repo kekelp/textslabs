@@ -251,7 +251,7 @@ impl ApplicationHandler<AccessKitEvent> for Application {
             match user_event.window_event {
                 AccessKitWindowEvent::InitialTreeRequested => {
                     let initial_tree = state.build_initial_tree();
-                    state.adapter.update_if_active(move || initial_tree);
+                    state.adapter.update_if_active(|| initial_tree);
                 }
                 AccessKitWindowEvent::ActionRequested(request) => {
                     let handled = state.text.handle_accessibility_action(&request);
