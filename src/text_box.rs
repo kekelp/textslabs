@@ -222,6 +222,7 @@ macro_rules! impl_for_textbox_and_textboxmut {
 impl_for_textbox_and_textboxmut! {
     pub fn accesskit_node(&self) -> Node {
         let mut node = Node::new(Role::Label);
+        // let mut node = Node::new(Role::Paragraph);
         let text_content = self.inner.text.to_string();
         node.set_value(text_content.clone());
         node.set_description(text_content);
@@ -715,17 +716,6 @@ impl<'a> TextBoxMut<'a> {
             // todo: does this do anything?
             self.inner.selection.selection = self.inner.selection.selection.refresh(&self.inner.layout);
 
-            let node = self.accesskit_node();
-
-            self.inner.layout_access.build_nodes(
-                &self.inner.text,
-                &self.inner.layout,
-                update,
-                &mut node,
-                next_node_id,
-                x_offset,
-                y_offset,
-            );
         });
     }
 
