@@ -675,12 +675,7 @@ impl Text {
 
             // todo: not the best, this includes decoration changes and stuff.
             if result.need_rerender {
-                let accesskit_id = self.get_accesskit_id(focused);
-                let accesskit_node = self.get_accesskit_node(focused);
-
-                if let Some(accesskit_id) = accesskit_id {
-                    self.shared.accesskit_tree_update.nodes.push((accesskit_id, accesskit_node));
-                }
+                self.push_ak_update_for_focused(focused);
             }
         }
 
@@ -707,20 +702,6 @@ impl Text {
                 let handle = TextBoxHandle { i: i as u32 };
                 let text_box = get_full_text_box_free_function(&mut self.text_boxes, &mut self.shared, &handle);
                 text_box.accesskit_id()
-            },
-        }
-    }
-    fn get_accesskit_node(&mut self, i: AnyBox) -> accesskit::Node {
-        return match i {
-            AnyBox::TextEdit(i) => {
-                let handle = TextEditHandle { i: i as u32 };
-                let text_edit = get_full_text_edit_free_function(&mut self.text_edits, &mut self.shared, &handle);
-                text_edit.accesskit_node()
-            },
-            AnyBox::TextBox(i) => {
-                let handle = TextBoxHandle { i: i as u32 };
-                let text_box = get_full_text_box_free_function(&mut self.text_boxes, &mut self.shared, &handle);
-                text_box.accesskit_node()
             },
         }
     }
@@ -1290,8 +1271,6 @@ impl Text {
 
         self.shared.accesskit_tree_update.focus = focus_value;
         let res = self.shared.accesskit_tree_update.clone();
-        
-        dbg!(&res);
 
         // Reset to an empty update.
         self.shared.accesskit_tree_update = TreeUpdate {
@@ -1300,6 +1279,21 @@ impl Text {
             focus: NodeId(0), // This doesn't matter.
         };
         return Some((res, focus_update));
+    }
+
+    fn push_ak_update_for_focused(&mut self, focused: AnyBox) {
+        match focused {
+            AnyBox::TextEdit(i) => {
+                let handle = TextEditHandle { i };
+                let mut text_edit = self.get_text_edit_mut(&handle);
+                text_edit.push_accesskit_update();
+            },
+            AnyBox::TextBox(i) => {
+                let handle = TextBoxHandle { i };
+                let mut text_box = self.get_text_box_mut(&handle);
+                text_box.push_accesskit_update();
+            },
+        }
     }
 }
 

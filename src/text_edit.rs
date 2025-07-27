@@ -886,6 +886,10 @@ impl<'a> TextEditMut<'a> {
     pub fn set_size(&mut self, size: (f32, f32)) {
         self.text_box.set_size(size)
     }
+    
+    pub(crate) fn push_accesskit_update(&mut self) {
+        self.text_box.push_accesskit_update();
+    }
 }
 
 
