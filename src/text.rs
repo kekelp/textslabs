@@ -47,10 +47,6 @@ pub struct Text {
 
     pub(crate) slot_for_text_box_mut: Option<TextBoxMut<'static>>,
 
-    pub(crate) accesskit_tree_update: TreeUpdate,
-
-    pub(crate) accesskit_focus_update: (Option<NodeId>, u64),
-    pub(crate) current_event_number: u64,
 
     // pub(crate) accesskit_id_to_text_handle_map: HashMap<NodeId, AnyBox>,
 }
@@ -61,6 +57,9 @@ pub struct Text {
 pub struct Shared {
     pub(crate) styles: Slab<StyleInner>,
     pub(crate) text_changed: bool,
+    pub(crate) accesskit_tree_update: TreeUpdate,
+    pub(crate) accesskit_focus_update: (Option<NodeId>, u64),
+    pub(crate) current_event_number: u64,
 }
 
 /// Handle for a text edit box.
@@ -259,19 +258,20 @@ impl Text {
             cursor_blink_start: None,
             cursor_currently_blinked_out: false,
             cursor_blink_timer,
+
+            slot_for_text_box_mut: None,
+
             shared: Shared {
                 styles,
                 text_changed: true,
+                accesskit_focus_update: (Some(NodeId(0)), 0),
+                current_event_number: 1,
+                accesskit_tree_update: TreeUpdate {
+                    nodes: Vec::new(),
+                    tree: None,
+                    focus: NodeId(0),
+                },
             },
-            slot_for_text_box_mut: None,
-
-            accesskit_tree_update: TreeUpdate {
-                nodes: Vec::new(),
-                tree: None,
-                focus: NodeId(0),
-            },
-            accesskit_focus_update: (Some(NodeId(0)), 0),
-            current_event_number: 1,
         }
     }
 
@@ -626,7 +626,7 @@ impl Text {
     pub fn handle_event(&mut self, event: &WindowEvent, window: &Window) -> EventResult {
         let mut result = EventResult::nothing();
 
-        self.current_event_number += 1;
+        self.shared.current_event_number += 1;
         
         self.input_state.handle_event(event);
 
@@ -673,13 +673,13 @@ impl Text {
             result.consumed = true;
             self.handle_focused_event(focused, event, window, &mut result);
 
-            // todo: not the best
+            // todo: not the best, this includes decoration changes and stuff.
             if result.need_rerender {
                 let accesskit_id = self.get_accesskit_id(focused);
                 let accesskit_node = self.get_accesskit_node(focused);
 
                 if let Some(accesskit_id) = accesskit_id {
-                    self.accesskit_tree_update.nodes.push((accesskit_id, accesskit_node));
+                    self.shared.accesskit_tree_update.nodes.push((accesskit_id, accesskit_node));
                 }
             }
         }
@@ -845,7 +845,7 @@ impl Text {
             self.reset_cursor_blink();
 
             let new_focus_ak_id = new_focus.and_then(|new_focus| self.get_accesskit_id(new_focus));
-            self.accesskit_focus_update = (new_focus_ak_id, self.current_event_number);
+            self.shared.accesskit_focus_update = (new_focus_ak_id, self.shared.current_event_number);
         }
     }
 
@@ -1269,16 +1269,16 @@ impl Text {
 
         let mut focus_update = FocusUpdate::Unchanged;
         
-        let focus_update_is_fresh = self.current_event_number == self.accesskit_focus_update.1;
+        let focus_update_is_fresh = self.shared.current_event_number == self.shared.accesskit_focus_update.1;
         if focus_update_is_fresh {
-            if let Some(focus) = self.accesskit_focus_update.0 {
+            if let Some(focus) = self.shared.accesskit_focus_update.0 {
                 focus_update = FocusUpdate::FocusedNewNode(focus);
             } else {
                 focus_update = FocusUpdate::Defocused;
             }
         }
 
-        if focus_update == FocusUpdate::Unchanged && self.accesskit_tree_update.nodes.is_empty() {
+        if focus_update == FocusUpdate::Unchanged && self.shared.accesskit_tree_update.nodes.is_empty() {
             return None;
         }
 
@@ -1288,13 +1288,13 @@ impl Text {
             FocusUpdate::Unchanged => current_focused_node_id,
         };
 
-        self.accesskit_tree_update.focus = focus_value;
-        let res = self.accesskit_tree_update.clone();
+        self.shared.accesskit_tree_update.focus = focus_value;
+        let res = self.shared.accesskit_tree_update.clone();
         
         dbg!(&res);
 
         // Reset to an empty update.
-        self.accesskit_tree_update = TreeUpdate {
+        self.shared.accesskit_tree_update = TreeUpdate {
             nodes: Vec::new(),
             tree: None,
             focus: NodeId(0), // This doesn't matter.

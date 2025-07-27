@@ -1156,8 +1156,12 @@ macro_rules! impl_for_textedit_and_texteditmut {
 
 impl_for_textedit_and_texteditmut! {
     pub fn accesskit_node(&self) -> Node {
-        let mut node = Node::new(Role::TextInput);
-   
+        let mut node = if self.single_line() {
+            Node::new(Role::TextInput)
+        } else {
+            Node::new(Role::MultilineTextInput)
+        };
+
         let text_content = self.text_box.inner.text.to_string();
         node.set_value(text_content.clone());
         
@@ -1192,7 +1196,7 @@ impl_for_textedit_and_texteditmut! {
         self.inner.compose.is_some()
     }
 
-    pub fn is_single_line(&self) -> bool {
+    pub fn single_line(&self) -> bool {
         self.inner.single_line
     }
 
