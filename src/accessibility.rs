@@ -1,71 +1,8 @@
 use crate::*;
-use accesskit::{Node, NodeId, Role, Rect as AccessRect};
-use std::sync::atomic::{AtomicU64, Ordering};
-
-/// Generate unique node IDs for accessibility nodes
-pub fn next_node_id() -> NodeId {
-    static NEXT: AtomicU64 = AtomicU64::new(1000);
-    NodeId(NEXT.fetch_add(1, Ordering::Relaxed))
-}
+use accesskit::NodeId;
 
 /// Accessibility support for Textslabs
 impl Text {
-    /// Configure accessibility node for a text box using its handle
-    pub fn configure_text_box_node(&self, handle: &TextBoxHandle, node: &mut Node) {
-        let text_box = self.get_text_box(handle);
-        
-        let text_content = text_box.text().to_string();
-        node.set_value(text_content.clone());
-        node.set_description(text_content);
-        
-        let (left, top) = text_box.pos();
-        let bounds = AccessRect::new(
-            left,
-            top,
-            left + text_box.inner.max_advance as f64,
-            top + text_box.inner.height as f64
-        );
-        node.set_bounds(bounds);
-        
-        node.set_role(Role::Label);
-    }
-
-    /// Configure accessibility node for a text edit using its handle
-    pub fn configure_text_edit_node(&mut self, handle: &TextEditHandle, node: &mut Node) {
-        let text_edit = self.get_text_edit(handle);
-        
-        let text_content = text_edit.raw_text().to_string();
-        node.set_value(text_content.clone());
-        
-        if text_edit.showing_placeholder() && !text_content.is_empty() {
-            node.set_description(text_content);
-        }
-        
-        let (left, top) = text_edit.text_box.pos();
-        let bounds = AccessRect::new(
-            left,
-            top,
-            left + text_edit.text_box.inner.max_advance as f64,
-            top + text_edit.text_box.inner.height as f64
-        );
-        node.set_bounds(bounds);
-        
-        node.set_role(Role::TextInput);
-
-        if text_edit.disabled() {
-            node.set_disabled();
-        }
-        
-        node.add_action(accesskit::Action::Focus);
-        node.add_action(accesskit::Action::SetTextSelection);
-        
-        if !text_edit.disabled() {
-            node.add_action(accesskit::Action::ReplaceSelectedText);
-        }
-    }
-    
-    
-    
     /// Handle accessibility action requests for the focused text box or text edit
     /// 
     /// This should be called when AccessKit sends action requests to the application.
@@ -116,4 +53,11 @@ impl Text {
             _ => false
         }
     }
+}
+
+#[derive(PartialEq)]
+pub enum FocusUpdate {
+    FocusedNewNode(NodeId),
+    Defocused,
+    Unchanged,
 }

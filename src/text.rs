@@ -1,4 +1,5 @@
 use crate::*;
+use accesskit::{NodeId, TreeUpdate};
 use slab::Slab;
 use std::sync::mpsc;
 use std::thread;
@@ -38,13 +39,20 @@ pub struct Text {
     pub(crate) scrolled_moved_indices: Vec<AnyBox>,
     pub(crate) scroll_animations: Vec<ScrollAnimation>,
 
-    pub(crate) current_frame: u64,
+    pub(crate) current_visibility_frame: u64,
     pub(crate) cursor_blink_start: Option<Instant>,
     pub(crate) cursor_currently_blinked_out: bool,
     
     pub(crate) cursor_blink_timer: Option<CursorBlinkWaker>,
 
     pub(crate) slot_for_text_box_mut: Option<TextBoxMut<'static>>,
+
+    pub(crate) accesskit_tree_update: TreeUpdate,
+
+    pub(crate) accesskit_focus_update: (Option<NodeId>, u64),
+    pub(crate) current_event_number: u64,
+
+    // pub(crate) accesskit_id_to_text_handle_map: HashMap<NodeId, AnyBox>,
 }
 
 /// Data that TextBoxMut and similar things need to have a reference to. Kept all together so that TextBoxMut and similar things can hold a single pointer to all of it.
@@ -246,7 +254,7 @@ impl Text {
             decorations_changed: true,
             scrolled_moved_indices: Vec::new(),
             scroll_animations: Vec::new(),
-            current_frame: 1,
+            current_visibility_frame: 1,
             using_frame_based_visibility: false,
             cursor_blink_start: None,
             cursor_currently_blinked_out: false,
@@ -256,6 +264,14 @@ impl Text {
                 text_changed: true,
             },
             slot_for_text_box_mut: None,
+
+            accesskit_tree_update: TreeUpdate {
+                nodes: Vec::new(),
+                tree: None,
+                focus: NodeId(0),
+            },
+            accesskit_focus_update: (Some(NodeId(0)), 0),
+            current_event_number: 1,
         }
     }
 
@@ -275,7 +291,7 @@ impl Text {
     #[must_use]
     pub fn add_text_box(&mut self, text: impl Into<Cow<'static, str>>, pos: (f64, f64), size: (f32, f32), depth: f32) -> TextBoxHandle {
         let mut text_box = TextBoxInner::new(text, pos, size, depth);
-        text_box.last_frame_touched = self.current_frame;
+        text_box.last_frame_touched = self.current_visibility_frame;
         text_box.style_version = self.shared.styles[text_box.style.i as usize].version;
         let i = self.text_boxes.insert(text_box) as u32;
         self.shared.text_changed = true;
@@ -290,7 +306,7 @@ impl Text {
     #[must_use]
     pub fn add_text_edit(&mut self, text: String, pos: (f64, f64), size: (f32, f32), depth: f32) -> TextEditHandle {
         let (text_edit, mut text_box) = TextEditInner::new(text, pos, size, depth);
-        text_box.last_frame_touched = self.current_frame;
+        text_box.last_frame_touched = self.current_visibility_frame;
         text_box.style_version = self.shared.styles[text_box.style.i as usize].version;
         let i = self.text_edits.insert((text_edit, text_box)) as u32;
         self.shared.text_changed = true;
@@ -381,7 +397,7 @@ impl Text {
     /// 
     /// Additionally, you can also use [`TextBox::set_can_hide()`] to decide if boxes should stay hidden in the background, or if they should marked as "to delete". You can the call [`Text::remove_old_nodes()`] to remove all the outdated text boxes that were marked as "to delete". 
     pub fn advance_frame_and_hide_boxes(&mut self) {
-        self.current_frame += 1;
+        self.current_visibility_frame += 1;
         self.using_frame_based_visibility = true;
     }
 
@@ -390,7 +406,7 @@ impl Text {
     /// Part of the "declarative" interface.  
     pub fn refresh_text_box(&mut self, handle: &TextBoxHandle) {
         if let Some(text_box) = self.text_boxes.get_mut(handle.i as usize) {
-            text_box.last_frame_touched = self.current_frame;
+            text_box.last_frame_touched = self.current_visibility_frame;
         }
     }
 
@@ -400,7 +416,7 @@ impl Text {
     /// Part of the "declarative" interface.
     pub fn refresh_text_edit(&mut self, handle: &TextEditHandle) {
         if let Some((_text_edit, text_box)) = self.text_edits.get_mut(handle.i as usize) {
-            text_box.last_frame_touched = self.current_frame;
+            text_box.last_frame_touched = self.current_visibility_frame;
         }
     }
 
@@ -422,14 +438,14 @@ impl Text {
             let should_clear_focus = match focused {
                 AnyBox::TextBox(i) => {
                     if let Some(text_box) = self.text_boxes.get(i as usize) {
-                        text_box.last_frame_touched != self.current_frame && !text_box.can_hide
+                        text_box.last_frame_touched != self.current_visibility_frame && !text_box.can_hide
                     } else {
                         true // Text box doesn't exist
                     }
                 }
                 AnyBox::TextEdit(i) => {
                     if let Some((_text_edit, text_box)) = self.text_edits.get(i as usize) {
-                        text_box.last_frame_touched != self.current_frame && !text_box.can_hide
+                        text_box.last_frame_touched != self.current_visibility_frame && !text_box.can_hide
                     } else {
                         true // Text edit doesn't exist
                     }
@@ -443,12 +459,12 @@ impl Text {
 
         // Remove text boxes that are outdated and allowed to be removed
         self.text_boxes.retain(|_, text_box| {
-            text_box.last_frame_touched == self.current_frame || text_box.can_hide
+            text_box.last_frame_touched == self.current_visibility_frame || text_box.can_hide
         });
 
 
         self.text_edits.retain(|_, (_text_edit, text_box)| {
-            text_box.last_frame_touched == self.current_frame || text_box.can_hide
+            text_box.last_frame_touched == self.current_visibility_frame || text_box.can_hide
         });
     }
 
@@ -492,12 +508,12 @@ impl Text {
         if ! self.shared.text_changed && self.using_frame_based_visibility {
             // see if any text boxes were just hidden
             for (_i, (_text_edit, text_box)) in self.text_edits.iter_mut() {
-                if text_box.last_frame_touched == self.current_frame - 1 {
+                if text_box.last_frame_touched == self.current_visibility_frame - 1 {
                     self.shared.text_changed = true;
                 }
             }
             for (_i, text_box) in self.text_boxes.iter_mut() {
-                if text_box.last_frame_touched == self.current_frame - 1 {
+                if text_box.last_frame_touched == self.current_visibility_frame - 1 {
                     self.shared.text_changed = true;
                 }
 
@@ -540,7 +556,7 @@ impl Text {
         } else {
         // if self.shared.text_changed || !self.scrolled_moved_indices.is_empty(){
 
-            let current_frame = self.current_frame;
+            let current_frame = self.current_visibility_frame;
             if self.shared.text_changed {
                 for (_, text_edit) in self.text_edits.iter_mut() {
                     let mut text_edit = get_full_text_edit_free_function_but_for_iterating((&mut text_edit.0, &mut text_edit.1), &mut self.shared);
@@ -609,6 +625,8 @@ impl Text {
     /// Any events other than `winit::WindowEvent::MouseInput` can use either this method or the occlusion method interchangeably.
     pub fn handle_event(&mut self, event: &WindowEvent, window: &Window) -> EventResult {
         let mut result = EventResult::nothing();
+
+        self.current_event_number += 1;
         
         self.input_state.handle_event(event);
 
@@ -654,6 +672,16 @@ impl Text {
         if let Some(focused) = self.focused {
             result.consumed = true;
             self.handle_focused_event(focused, event, window, &mut result);
+
+            // todo: not the best
+            if result.need_rerender {
+                let accesskit_id = self.get_accesskit_id(focused);
+                let accesskit_node = self.get_accesskit_node(focused);
+
+                if let Some(accesskit_id) = accesskit_id {
+                    self.accesskit_tree_update.nodes.push((accesskit_id, accesskit_node));
+                }
+            }
         }
 
         let (_, changed) = self.cursor_blinked_out(false);
@@ -666,6 +694,35 @@ impl Text {
         }
         
         result
+    }
+
+    fn get_accesskit_id(&mut self, i: AnyBox) -> Option<NodeId> {
+        return match i {
+            AnyBox::TextEdit(i) => {
+                let handle = TextEditHandle { i: i as u32 };
+                let text_edit = get_full_text_edit_free_function(&mut self.text_edits, &mut self.shared, &handle);
+                text_edit.accesskit_id()
+            },
+            AnyBox::TextBox(i) => {
+                let handle = TextBoxHandle { i: i as u32 };
+                let text_box = get_full_text_box_free_function(&mut self.text_boxes, &mut self.shared, &handle);
+                text_box.accesskit_id()
+            },
+        }
+    }
+    fn get_accesskit_node(&mut self, i: AnyBox) -> accesskit::Node {
+        return match i {
+            AnyBox::TextEdit(i) => {
+                let handle = TextEditHandle { i: i as u32 };
+                let text_edit = get_full_text_edit_free_function(&mut self.text_edits, &mut self.shared, &handle);
+                text_edit.accesskit_node()
+            },
+            AnyBox::TextBox(i) => {
+                let handle = TextBoxHandle { i: i as u32 };
+                let text_box = get_full_text_box_free_function(&mut self.text_boxes, &mut self.shared, &handle);
+                text_box.accesskit_node()
+            },
+        }
     }
 
     /// Find the topmost text box that would receive mouse events, if it wasn't occluded by any non-text-box objects.
@@ -748,12 +805,12 @@ impl Text {
 
         // Find all text widgets at this position
         for (i, (_text_edit, text_box)) in self.text_edits.iter_mut() {
-            if !text_box.hidden && text_box.last_frame_touched == self.current_frame && text_box.hit_full_rect(cursor_pos) {
+            if !text_box.hidden && text_box.last_frame_touched == self.current_visibility_frame && text_box.hit_full_rect(cursor_pos) {
                 self.mouse_hit_stack.push((AnyBox::TextEdit(i as u32), text_box.depth));
             }
         }
         for (i, text_box) in self.text_boxes.iter_mut() {
-            if !text_box.hidden && text_box.last_frame_touched == self.current_frame && text_box.hit_bounding_box(cursor_pos) {
+            if !text_box.hidden && text_box.last_frame_touched == self.current_visibility_frame && text_box.hit_bounding_box(cursor_pos) {
                 self.mouse_hit_stack.push((AnyBox::TextBox(i as u32), text_box.depth));
             }
         }
@@ -786,6 +843,9 @@ impl Text {
             // todo: could skip some rerenders here if the old focus wasn't editable and had collapsed selection.
             self.decorations_changed = true;
             self.reset_cursor_blink();
+
+            let new_focus_ak_id = new_focus.and_then(|new_focus| self.get_accesskit_id(new_focus));
+            self.accesskit_focus_update = (new_focus_ak_id, self.current_event_number);
         }
     }
 
@@ -1198,6 +1258,48 @@ impl Text {
 
     pub fn focus(&self) -> Option<AnyBox> {
         self.focused
+    }
+
+    pub fn accesskit_update(&mut self, current_focused_node_id: NodeId, root_node_id: NodeId) -> Option<(TreeUpdate, FocusUpdate)> {
+        // For some reason, every update that we send must specify the focus again.
+        // If something else changed it, we'd end up overriding it.
+        // So we have to ask for the current one from outside and fill that in, in case that nothing happened.
+        // According to the TreeUpdate docs, we should also set focus = root_node_id when text boxes are defocused.
+        // However, this means that the focus actually goes to the whole window, Windows Narrator says the name of the window, and the blue box covers the whole window. I don't really see this behavior anywhere else.
+
+        let mut focus_update = FocusUpdate::Unchanged;
+        
+        let focus_update_is_fresh = self.current_event_number == self.accesskit_focus_update.1;
+        if focus_update_is_fresh {
+            if let Some(focus) = self.accesskit_focus_update.0 {
+                focus_update = FocusUpdate::FocusedNewNode(focus);
+            } else {
+                focus_update = FocusUpdate::Defocused;
+            }
+        }
+
+        if focus_update == FocusUpdate::Unchanged && self.accesskit_tree_update.nodes.is_empty() {
+            return None;
+        }
+
+        let focus_value = match focus_update {
+            FocusUpdate::FocusedNewNode(node_id) => node_id,
+            FocusUpdate::Defocused => root_node_id,
+            FocusUpdate::Unchanged => current_focused_node_id,
+        };
+
+        self.accesskit_tree_update.focus = focus_value;
+        let res = self.accesskit_tree_update.clone();
+        
+        dbg!(&res);
+
+        // Reset to an empty update.
+        self.accesskit_tree_update = TreeUpdate {
+            nodes: Vec::new(),
+            tree: None,
+            focus: NodeId(0), // This doesn't matter.
+        };
+        return Some((res, focus_update));
     }
 }
 

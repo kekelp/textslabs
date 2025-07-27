@@ -1,6 +1,6 @@
 use std::cell::RefCell;
+use accesskit::{Node, NodeId, Rect as AccessRect, Role};
 
-use accesskit::{Node, NodeId, TreeUpdate};
 use parley::*;
 use winit::{
     event::WindowEvent, keyboard::{Key, NamedKey}, platform::modifier_supplement::KeyEventExtModifierSupplement, window::Window
@@ -21,6 +21,7 @@ pub(crate) struct TextBoxInner {
     pub(crate) layout: Layout<ColorBrush>,
 
     pub(crate) layout_access: LayoutAccessibility,
+    pub(crate) accesskit_id: Option<accesskit::NodeId>,
 
     pub(crate) needs_relayout: bool,
     pub(crate) left: f64,
@@ -158,6 +159,7 @@ impl TextBoxInner {
             style_version: 0,
             layout: Layout::new(),
             layout_access: LayoutAccessibility::default(),
+            accesskit_id: None,
             selectable: true,
             needs_relayout: true,
             left: pos.0,
@@ -218,6 +220,24 @@ macro_rules! impl_for_textbox_and_textboxmut {
 
 
 impl_for_textbox_and_textboxmut! {
+    pub fn accesskit_node(&self) -> Node {
+        let mut node = Node::new(Role::Label);
+        let text_content = self.inner.text.to_string();
+        node.set_value(text_content.clone());
+        node.set_description(text_content);
+        
+        let (left, top) = self.pos();
+        let bounds = AccessRect::new(
+            left,
+            top,
+            left + self.inner.max_advance as f64,
+            top + self.inner.height as f64
+        );
+        node.set_bounds(bounds);
+
+        return node;
+    }
+
     pub fn style(&'a self) -> &'a TextStyle2 {
         &self.shared.styles[self.inner.style.i as usize].text_style
     }
@@ -576,6 +596,14 @@ impl<'a> TextBoxMut<'a> {
         self.inner.needs_relayout = true;
         self.shared.text_changed = true;
         self.inner.text.to_mut()
+    }
+
+    pub fn set_accesskit_id(&mut self, accesskit_id: NodeId) {
+        self.inner.accesskit_id = Some(accesskit_id);
+    }
+
+    pub fn accesskit_id(&self) -> Option<NodeId> {
+        self.inner.accesskit_id
     }
 
     pub fn set_auto_clip(&mut self, auto_clip: bool) {
@@ -953,34 +981,6 @@ impl<'a> TextBoxMut<'a> {
         ) {
             self.set_selection(selection);
         }
-    }
-
-    fn update_accessibility(
-        &mut self,
-        update: &mut TreeUpdate,
-        node: &mut Node,
-        next_node_id: impl FnMut() -> NodeId,
-        x_offset: f64,
-        y_offset: f64,
-    ) {
-        self.refresh_layout();
-        self.inner.layout_access.build_nodes(
-            &self.inner.text,
-            &self.inner.layout,
-            update,
-            node,
-            next_node_id,
-            x_offset,
-            y_offset,
-        );
-        if self.inner.selectable {
-            if let Some(selection) = self.inner.selection.selection.to_access_selection(&self.inner.layout, &self.inner.layout_access) {
-                node.set_text_selection(selection);
-            }
-        } else {
-            node.clear_text_selection();
-        }
-        node.add_action(accesskit::Action::SetTextSelection);
     }
 }
 
