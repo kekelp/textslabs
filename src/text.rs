@@ -60,6 +60,7 @@ pub struct Shared {
     pub(crate) accesskit_tree_update: TreeUpdate,
     pub(crate) accesskit_focus_update: (Option<NodeId>, u64),
     pub(crate) current_event_number: u64,
+    pub(crate) node_id_generator: fn() -> NodeId,
 }
 
 /// Handle for a text edit box.
@@ -268,6 +269,7 @@ impl Text {
                 text_changed: true,
                 accesskit_focus_update: (Some(NodeId(0)), 0),
                 current_event_number: 1,
+                node_id_generator: crate::accessibility::next_node_id,
                 accesskit_tree_update: TreeUpdate {
                     nodes: Vec::new(),
                     tree: None,
@@ -1272,6 +1274,26 @@ impl Text {
     /// Get the text handle for a given AccessKit node ID
     pub fn get_text_handle_by_accesskit_id(&self, node_id: NodeId) -> Option<AnyBox> {
         self.accesskit_id_to_text_handle_map.get(&node_id).copied()
+    }
+    
+    /// Set a custom node ID generator function for accessibility
+    /// 
+    /// The generator function will be called whenever a new accessibility node ID is needed.
+    /// This allows you to control the node ID allocation strategy.
+    /// 
+    /// # Example
+    /// ```ignore
+    /// use accesskit::NodeId;
+    /// 
+    /// fn my_generator() -> NodeId {
+    ///     // Your custom logic here
+    ///     NodeId(42)
+    /// }
+    /// 
+    /// text.set_node_id_generator(my_generator);
+    /// ```
+    pub fn set_node_id_generator(&mut self, generator: fn() -> NodeId) {
+        self.shared.node_id_generator = generator;
     }
 
     pub fn focus(&self) -> Option<AnyBox> {
