@@ -903,7 +903,6 @@ impl<'a> TextEditMut<'a> {
             );
     
             if let Some(ak_sel) = self.text_box.inner.selection.selection.to_access_selection(&self.text_box.inner.layout, &self.text_box.inner.layout_access) {
-                dbg!(&ak_sel);
                 node.set_text_selection(ak_sel);
             }
             
@@ -927,7 +926,6 @@ impl<'a> TextEditMut<'a> {
             );
     
             if let Some(ak_sel) = self.text_box.inner.selection.selection.to_access_selection(&self.text_box.inner.layout, &self.text_box.inner.layout_access) {
-                dbg!(&ak_sel);
                 node.set_text_selection(ak_sel);
             }
             

@@ -107,19 +107,17 @@ impl State {
         root.set_children(vec![TEXT_EDIT_ID, INFO_TEXT_ID, MULTILINE_TEXT_ID]);
         root.set_label(WINDOW_TITLE);
 
-        let info_text = self.text.get_text_box(&self.info_text_handle).accesskit_node();
-
         let tree = Tree::new(WINDOW_ID);
         let mut result = TreeUpdate {
             nodes: vec![
                 (WINDOW_ID, root),
-                (INFO_TEXT_ID, info_text),
             ],
             tree: Some(tree),
             focus: self.accesskit_focus,
         };
 
         self.text.get_text_edit_mut(&self.text_edit_handle).push_accesskit_update(&mut result);
+        self.text.get_text_box_mut(&self.info_text_handle).push_accesskit_update(&mut result);
         self.text.get_text_edit_mut(&self.multiline_text_handle).push_accesskit_update(&mut result);
 
         result

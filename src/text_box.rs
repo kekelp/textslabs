@@ -1,5 +1,5 @@
 use std::cell::RefCell;
-use accesskit::{Node, NodeId, Rect as AccessRect, Role};
+use accesskit::{Node, NodeId, Rect as AccessRect, Role, TreeUpdate};
 
 use parley::*;
 use winit::{
@@ -347,26 +347,47 @@ impl<'a> TextBox<'a> {
 }
 
 impl<'a> TextBoxMut<'a> {
-    pub fn push_accesskit_update(&mut self) {
+    pub fn push_accesskit_update(&mut self, tree_update: &mut TreeUpdate) {
         if let Some(id) = self.inner.accesskit_id {
-            let node = self.accesskit_node();
+            let mut node = self.accesskit_node();
 
-            // For normal text boxes, it doesn't look like you have to do this.
-            // let (left, top) = self.pos();
-            // self.inner.layout_access.build_nodes(
-            //     &self.inner.text,
-            //     &self.inner.layout,
-            //     &mut self.shared.accesskit_tree_update,
-            //     &mut node,
-            //     crate::next_node_id,
-            //     left as f64,
-            //     top as f64,
-            // );
+            let (left, top) = self.pos();
+            self.inner.layout_access.build_nodes(
+                &self.inner.text,
+                &self.inner.layout,
+                &mut self.shared.accesskit_tree_update,
+                &mut node,
+                crate::next_node_id,
+                left as f64,
+                top as f64,
+            );
     
-            // if let Some(ak_sel) = self.inner.selection.selection.to_access_selection(&self.inner.layout, &self.inner.layout_access) {
-            //     dbg!(&ak_sel);
-            //     node.set_text_selection(ak_sel);
-            // }
+            if let Some(ak_sel) = self.inner.selection.selection.to_access_selection(&self.inner.layout, &self.inner.layout_access) {
+                node.set_text_selection(ak_sel);
+            }
+            
+            tree_update.nodes.push((id, node))
+        }
+    }
+
+    pub(crate) fn push_accesskit_update_to_self(&mut self) {
+        if let Some(id) = self.inner.accesskit_id {
+            let mut node = self.accesskit_node();
+
+            let (left, top) = self.pos();
+            self.inner.layout_access.build_nodes(
+                &self.inner.text,
+                &self.inner.layout,
+                &mut self.shared.accesskit_tree_update,
+                &mut node,
+                crate::next_node_id,
+                left as f64,
+                top as f64,
+            );
+    
+            if let Some(ak_sel) = self.inner.selection.selection.to_access_selection(&self.inner.layout, &self.inner.layout_access) {
+                node.set_text_selection(ak_sel);
+            }
             
             self.shared.accesskit_tree_update.nodes.push((id, node))
         }
