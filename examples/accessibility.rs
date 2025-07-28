@@ -4,9 +4,9 @@ use wgpu::*;
 use winit::{
     application::ApplicationHandler,
     dpi::LogicalSize,
-    event::{ElementState, WindowEvent},
+    event::WindowEvent,
     event_loop::{ActiveEventLoop, EventLoop, EventLoopProxy},
-    keyboard::{Key, ModifiersState},
+    keyboard::ModifiersState,
     window::{Window, WindowId},
 };
 use accesskit::{Action, Node, NodeId, Role, Tree, TreeUpdate};
@@ -35,11 +35,14 @@ struct State {
     
     adapter: Adapter,
 
+    modifiers: ModifiersState,
+    
+    sent_initial_access_update: bool,
+
     // It seems pretty crazy that this example has to keep a copy of the focus here and painstakingly keep it in sync, but it seems that's what accesskit is expecting.
     // Every time we want to update something, we have to specify a new focus, even if we don't want to change it. But there's no way to ask accesskit for the current one.
     accesskit_focus: NodeId,
     
-    modifiers: ModifiersState,
 }
 
 impl State {
@@ -70,7 +73,7 @@ impl State {
         text.get_text_edit_mut(&text_edit_handle).set_placeholder("Type here".to_string());
         
         let info_text_handle = text.add_text_box(
-            "This is a Textslabs accessibility demo. To navigate, try using the platform screen reader's keyboard shortcuts (e.g. Caps Lock + arrow keys on Windows by default), or Tab (implemented by hand in this example).".to_string(),
+            "This is a Textslabs accessibility demo. To navigate, try using the platform screen reader's keyboard shortcuts (e.g. Caps Lock + arrow keys on Windows by default).".to_string(),
             (50.0, 200.0), (400.0, 100.0), 0.0
         );
         text.get_text_box_mut(&info_text_handle).set_accesskit_id(INFO_TEXT_ID);
@@ -97,8 +100,9 @@ impl State {
             info_text_handle,
             multiline_text_handle,
             adapter,
-            accesskit_focus: INITIAL_FOCUS,
             modifiers: ModifiersState::default(),
+            accesskit_focus: INITIAL_FOCUS,
+            sent_initial_access_update: false,
         })
     }
 
@@ -123,7 +127,18 @@ impl State {
         result
     }
 
-    // Again, in a gui library, the mapping would have to be from accesskit NodeIds to GUI library element ids, not to text handles directly.
+    // If the code was better organized, we could avoid calculating the tree updates when the adapter is inactive.
+    // This example doesn't do it for simplicity and because I ran into partial borrow errors when trying. 
+    fn send_accesskit_update(&mut self, tree_update: TreeUpdate) {
+        if ! self.sent_initial_access_update {
+            let initial_tree = self.build_initial_tree();
+            self.adapter.update_if_active(|| initial_tree);
+            self.sent_initial_access_update = true;
+        } else {
+            self.adapter.update_if_active(|| tree_update);
+        }
+    }
+
     fn map_accesskit_node_id_to_text_handle(&mut self, node_id: NodeId) -> AnyBox {
         match node_id {
             TEXT_EDIT_ID => self.text_edit_handle.into_anybox(),
@@ -139,14 +154,14 @@ impl State {
         let focused_text_handle = self.map_accesskit_node_id_to_text_handle(focus);
         self.text.set_focus(&focused_text_handle);
 
-        self.adapter.update_if_active(|| TreeUpdate {
+        let tree_update = TreeUpdate {
             nodes: vec![],
             tree: None,
             focus,
-        });
+        };
+        self.send_accesskit_update(tree_update);
     }
 
-    // todo inline this
     fn handle_window_event(&mut self, event: &WindowEvent) {
         self.text.handle_event(event, &self.window);
         
@@ -157,9 +172,10 @@ impl State {
                 FocusUpdate::Defocused => self.accesskit_focus = WINDOW_ID,
                 FocusUpdate::Unchanged => {},
             }
-
-            self.adapter.update_if_active(|| tree_update);
+            
+            self.send_accesskit_update(tree_update);
         }
+        
 
         self.adapter.process_event(&self.window, event);
 
@@ -204,22 +220,6 @@ impl State {
             WindowEvent::ModifiersChanged(modifiers) => {
                 self.modifiers = modifiers.state();
             }
-            WindowEvent::KeyboardInput { event, .. } => {
-                if event.state == ElementState::Pressed {
-                    match event.logical_key {
-                        Key::Named(winit::keyboard::NamedKey::Tab) => {
-                            let new_focus = match self.accesskit_focus {
-                                TEXT_EDIT_ID => INFO_TEXT_ID,
-                                INFO_TEXT_ID => MULTILINE_TEXT_ID,
-                                MULTILINE_TEXT_ID => TEXT_EDIT_ID,
-                                _ => TEXT_EDIT_ID,
-                            };
-                            self.set_focus(new_focus);
-                        }
-                        _ => {}
-                    }
-                }
-            }
             _ => {}
         }
     }
@@ -249,9 +249,8 @@ impl ApplicationHandler<AccessKitEvent> for Application {
             state.adapter.process_event(&state.window, &event);
             state.handle_window_event(&event);
             
-            match event {
-                WindowEvent::CloseRequested => event_loop.exit(),
-                _ => {}
+            if event == WindowEvent::CloseRequested {
+                event_loop.exit();
             }
         }
     }
@@ -267,7 +266,7 @@ impl ApplicationHandler<AccessKitEvent> for Application {
                     let handled = state.text.handle_accessibility_action(&request);
                     
                     if !handled && request.action == Action::Focus {
-                        // state.set_focus(request.target);
+                        state.set_focus(request.target);
                     }
                 }
                 AccessKitWindowEvent::AccessibilityDeactivated => {}
