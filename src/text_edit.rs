@@ -887,50 +887,35 @@ impl<'a> TextEditMut<'a> {
         self.text_box.set_size(size)
     }
     
+
     pub fn push_accesskit_update(&mut self, tree_update: &mut TreeUpdate) {
-        if let Some(id) = self.text_box.inner.accesskit_id {
-            let mut node = self.accesskit_node();
-
-            let (left, top) = self.pos();
-            self.text_box.inner.layout_access.build_nodes(
-                &self.text_box.inner.text,
-                &self.text_box.inner.layout,
-                &mut self.text_box.shared.accesskit_tree_update,
-                &mut node,
-                crate::next_node_id,
-                left as f64,
-                top as f64,
-            );
-    
-            if let Some(ak_sel) = self.text_box.inner.selection.selection.to_access_selection(&self.text_box.inner.layout, &self.text_box.inner.layout_access) {
-                node.set_text_selection(ak_sel);
-            }
-            
-            tree_update.nodes.push((id, node))
-        }
+        let accesskit_id = self.text_box.inner.accesskit_id;
+        let node = self.accesskit_node();
+        let (left, top) = self.pos();
+        
+        push_accesskit_update_textedit_free_function(
+            accesskit_id,
+            node,
+            &mut self.text_box.inner,
+            tree_update,
+            left,
+            top,
+        );
     }
-    // Partial borrows moment.
-    pub(crate) fn push_accesskit_update_to_self(&mut self) {
-        if let Some(id) = self.text_box.inner.accesskit_id {
-            let mut node = self.accesskit_node();
 
-            let (left, top) = self.pos();
-            self.text_box.inner.layout_access.build_nodes(
-                &self.text_box.inner.text,
-                &self.text_box.inner.layout,
-                &mut self.text_box.shared.accesskit_tree_update,
-                &mut node,
-                crate::next_node_id,
-                left as f64,
-                top as f64,
-            );
-    
-            if let Some(ak_sel) = self.text_box.inner.selection.selection.to_access_selection(&self.text_box.inner.layout, &self.text_box.inner.layout_access) {
-                node.set_text_selection(ak_sel);
-            }
-            
-            self.text_box.shared.accesskit_tree_update.nodes.push((id, node))
-        }
+    pub(crate) fn push_accesskit_update_to_self(&mut self) {
+        let accesskit_id = self.text_box.inner.accesskit_id;
+        let node = self.accesskit_node();
+        let (left, top) = self.pos();
+        
+        push_accesskit_update_textedit_free_function(
+            accesskit_id,
+            node,
+            &mut self.text_box.inner,
+            &mut self.text_box.shared.accesskit_tree_update,
+            left,
+            top,
+        );
     }
 }
 
@@ -1568,5 +1553,33 @@ pub(crate) fn should_use_animation(delta: &winit::event::MouseScrollDelta, verti
             }
         },
         winit::event::MouseScrollDelta::PixelDelta(_) => false,
+    }
+}
+
+// Partial borrows moment.
+fn push_accesskit_update_textedit_free_function(
+    accesskit_id: Option<accesskit::NodeId>,
+    mut node: accesskit::Node,
+    inner: &mut text_box::TextBoxInner,
+    tree_update: &mut accesskit::TreeUpdate,
+    left: f64,
+    top: f64,
+) {
+    if let Some(id) = accesskit_id {
+        inner.layout_access.build_nodes(
+            &inner.text,
+            &inner.layout,
+            tree_update,
+            &mut node,
+            crate::next_node_id,
+            left,
+            top,
+        );
+
+        if let Some(ak_sel) = inner.selection.selection.to_access_selection(&inner.layout, &inner.layout_access) {
+            node.set_text_selection(ak_sel);
+        }
+        
+        tree_update.nodes.push((id, node))
     }
 }
