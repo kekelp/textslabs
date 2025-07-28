@@ -13,56 +13,59 @@ NodeId(NEXT.fetch_add(1, Ordering::Relaxed))
 
 /// Accessibility support for Textslabs
 impl Text {
-    /// Handle accessibility action requests for the focused text box or text edit
+    /// Handle accessibility action requests using the AccessKit node ID mapping
     /// 
     /// This is mostly untested.
     pub fn handle_accessibility_action(&mut self, request: &accesskit::ActionRequest) -> bool {
+        // Try to find the target using the mapping first
+        let Some(&target_box) = self.accesskit_id_to_text_handle_map.get(&request.target) else {
+            return false;
+        };
         match request.action {
             accesskit::Action::SetTextSelection => {
-                if let Some(focused) = self.focused {
-                    if let Some(accesskit::ActionData::SetTextSelection(selection)) = &request.data {
-
-                        let mut text_box = match focused {
-                            AnyBox::TextEdit(i) => {
-                                let handle = TextEditHandle { i };
-                                self.get_text_edit_mut(&handle).text_box
-                            }
-                            AnyBox::TextBox(i) => {
-                                let handle = TextBoxHandle { i };
-                                self.get_text_box_mut(&handle)
-                            }
-                        };
-
-                        if let Some(selection) = Selection::from_access_selection(
-                            selection,
-                            &text_box.inner.layout,
-                            &text_box.inner.layout_access
-
-                        ) {
-                            text_box.set_selection(selection);
+                if let Some(accesskit::ActionData::SetTextSelection(selection)) = &request.data {
+                    let mut text_box = match target_box {
+                        AnyBox::TextEdit(i) => {
+                            let handle = TextEditHandle { i };
+                            self.get_text_edit_mut(&handle).text_box
                         }
+                        AnyBox::TextBox(i) => {
+                            let handle = TextBoxHandle { i };
+                            self.get_text_box_mut(&handle)
+                        }
+                    };
+
+                    if let Some(selection) = Selection::from_access_selection(
+                        selection,
+                        &text_box.inner.layout,
+                        &text_box.inner.layout_access
+                    ) {
+                        text_box.set_selection(selection);
+                        return true;
                     }
                 }
-                false
             }
             accesskit::Action::ReplaceSelectedText => {
-                if let Some(focused) = self.focused {
-                    if let Some(accesskit::ActionData::Value(text)) = &request.data {
-                        match focused {
-                            AnyBox::TextEdit(i) => {
-                                let handle = TextEditHandle { i };
-                                self.get_text_edit_mut(&handle).replace_selection(&text);
-                                return true;
-                            }
-                            _ => {}
+                if let Some(accesskit::ActionData::Value(text)) = &request.data {
+                    match target_box {
+                        AnyBox::TextEdit(i) => {
+                            let handle = TextEditHandle { i };
+                            self.get_text_edit_mut(&handle).replace_selection(&text);
+                            return true;
                         }
+                        _ => {}
                     }
                 }
-                false
+            }
+            accesskit::Action::Focus => {
+                self.set_focus(&target_box);
+                return true;
             }
             // todo: we can at least deal with the scroll ones, if a text edit is focused
-            _ => false
+            _ => {}
         }
+
+        return false
     }
 }
 

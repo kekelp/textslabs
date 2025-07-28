@@ -68,7 +68,7 @@ impl State {
 
         let mut text = Text::new_without_auto_wakeup();
         let text_edit_handle = text.add_text_edit("".to_string(), (50.0, 100.0), (300.0, 35.0), 0.0);
-        text.get_text_edit_mut(&text_edit_handle).set_accesskit_id(TEXT_EDIT_ID);
+        text.set_text_edit_accesskit_id(&text_edit_handle, TEXT_EDIT_ID);
         text.get_text_edit_mut(&text_edit_handle).set_single_line(true);
         text.get_text_edit_mut(&text_edit_handle).set_placeholder("Type here".to_string());
         
@@ -76,10 +76,10 @@ impl State {
             "This is a Textslabs accessibility demo. To navigate, try using the platform screen reader's keyboard shortcuts (e.g. Caps Lock + arrow keys on Windows by default).".to_string(),
             (50.0, 200.0), (400.0, 100.0), 0.0
         );
-        text.get_text_box_mut(&info_text_handle).set_accesskit_id(INFO_TEXT_ID);
+        text.set_text_box_accesskit_id(&info_text_handle, INFO_TEXT_ID);
 
         let multiline_text_handle = text.add_text_edit("".to_string(), (50.0, 450.0), (500.0, 200.0), 0.0);
-        text.get_text_edit_mut(&multiline_text_handle).set_accesskit_id(MULTILINE_TEXT_ID);
+        text.set_text_edit_accesskit_id(&multiline_text_handle, MULTILINE_TEXT_ID);
         text.get_text_edit_mut(&multiline_text_handle).set_single_line(false);
         text.get_text_edit_mut(&multiline_text_handle).set_placeholder("Multiline text edit");
 
@@ -139,20 +139,13 @@ impl State {
         }
     }
 
-    fn map_accesskit_node_id_to_text_handle(&mut self, node_id: NodeId) -> AnyBox {
-        match node_id {
-            TEXT_EDIT_ID => self.text_edit_handle.into_anybox(),
-            INFO_TEXT_ID => self.info_text_handle.into_anybox(),
-            MULTILINE_TEXT_ID => self.multiline_text_handle.into_anybox(),
-            _ => panic!(),
-        }
-    }
-
     fn set_focus(&mut self, focus: NodeId) {
         self.accesskit_focus = focus;
         
-        let focused_text_handle = self.map_accesskit_node_id_to_text_handle(focus);
-        self.text.set_focus(&focused_text_handle);
+        // The Text struct now handles this internally via the mapping
+        if let Some(focused_text_handle) = self.text.get_text_handle_by_accesskit_id(focus) {
+            self.text.set_focus(&focused_text_handle);
+        }
 
         let tree_update = TreeUpdate {
             nodes: vec![],
@@ -265,6 +258,7 @@ impl ApplicationHandler<AccessKitEvent> for Application {
                 AccessKitWindowEvent::ActionRequested(request) => {
                     let handled = state.text.handle_accessibility_action(&request);
                     
+                    // Fallback for Focus action if not handled by the mapping
                     if !handled && request.action == Action::Focus {
                         state.set_focus(request.target);
                     }
