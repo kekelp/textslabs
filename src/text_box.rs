@@ -201,22 +201,17 @@ impl TextBoxInner {
 
 
 macro_rules! impl_for_textbox_and_textboxmut {
-    ($($(#[$attr:meta])* $visibility:vis fn $fn_name:ident $(<$($generic:tt),*>)? ($(& $($lt:lifetime)?)? $self:ident $(, $param:ident: $param_ty:ty)*) $(-> $ret_ty:ty)? $body:block)*) => {
+    ($($(#[$attr:meta])* $item:item)*) => {
         impl<'a> TextBox<'a> {
-            $(
-                $(#[$attr])*
-                $visibility fn $fn_name $(<$($generic),*>)? ($(& $($lt)?)? $self $(, $param: $param_ty)*) $(-> $ret_ty)? $body
-            )*
+            $($item)*
         }
-        
+       
         impl<'a> TextBoxMut<'a> {
-            $(
-                $(#[$attr])*
-                $visibility fn $fn_name $(<$($generic),*>)? ($(& $($lt)?)? $self $(, $param: $param_ty)*) $(-> $ret_ty)? $body
-            )*
+            $($item)*
         }
     };
 }
+
 
 impl_for_textbox_and_textboxmut! {
     pub fn accesskit_node(&self) -> Node {
