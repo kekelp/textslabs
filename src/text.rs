@@ -1,6 +1,7 @@
 use crate::*;
 use accesskit::{NodeId, TreeUpdate};
 use slab::Slab;
+use std::collections::HashMap;
 use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
@@ -47,8 +48,7 @@ pub struct Text {
 
     pub(crate) slot_for_text_box_mut: Option<TextBoxMut<'static>>,
 
-
-    // pub(crate) accesskit_id_to_text_handle_map: HashMap<NodeId, AnyBox>,
+    pub(crate) accesskit_id_to_text_handle_map: HashMap<NodeId, AnyBox>,
 }
 
 /// Data that TextBoxMut and similar things need to have a reference to. Kept all together so that TextBoxMut and similar things can hold a single pointer to all of it.
@@ -260,6 +260,8 @@ impl Text {
             cursor_blink_timer,
 
             slot_for_text_box_mut: None,
+
+            accesskit_id_to_text_handle_map: HashMap::with_capacity(50),
 
             shared: Shared {
                 styles,
@@ -478,6 +480,14 @@ impl Text {
                 self.focused = None;
             }
         }
+        
+        // Remove from accessibility mapping if it exists
+        if let Some(text_box) = self.text_boxes.get(handle.i as usize) {
+            if let Some(accesskit_id) = text_box.accesskit_id {
+                self.accesskit_id_to_text_handle_map.remove(&accesskit_id);
+            }
+        }
+        
         self.text_boxes.remove(handle.i as usize);
         std::mem::forget(handle);
     }
@@ -493,6 +503,14 @@ impl Text {
                 self.focused = None;
             }
         }
+        
+        // Remove from accessibility mapping if it exists
+        if let Some((_text_edit, text_box)) = self.text_edits.get(handle.i as usize) {
+            if let Some(accesskit_id) = text_box.accesskit_id {
+                self.accesskit_id_to_text_handle_map.remove(&accesskit_id);
+            }
+        }
+        
         self.text_edits.remove(handle.i as usize);
         std::mem::forget(handle);
     }
@@ -1235,6 +1253,25 @@ impl Text {
     pub fn set_focus<T: IntoAnyBox>(&mut self, handle: &T) {
         let handle: AnyBox = (*handle).into_anybox();
         self.refocus(Some(handle));
+    }
+    
+    /// Update the AccessKit node ID mapping for a text box
+    pub fn set_text_box_accesskit_id(&mut self, handle: &TextBoxHandle, accesskit_id: NodeId) {
+        let any_box = handle.into_anybox();
+        self.accesskit_id_to_text_handle_map.insert(accesskit_id, any_box);
+        self.get_text_box_mut(handle).set_accesskit_id(accesskit_id);
+    }
+    
+    /// Update the AccessKit node ID mapping for a text edit
+    pub fn set_text_edit_accesskit_id(&mut self, handle: &TextEditHandle, accesskit_id: NodeId) {
+        let any_box = handle.into_anybox();
+        self.accesskit_id_to_text_handle_map.insert(accesskit_id, any_box);
+        self.get_text_edit_mut(handle).set_accesskit_id(accesskit_id);
+    }
+    
+    /// Get the text handle for a given AccessKit node ID
+    pub fn get_text_handle_by_accesskit_id(&self, node_id: NodeId) -> Option<AnyBox> {
+        self.accesskit_id_to_text_handle_map.get(&node_id).copied()
     }
 
     pub fn focus(&self) -> Option<AnyBox> {
