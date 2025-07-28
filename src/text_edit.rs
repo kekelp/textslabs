@@ -900,6 +900,7 @@ impl<'a> TextEditMut<'a> {
             tree_update,
             left,
             top,
+            self.text_box.shared.node_id_generator,
         );
     }
 
@@ -915,6 +916,7 @@ impl<'a> TextEditMut<'a> {
             &mut self.text_box.shared.accesskit_tree_update,
             left,
             top,
+            self.text_box.shared.node_id_generator,
         );
     }
 }
@@ -1574,6 +1576,7 @@ fn push_accesskit_update_textedit_free_function(
     tree_update: &mut accesskit::TreeUpdate,
     left: f64,
     top: f64,
+    node_id_generator: fn() -> accesskit::NodeId,
 ) {
     if let Some(id) = accesskit_id {
         inner.layout_access.build_nodes(
@@ -1581,7 +1584,7 @@ fn push_accesskit_update_textedit_free_function(
             &inner.layout,
             tree_update,
             &mut node,
-            crate::next_node_id,
+            node_id_generator,
             left,
             top,
         );

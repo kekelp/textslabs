@@ -354,6 +354,7 @@ impl<'a> TextBoxMut<'a> {
             tree_update,
             left,
             top,
+            self.shared.node_id_generator,
         );
     }
 
@@ -369,6 +370,7 @@ impl<'a> TextBoxMut<'a> {
             &mut self.shared.accesskit_tree_update,
             left,
             top,
+            self.shared.node_id_generator,
         );
     }
 
@@ -1149,6 +1151,7 @@ fn push_accesskit_update_text_box_free_function(
     tree_update: &mut accesskit::TreeUpdate,
     left: f64,
     top: f64,
+    node_id_generator: fn() -> accesskit::NodeId,
 ) {
     if let Some(id) = accesskit_id {
         inner.layout_access.build_nodes(
@@ -1156,7 +1159,7 @@ fn push_accesskit_update_text_box_free_function(
             &inner.layout,
             tree_update,
             &mut node,
-            crate::next_node_id,
+            node_id_generator,
             left,
             top,
         );
