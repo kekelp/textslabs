@@ -1168,22 +1168,34 @@ fn remove_newlines_inplace(text: &mut String) -> bool {
 }
 
 macro_rules! impl_for_textedit_and_texteditmut {
-    ($($(#[$attr:meta])* $visibility:vis fn $fn_name:ident $(<$($generic:tt),*>)? ($(& $($lt:lifetime)?)? $self:ident $(, $param:ident: $param_ty:ty)*) $(-> $ret_ty:ty)? $body:block)*) => {
+    ($($(#[$attr:meta])* $item:item)*) => {
         impl<'a> TextEditMut<'a> {
-            $(
-                $(#[$attr])*
-                $visibility fn $fn_name $(<$($generic),*>)? ($(& $($lt)?)? $self $(, $param: $param_ty)*) $(-> $ret_ty)? $body
-            )*
+            $($item)*
         }
-        
+       
         impl<'a> TextEdit<'a> {
-            $(
-                $(#[$attr])*
-                $visibility fn $fn_name $(<$($generic),*>)? ($(& $($lt)?)? $self $(, $param: $param_ty)*) $(-> $ret_ty)? $body
-            )*
+            $($item)*
         }
     };
-}
+ }
+
+// macro_rules! impl_for_textedit_and_texteditmut {
+//     ($($(#[$attr:meta])* $visibility:vis fn $fn_name:ident $(<$($generic:tt),*>)? ($(& $($lt:lifetime)?)? $self:ident $(, $param:ident: $param_ty:ty)*) $(-> $ret_ty:ty)? $body:block)*) => {
+//         impl<'a> TextEditMut<'a> {
+//             $(
+//                 $(#[$attr])*
+//                 $visibility fn $fn_name $(<$($generic),*>)? ($(& $($lt)?)? $self $(, $param: $param_ty)*) $(-> $ret_ty)? $body
+//             )*
+//         }
+        
+//         impl<'a> TextEdit<'a> {
+//             $(
+//                 $(#[$attr])*
+//                 $visibility fn $fn_name $(<$($generic),*>)? ($(& $($lt)?)? $self $(, $param: $param_ty)*) $(-> $ret_ty)? $body
+//             )*
+//         }
+//     };
+// }
 
 impl_for_textedit_and_texteditmut! {
     pub fn accesskit_node(&self) -> Node {
@@ -1200,7 +1212,6 @@ impl_for_textedit_and_texteditmut! {
             node.set_description(text_content);
         }
         
-        dbg!(self.text_box.inner.width);
         let (left, top) = self.text_box.pos();
         let bounds = AccessRect::new(
             left,
@@ -1240,7 +1251,6 @@ impl_for_textedit_and_texteditmut! {
         self.inner.disabled
     }
 
-    /// Check if placeholder text is currently being shown
     pub fn showing_placeholder(&self) -> bool {
         self.inner.showing_placeholder
     }
