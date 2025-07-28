@@ -1291,7 +1291,7 @@ impl Text {
             AnyBox::TextBox(i) => {
                 let handle = TextBoxHandle { i };
                 let mut text_box = self.get_text_box_mut(&handle);
-                text_box.push_accesskit_update();
+                text_box.push_accesskit_update_to_self();
             },
         }
     }
