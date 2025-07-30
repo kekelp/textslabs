@@ -1272,8 +1272,14 @@ impl Text {
     }
     
     /// Get the text handle for a given AccessKit node ID
-    pub fn get_text_handle_by_accesskit_id(&self, node_id: NodeId) -> Option<AnyBox> {
+    pub(crate) fn get_text_handle_by_accesskit_id(&self, node_id: NodeId) -> Option<AnyBox> {
         self.accesskit_id_to_text_handle_map.get(&node_id).copied()
+    }
+
+    pub fn set_focus_by_accesskit_id(&mut self, focus: NodeId) {
+        if let Some(focused_text_handle) = self.get_text_handle_by_accesskit_id(focus) {
+            self.set_focus(&focused_text_handle);
+        }
     }
     
     /// Set a custom node ID generator function for accessibility
