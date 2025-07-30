@@ -137,10 +137,7 @@ impl State {
     }
 
     fn set_focus(&mut self, focus: NodeId) {
-        // The Text struct now handles this internally via the mapping
-        if let Some(focused_text_handle) = self.text.get_text_handle_by_accesskit_id(focus) {
-            self.text.set_focus(&focused_text_handle);
-        }
+        self.text.set_focus_by_accesskit_id(focus);
 
         let tree_update = TreeUpdate {
             nodes: vec![],
