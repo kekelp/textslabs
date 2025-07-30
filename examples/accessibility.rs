@@ -18,7 +18,6 @@ const WINDOW_ID: NodeId = NodeId(0);
 const TEXT_EDIT_ID: NodeId = NodeId(1);
 const INFO_TEXT_ID: NodeId = NodeId(2);
 const MULTILINE_TEXT_ID: NodeId = NodeId(3);
-const INITIAL_FOCUS: NodeId = TEXT_EDIT_ID;
 
 struct State {
     window: Arc<Window>,
@@ -38,10 +37,6 @@ struct State {
     modifiers: ModifiersState,
     
     sent_initial_access_update: bool,
-
-    // It seems pretty crazy that this example has to keep a copy of the focus here and painstakingly keep it in sync, but it seems that's what accesskit is expecting.
-    // Every time we want to update something, we have to specify a new focus, even if we don't want to change it. But there's no way to ask accesskit for the current one.
-    accesskit_focus: NodeId,
     
 }
 
@@ -101,7 +96,6 @@ impl State {
             multiline_text_handle,
             adapter,
             modifiers: ModifiersState::default(),
-            accesskit_focus: INITIAL_FOCUS,
             sent_initial_access_update: false,
         })
     }
@@ -112,12 +106,15 @@ impl State {
         root.set_label(WINDOW_TITLE);
 
         let tree = Tree::new(WINDOW_ID);
+
+        // In this example, there's no "gui library", just the text boxes. If there was a gui library, we'd use its "focused" field as a source of truth instead of the one in `text`.
+        let focus = self.text.focused_accesskit_id().unwrap_or(WINDOW_ID);
         let mut result = TreeUpdate {
             nodes: vec![
                 (WINDOW_ID, root),
             ],
             tree: Some(tree),
-            focus: self.accesskit_focus,
+            focus,
         };
 
         self.text.get_text_edit_mut(&self.text_edit_handle).push_accesskit_update(&mut result);
@@ -140,8 +137,6 @@ impl State {
     }
 
     fn set_focus(&mut self, focus: NodeId) {
-        self.accesskit_focus = focus;
-        
         // The Text struct now handles this internally via the mapping
         if let Some(focused_text_handle) = self.text.get_text_handle_by_accesskit_id(focus) {
             self.text.set_focus(&focused_text_handle);
@@ -158,15 +153,9 @@ impl State {
     fn handle_window_event(&mut self, event: &WindowEvent) {
         self.text.handle_event(event, &self.window);
         
-        if let Some((tree_update, focus_update)) = self.text.accesskit_update(self.accesskit_focus, WINDOW_ID) {
-            // I guess as long as self.accesskit_focus is a free variable owned by us, we have to do this manually.
-            match focus_update {
-                FocusUpdate::FocusedNewNode(node_id) => self.accesskit_focus = node_id,
-                FocusUpdate::Defocused => self.accesskit_focus = WINDOW_ID,
-                FocusUpdate::Unchanged => {},
-            }
-            
-            self.send_accesskit_update(tree_update);
+        let current_focus = self.text.focused_accesskit_id().unwrap_or(WINDOW_ID);
+        if let Some((tree_update, _focus_update)) = self.text.accesskit_update(current_focus, WINDOW_ID) {
+             self.send_accesskit_update(tree_update);
         }
         
 

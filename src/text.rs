@@ -1299,6 +1299,32 @@ impl Text {
     pub fn focus(&self) -> Option<AnyBox> {
         self.focused
     }
+    
+    /// Get the AccessKit node ID of the currently focused text element
+    /// 
+    /// Returns `None` if no element is focused or if the focused element doesn't have an AccessKit ID.
+    pub fn focused_accesskit_id(&self) -> Option<NodeId> {
+        if let Some(focused) = self.focused {
+            match focused {
+                AnyBox::TextEdit(i) => {
+                    if let Some((_text_edit, text_box)) = self.text_edits.get(i as usize) {
+                        text_box.accesskit_id
+                    } else {
+                        None
+                    }
+                }
+                AnyBox::TextBox(i) => {
+                    if let Some(text_box) = self.text_boxes.get(i as usize) {
+                        text_box.accesskit_id
+                    } else {
+                        None
+                    }
+                }
+            }
+        } else {
+            None
+        }
+    }
 
     pub fn accesskit_update(&mut self, current_focused_node_id: NodeId, root_node_id: NodeId) -> Option<(TreeUpdate, FocusUpdate)> {
         // For some reason, every update that we send must specify the focus again.
