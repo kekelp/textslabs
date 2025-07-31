@@ -333,16 +333,16 @@ impl TextRenderer {
     }
 
     pub fn prepare_text_box_layout(&mut self, text_box: &mut TextBoxMut) {
-        if text_box.hidden() {
+        if text_box.inner.hidden() {
             return;
         }
         let s = &text_box.shared.styles[text_box.inner.style.i as usize];
         text_box.inner.refresh_layout(s);
                 
-        let (left, top) = text_box.pos();
+        let (left, top) = text_box.inner.pos();
         let (left, top) = (left as f32, top as f32);
         let clip_rect = text_box.effective_clip_rect();
-        let fade = text_box.fadeout_clipping();
+        let fade = text_box.inner.fadeout_clipping();
 
         let content_left = left - text_box.scroll_offset().0;
         let content_top = top - text_box.scroll_offset().1;
@@ -385,7 +385,7 @@ impl TextRenderer {
     }
 
     pub fn prepare_text_box_decorations(&mut self, text_box: &TextBoxMut, show_cursor: bool) {
-        let (left, top) = text_box.pos();
+        let (left, top) = text_box.inner.pos();
         let (left, top) = (left as f32, top as f32);
         let clip_rect = text_box.effective_clip_rect();
 

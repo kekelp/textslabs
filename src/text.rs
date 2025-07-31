@@ -587,7 +587,7 @@ impl Text {
 
                 for (_, text_box) in self.text_boxes.iter_mut() {
                     let mut text_box = get_full_text_box_free_function_but_for_iterating(text_box, &mut self.shared);
-                    if !text_box.hidden() && text_box.inner.last_frame_touched == current_frame {
+                    if !text_box.inner.hidden() && text_box.inner.last_frame_touched == current_frame {
                         text_renderer.prepare_text_box_layout(&mut text_box);
                     }
                 }
@@ -716,12 +716,12 @@ impl Text {
             AnyBox::TextEdit(i) => {
                 let handle = TextEditHandle { i: i as u32 };
                 let text_edit = get_full_text_edit_free_function(&mut self.text_edits, &mut self.shared, &handle);
-                text_edit.accesskit_id()
+                text_edit.text_box.inner.accesskit_id()
             },
             AnyBox::TextBox(i) => {
                 let handle = TextBoxHandle { i: i as u32 };
                 let text_box = get_full_text_box_free_function(&mut self.text_boxes, &mut self.shared, &handle);
-                text_box.accesskit_id()
+                text_box.inner.accesskit_id()
             },
         }
     }
@@ -884,13 +884,13 @@ impl Text {
             AnyBox::TextEdit(i) => {
                 let handle = TextEditHandle { i: i as u32 };
                 let mut text_edit = self.get_full_text_edit(&handle);
-                text_edit.text_box.reset_selection();
+                text_edit.text_box.inner.reset_selection();
                 text_edit.inner.show_cursor = false;
             },
             AnyBox::TextBox(i) => {
                 let handle = TextBoxHandle { i: i as u32 };
                 let mut text_box = self.get_full_text_box(&handle);
-                text_box.reset_selection();
+                text_box.inner.reset_selection();
             },
         }
     }
@@ -965,7 +965,7 @@ impl Text {
         if disabled {
             if let Some(AnyBox::TextEdit(e)) = self.focused {
                 if e == handle.i {
-                    self.get_full_text_edit(&handle).text_box.reset_selection();
+                    self.get_full_text_edit(&handle).text_box.inner.reset_selection();
                     self.focused = None;
                 }
             }
@@ -1261,14 +1261,14 @@ impl Text {
     pub fn set_text_box_accesskit_id(&mut self, handle: &TextBoxHandle, accesskit_id: NodeId) {
         let any_box = handle.into_anybox();
         self.accesskit_id_to_text_handle_map.insert(accesskit_id, any_box);
-        self.get_text_box_mut(handle).set_accesskit_id(accesskit_id);
+        self.get_text_box_mut(handle).inner.set_accesskit_id(accesskit_id);
     }
     
     /// Update the AccessKit node ID mapping for a text edit
     pub fn set_text_edit_accesskit_id(&mut self, handle: &TextEditHandle, accesskit_id: NodeId) {
         let any_box = handle.into_anybox();
         self.accesskit_id_to_text_handle_map.insert(accesskit_id, any_box);
-        self.get_text_edit_mut(handle).set_accesskit_id(accesskit_id);
+        self.get_text_edit_mut(handle).text_box.inner.set_accesskit_id(accesskit_id);
     }
     
     /// Get the text handle for a given AccessKit node ID

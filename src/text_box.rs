@@ -221,7 +221,7 @@ impl_for_textbox_and_textboxmut! {
         node.set_value(text_content.clone());
         node.set_description(text_content);
         
-        let (left, top) = self.pos();
+        let (left, top) = self.inner.pos();
         let bounds = AccessRect::new(
             left,
             top,
@@ -238,33 +238,11 @@ impl_for_textbox_and_textboxmut! {
         &self.shared.styles[self.inner.style.i as usize].text_style
     }
 
-    pub fn hidden(&self) -> bool {
-        self.inner.hidden
-    }
-
-    pub fn depth(&self) -> f32 {
-        self.inner.depth
-    }
 
     pub fn text(self) -> &'a str {
         &self.inner.text
     }
 
-    pub fn pos(&self) -> (f64, f64) {
-        (self.inner.left, self.inner.top)
-    }
-
-    pub fn clip_rect(&self) -> Option<parley::Rect> {
-        self.inner.clip_rect
-    }
-
-    pub fn fadeout_clipping(&self) -> bool {
-        self.inner.fadeout_clipping
-    }
-
-    pub fn auto_clip(&self) -> bool {
-        self.inner.auto_clip
-    }
 
     pub fn selected_text(&self) -> Option<&str> {
         if !self.inner.selection.selection.is_collapsed() {
@@ -345,7 +323,7 @@ impl<'a> TextBoxMut<'a> {
     pub fn push_accesskit_update(&mut self, tree_update: &mut TreeUpdate) {
         let accesskit_id = self.inner.accesskit_id;
         let node = self.accesskit_node();
-        let (left, top) = self.pos();
+        let (left, top) = self.inner.pos();
         
         push_accesskit_update_text_box_free_function(
             accesskit_id,
@@ -361,7 +339,7 @@ impl<'a> TextBoxMut<'a> {
     pub(crate) fn push_accesskit_update_to_self(&mut self) {
         let accesskit_id = self.inner.accesskit_id;
         let node = self.accesskit_node();
-        let (left, top) = self.pos();
+        let (left, top) = self.inner.pos();
         
         push_accesskit_update_text_box_free_function(
             accesskit_id,
@@ -392,7 +370,7 @@ impl<'a> TextBoxMut<'a> {
         if let WindowEvent::MouseWheel { delta, .. } = event {
             if self.inner.auto_clip {
                 let cursor_pos = input_state.mouse.cursor_pos;
-                if self.hit_full_rect(cursor_pos) {
+                if self.inner.hit_full_rect(cursor_pos) {
                     let scroll_amount = match delta {
                         winit::event::MouseScrollDelta::LineDelta(_x, y) => y * 30.0,
                         winit::event::MouseScrollDelta::PixelDelta(pos) => pos.y as f32,
@@ -434,7 +412,7 @@ impl<'a> TextBoxMut<'a> {
             return false;
         }
         if !self.inner.selectable {
-            self.reset_selection();
+            self.inner.reset_selection();
             return false;
         }
         
@@ -617,9 +595,6 @@ impl<'a> TextBoxMut<'a> {
         did_scroll
     }
 
-    pub(crate) fn reset_selection(&mut self) {
-        self.inner.set_selection(self.inner.selection.selection.collapse());
-    }
 
     pub fn text_mut(&mut self) -> &mut String {
         self.inner.needs_relayout = true;
@@ -627,13 +602,6 @@ impl<'a> TextBoxMut<'a> {
         self.inner.text.to_mut()
     }
 
-    pub fn set_accesskit_id(&mut self, accesskit_id: NodeId) {
-        self.inner.accesskit_id = Some(accesskit_id);
-    }
-
-    pub fn accesskit_id(&self) -> Option<NodeId> {
-        self.inner.accesskit_id
-    }
 
     pub fn set_auto_clip(&mut self, auto_clip: bool) {
         self.inner.auto_clip = auto_clip;
@@ -643,10 +611,6 @@ impl<'a> TextBoxMut<'a> {
     pub fn set_pos(&mut self, pos: (f64, f64)) {
         (self.inner.left, self.inner.top) = pos;
         self.shared.text_changed = true;
-    }
-
-    pub fn can_hide(&self) -> bool {
-        self.inner.can_hide
     }
 
     pub fn set_can_hide(&mut self, can_hide: bool) {
@@ -659,7 +623,7 @@ impl<'a> TextBoxMut<'a> {
             self.inner.hidden = hidden;
 
             if hidden {
-                self.reset_selection();
+                self.inner.reset_selection();
             }
         }
         self.shared.text_changed = true;
@@ -700,14 +664,6 @@ impl<'a> TextBoxMut<'a> {
         self.style_version() != self.inner.style_version
     }
 
-    #[must_use]
-    pub(crate) fn hit_full_rect(&self, cursor_pos: (f64, f64)) -> bool {
-        self.inner.hit_full_rect(cursor_pos)
-    }
-
-    pub(crate) fn text_inner(&self) -> &str {
-        &self.inner.text
-    }
 
     // Note: This used to be a problem when TextEdit couldn't call refresh_layout() directly.
     // Now that TextEdit has access to refresh_layout(), this is no longer an issue. 
@@ -809,10 +765,6 @@ impl<'a> TextBoxMut<'a> {
     //     node.add_action(accesskit::Action::SetTextSelection);
     // }
 
-    /// Move the selection focus point to the cluster boundary closest to point.
-    pub(crate) fn extend_selection_to_point(&mut self, x: f32, y: f32) {
-        self.inner.selection.extend_selection_to_point(&self.inner.layout, x, y);
-    }
 
     pub fn layout(&mut self) -> &Layout<ColorBrush> {
         let style = &self.shared.styles[self.inner.style.i as usize];
@@ -820,9 +772,6 @@ impl<'a> TextBoxMut<'a> {
         &self.inner.layout
     }
 
-    pub fn set_selectable(&mut self, selectable: bool) {
-        self.inner.selectable = selectable;
-    }
 
 }
 
@@ -1175,5 +1124,58 @@ impl TextBoxInner {
     /// Collapse selection into caret.
     pub(crate) fn collapse_selection(&mut self) {
         self.set_selection(self.selection.selection.collapse());
+    }
+
+    /// Move the selection focus point to the cluster boundary closest to point.
+    pub(crate) fn extend_selection_to_point(&mut self, x: f32, y: f32) {
+        self.selection.extend_selection_to_point(&self.layout, x, y);
+    }
+
+    pub fn set_selectable(&mut self, selectable: bool) {
+        self.selectable = selectable;
+    }
+
+    pub(crate) fn reset_selection(&mut self) {
+        self.set_selection(self.selection.selection.collapse());
+    }
+
+    pub fn set_accesskit_id(&mut self, accesskit_id: NodeId) {
+        self.accesskit_id = Some(accesskit_id);
+    }
+
+    pub fn accesskit_id(&self) -> Option<NodeId> {
+        self.accesskit_id
+    }
+
+    pub fn can_hide(&self) -> bool {
+        self.can_hide
+    }
+
+    pub(crate) fn text_inner(&self) -> &str {
+        &self.text
+    }
+
+    pub fn hidden(&self) -> bool {
+        self.hidden
+    }
+
+    pub fn depth(&self) -> f32 {
+        self.depth
+    }
+
+    pub fn pos(&self) -> (f64, f64) {
+        (self.left, self.top)
+    }
+
+    pub fn clip_rect(&self) -> Option<parley::Rect> {
+        self.clip_rect
+    }
+
+    pub fn fadeout_clipping(&self) -> bool {
+        self.fadeout_clipping
+    }
+
+    pub fn auto_clip(&self) -> bool {
+        self.auto_clip
     }
 }

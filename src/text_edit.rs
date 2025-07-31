@@ -240,16 +240,16 @@ impl<'a> TextEditMut<'a> {
     }
 
     pub fn set_accesskit_id(&mut self, accesskit_id: NodeId) {
-        self.text_box.inner.accesskit_id = Some(accesskit_id);
+        self.text_box.inner.set_accesskit_id(accesskit_id);
     }
 
     pub fn accesskit_id(&self) -> Option<NodeId> {
-        self.text_box.inner.accesskit_id
+        self.text_box.inner.accesskit_id()
     }
 
     #[must_use]
     pub(crate) fn handle_event_editable(&mut self, event: &WindowEvent, window: &Window, input_state: &TextInputState) -> TextEventResult {
-        if self.text_box.hidden() {
+        if self.text_box.inner.hidden() {
             return TextEventResult::nothing();
         }
         
@@ -448,7 +448,7 @@ impl<'a> TextEditMut<'a> {
                             self.text_box.inner.collapse_selection();
                         }
                         Moved => {
-                            self.text_box.extend_selection_to_point(
+                            self.text_box.inner.extend_selection_to_point(
                                 location.x as f32 - self.text_box.inner.left as f32 + self.text_box.inner.scroll_offset.0,
                                 location.y as f32 - self.text_box.inner.top as f32 + self.text_box.inner.scroll_offset.1,
                             );
@@ -517,7 +517,7 @@ impl<'a> TextEditMut<'a> {
 
     /// Insert at cursor, or replace selection.
     fn replace_range_and_record(&mut self, range: Range<usize>, old_selection: Selection, s: &str) {
-        let old_text = &self.text_box.text_inner()[range.clone()];
+        let old_text = &self.text_box.inner.text_inner()[range.clone()];
 
         let new_range_start = range.start;
         let new_range_end = range.start + s.len();
@@ -536,7 +536,7 @@ impl<'a> TextEditMut<'a> {
         let old_selection = self.text_box.selection();
 
         let range = self.text_box.selection().text_range();
-        let old_text = &self.text_box.text_inner()[range.clone()];
+        let old_text = &self.text_box.inner.text_inner()[range.clone()];
 
         let new_range_start = range.start;
         let new_range_end = range.start + s.len();
@@ -569,7 +569,7 @@ impl<'a> TextEditMut<'a> {
     }
 
     pub(crate) fn restore_placeholder_if_any(&mut self) {
-        if self.text_box.text_inner().is_empty() && !self.inner.showing_placeholder {
+        if self.text_box.inner.text_inner().is_empty() && !self.inner.showing_placeholder {
             if self.inner.placeholder_text.is_some() {
                 self.text_box.text_mut().clear();
                 self.refresh_layout();
@@ -622,7 +622,7 @@ impl<'a> TextEditMut<'a> {
             let focus = self.text_box.selection().focus();
             let start = focus.index();
             let end = focus.next_logical_word(&self.text_box.layout()).index();
-            if self.text_box.text_inner().get(start..end).is_some() {
+            if self.text_box.inner.text_inner().get(start..end).is_some() {
                 self.replace_range_and_record(start..end, self.text_box.selection(), "");
                 self.refresh_layout();
                 self.text_box.inner.set_selection(
@@ -654,7 +654,7 @@ impl<'a> TextEditMut<'a> {
                 } else {
                     // Otherwise, delete the previous character
                     let Some((start, _)) = self
-                        .text_box.text_inner()
+                        .text_box.inner.text_inner()
                         .get(..end)
                         .and_then(|str| str.char_indices().next_back())
                     else {
@@ -681,7 +681,7 @@ impl<'a> TextEditMut<'a> {
             let focus = self.text_box.selection().focus();
             let end = focus.index();
             let start = focus.previous_logical_word(&self.text_box.layout()).index();
-            if self.text_box.text_inner().get(start..end).is_some() {
+            if self.text_box.inner.text_inner().get(start..end).is_some() {
                 self.replace_range_and_record(start..end, self.text_box.selection(), "");
                 self.refresh_layout();
                 self.text_box.inner.set_selection(
@@ -754,8 +754,8 @@ impl<'a> TextEditMut<'a> {
             self.text_box.text_mut().replace_range(preedit_range.clone(), "");
             self.inner.show_cursor = true;
 
-            let (index, affinity) = if preedit_range.start >= self.text_box.text_inner().len() {
-                (self.text_box.text_inner().len(), Affinity::Upstream)
+            let (index, affinity) = if preedit_range.start >= self.text_box.inner.text_inner().len() {
+                (self.text_box.inner.text_inner().len(), Affinity::Upstream)
             } else {
                 (preedit_range.start, Affinity::Downstream)
             };
@@ -1215,7 +1215,7 @@ impl_for_textedit_and_texteditmut! {
             node.set_description(text_content);
         }
         
-        let (left, top) = self.text_box.pos();
+        let (left, top) = self.text_box.inner.pos();
         let bounds = AccessRect::new(
             left,
             top,
@@ -1279,27 +1279,27 @@ impl_for_textedit_and_texteditmut! {
     }
     
     pub fn pos(&self) -> (f64, f64) {
-        self.text_box.pos()
+        self.text_box.inner.pos()
     }
     
     pub fn hidden(&self) -> bool {
-        self.text_box.hidden()
+        self.text_box.inner.hidden()
     }
     
     pub fn depth(&self) -> f32 {
-        self.text_box.depth()
+        self.text_box.inner.depth()
     }
     
     pub fn clip_rect(&self) -> Option<parley::Rect> {
-        self.text_box.clip_rect()
+        self.text_box.inner.clip_rect()
     }
     
     pub fn fadeout_clipping(&self) -> bool {
-        self.text_box.fadeout_clipping()
+        self.text_box.inner.fadeout_clipping()
     }
     
     pub fn auto_clip(&self) -> bool {
-        self.text_box.auto_clip()
+        self.text_box.inner.auto_clip()
     }
     
     pub fn scroll_offset(&self) -> (f32, f32) {
@@ -1525,12 +1525,12 @@ impl<'a> TextEditMut<'a> {
     pub fn set_placeholder(&mut self, placeholder: impl Into<Cow<'static, str>>) {
         let placeholder_cow = placeholder.into();
         self.inner.placeholder_text = Some(placeholder_cow.clone());
-        if self.text_box.text_inner().is_empty() || self.inner.showing_placeholder {
+        if self.text_box.inner.text_inner().is_empty() || self.inner.showing_placeholder {
             self.text_box.text_mut().clear();
             self.text_box.text_mut().push_str(&placeholder_cow);
             self.text_box.inner.needs_relayout = true;
             self.inner.showing_placeholder = true;
-            self.text_box.reset_selection();
+            self.text_box.inner.reset_selection();
             self.text_box.shared.text_changed = true;
         }
     }
