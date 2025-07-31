@@ -18,8 +18,9 @@ macro_rules! clear_placeholder {
         if $self.inner.showing_placeholder {
             $self.text_box.text_mut().clear();
             $self.inner.showing_placeholder = false;
-            $self.text_box.refresh_layout();
-            $self.text_box.move_to_text_start();
+            let s = &($self).text_box.shared.styles[($self).text_box.inner.style.i as usize];
+            $self.text_box.inner.refresh_layout(s);
+            $self.text_box.inner.move_to_text_start();
         }
     };
 }
@@ -322,9 +323,9 @@ impl<'a> TextEditMut<'a> {
                         if !shift && ! self.inner.showing_placeholder {
                             scroll_to_cursor = true;
                             if action_mod {
-                                self.text_box.move_word_left();
+                                self.text_box.inner.move_word_left();
                             } else {
-                                self.text_box.move_left();
+                                self.text_box.inner.move_left();
                             }
                         }
                     }
@@ -332,9 +333,9 @@ impl<'a> TextEditMut<'a> {
                         if !shift && ! self.inner.showing_placeholder {
                             scroll_to_cursor = true;
                             if action_mod {
-                                self.text_box.move_word_right();
+                                self.text_box.inner.move_word_right();
                             } else {
-                                self.text_box.move_right();
+                                self.text_box.inner.move_right();
                             }
                         }
                     }
@@ -342,9 +343,9 @@ impl<'a> TextEditMut<'a> {
                         if !shift && ! self.inner.showing_placeholder {
                             scroll_to_cursor = true;
                             if self.inner.single_line {
-                                self.text_box.move_to_text_start();
+                                self.text_box.inner.move_to_text_start();
                             } else {
-                                self.text_box.move_up();
+                                self.text_box.inner.move_up();
                             }
                         }
                     }
@@ -352,9 +353,9 @@ impl<'a> TextEditMut<'a> {
                         if !shift && ! self.inner.showing_placeholder {
                             scroll_to_cursor = true;
                             if self.inner.single_line {
-                                self.text_box.move_to_text_end();
+                                self.text_box.inner.move_to_text_end();
                             } else {
-                                self.text_box.move_down();
+                                self.text_box.inner.move_down();
                             }
                         }
                     }
@@ -362,9 +363,9 @@ impl<'a> TextEditMut<'a> {
                         if !shift && ! self.inner.showing_placeholder {
                             scroll_to_cursor = true;
                             if action_mod {
-                                self.text_box.move_to_text_start();
+                                self.text_box.inner.move_to_text_start();
                             } else {
-                                self.text_box.move_to_line_start();
+                                self.text_box.inner.move_to_line_start();
                             }
                         }
                     }
@@ -372,9 +373,9 @@ impl<'a> TextEditMut<'a> {
                         if !shift && ! self.inner.showing_placeholder {
                             scroll_to_cursor = true;
                             if action_mod {
-                                self.text_box.move_to_text_end();
+                                self.text_box.inner.move_to_text_end();
                             } else {
-                                self.text_box.move_to_line_end();
+                                self.text_box.inner.move_to_line_end();
                             }
                         }
                     }
@@ -441,10 +442,10 @@ impl<'a> TextEditMut<'a> {
                                 location.x - self.text_box.inner.left as f64 + self.text_box.inner.scroll_offset.0 as f64,
                                 location.y - self.text_box.inner.top as f64 + self.text_box.inner.scroll_offset.1 as f64,
                             );
-                            self.text_box.move_to_point(cursor_pos.0 as f32, cursor_pos.1 as f32);
+                            self.text_box.inner.move_to_point(cursor_pos.0 as f32, cursor_pos.1 as f32);
                         }
                         Cancelled => {
-                            self.text_box.collapse_selection();
+                            self.text_box.inner.collapse_selection();
                         }
                         Moved => {
                             self.text_box.extend_selection_to_point(
@@ -572,7 +573,7 @@ impl<'a> TextEditMut<'a> {
             if self.inner.placeholder_text.is_some() {
                 self.text_box.text_mut().clear();
                 self.refresh_layout();
-                self.text_box.move_to_text_start();
+                self.text_box.inner.move_to_text_start();
             }
 
             if let Some(placeholder) = &self.inner.placeholder_text {
@@ -624,7 +625,7 @@ impl<'a> TextEditMut<'a> {
             if self.text_box.text_inner().get(start..end).is_some() {
                 self.replace_range_and_record(start..end, self.text_box.selection(), "");
                 self.refresh_layout();
-                self.text_box.set_selection(
+                self.text_box.inner.set_selection(
                     Cursor::from_byte_index(&self.text_box.inner.layout, start, Affinity::Downstream).into(),
                 );
             }
@@ -663,7 +664,7 @@ impl<'a> TextEditMut<'a> {
                 };
                 self.replace_range_and_record(start..end, self.text_box.selection(), "");
                 self.refresh_layout();
-                self.text_box.set_selection(
+                self.text_box.inner.set_selection(
                     Cursor::from_byte_index(&self.text_box.inner.layout, start, Affinity::Downstream).into(),
                 );
             }
@@ -683,7 +684,7 @@ impl<'a> TextEditMut<'a> {
             if self.text_box.text_inner().get(start..end).is_some() {
                 self.replace_range_and_record(start..end, self.text_box.selection(), "");
                 self.refresh_layout();
-                self.text_box.set_selection(
+                self.text_box.inner.set_selection(
                     Cursor::from_byte_index(&self.text_box.inner.layout, start, Affinity::Downstream).into(),
                 );
             }
@@ -736,7 +737,7 @@ impl<'a> TextEditMut<'a> {
         self.text_box.shared.text_changed = true;
 
         let cursor = cursor.unwrap_or((0, 0));
-        self.text_box.set_selection(Selection::new(
+        self.text_box.inner.set_selection(Selection::new(
             // In parley, the layout is updated first, then the checked version is used. This should be fine too.
             Cursor::from_byte_index(&self.text_box.inner.layout, start + cursor.0, Affinity::Downstream),
             Cursor::from_byte_index(&self.text_box.inner.layout, start + cursor.1, Affinity::Downstream),
@@ -813,7 +814,7 @@ impl<'a> TextEditMut<'a> {
                 .insert_str(op.range_to_clear.start, op.text_to_restore);
 
             let prev_selection = op.prev_selection;
-            self.text_box.set_selection(prev_selection);
+            self.text_box.inner.set_selection(prev_selection);
             
             if self.inner.single_line {
                 self.remove_newlines();
@@ -1339,6 +1340,10 @@ impl<'a> TextEditMut<'a> {
         &self.text_box.shared.styles[self.text_box.inner.style.i as usize].text_edit_style
     }
 
+    pub(crate) fn style(&self) -> &StyleInner {
+        &self.text_box.shared.styles[self.text_box.inner.style.i as usize]
+    }
+
     pub(crate) fn style_version(&self) -> u64 {
         self.text_box.shared.styles[self.text_box.inner.style.i as usize].version
     }
@@ -1496,7 +1501,9 @@ impl<'a> TextEditMut<'a> {
             if self.style_version_changed() {
                 self.text_box.inner.style_version = self.style_version();
             }
-            self.text_box.rebuild_layout(color_override, self.inner.single_line);
+
+            let s = &self.text_box.shared.styles[self.text_box.inner.style.i as usize];
+            self.text_box.inner.rebuild_layout(color_override, self.inner.single_line, s);
         }
     }
 
@@ -1506,7 +1513,7 @@ impl<'a> TextEditMut<'a> {
         self.text_box.text_mut().clear();
         self.text_box.text_mut().push_str(&new_text);
         self.text_box.inner.needs_relayout = true;
-        self.text_box.move_to_text_end();
+        self.text_box.inner.move_to_text_end();
         // Clear any composition state
         self.inner.compose = None;
         // Not showing placeholder anymore since we have real text

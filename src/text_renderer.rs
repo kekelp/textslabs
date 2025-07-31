@@ -336,7 +336,8 @@ impl TextRenderer {
         if text_box.hidden() {
             return;
         }
-        text_box.refresh_layout();
+        let s = &text_box.shared.styles[text_box.inner.style.i as usize];
+        text_box.inner.refresh_layout(s);
                 
         let (left, top) = text_box.pos();
         let (left, top) = (left as f32, top as f32);

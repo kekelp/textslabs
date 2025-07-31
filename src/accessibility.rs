@@ -24,7 +24,7 @@ impl Text {
         match request.action {
             accesskit::Action::SetTextSelection => {
                 if let Some(accesskit::ActionData::SetTextSelection(selection)) = &request.data {
-                    let mut text_box = match target_box {
+                    let text_box = match target_box {
                         AnyBox::TextEdit(i) => {
                             let handle = TextEditHandle { i };
                             self.get_text_edit_mut(&handle).text_box
@@ -40,7 +40,7 @@ impl Text {
                         &text_box.inner.layout,
                         &text_box.inner.layout_access
                     ) {
-                        text_box.set_selection(selection);
+                        text_box.inner.set_selection(selection);
                         return true;
                     }
                 }

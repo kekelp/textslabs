@@ -402,7 +402,8 @@ impl<'a> TextBoxMut<'a> {
                         let old_scroll = self.inner.scroll_offset.1;
                         let new_scroll = old_scroll - scroll_amount;
                         
-                        self.refresh_layout();
+                        let s = &self.shared.styles[self.inner.style.i as usize];
+                        self.inner.refresh_layout(s);
                         let total_text_height = self.inner.layout.height();
                         let text_height = self.inner.height;
                         let max_scroll = (total_text_height - text_height).max(0.0).round();
@@ -602,7 +603,7 @@ impl<'a> TextBoxMut<'a> {
                                         }
                                     })
                                 }
-                                "a" => self.select_all(),
+                                "a" => self.inner.select_all(),
                                 _ => (),
                             }
                         }
@@ -617,7 +618,7 @@ impl<'a> TextBoxMut<'a> {
     }
 
     pub(crate) fn reset_selection(&mut self) {
-        self.set_selection(self.inner.selection.selection.collapse());
+        self.inner.set_selection(self.inner.selection.selection.collapse());
     }
 
     pub fn text_mut(&mut self) -> &mut String {
@@ -708,46 +709,6 @@ impl<'a> TextBoxMut<'a> {
         &self.inner.text
     }
 
-    pub(crate) fn rebuild_layout(
-        &mut self,
-        color_override: Option<ColorBrush>,
-        single_line: bool,
-    ) {
-        with_text_cx(|layout_cx, font_cx| {
-            let mut builder = layout_cx.tree_builder(font_cx, 1.0, true, self.style());
-
-            if let Some(color_override) = color_override {
-                builder.push_style_modification_span(&[
-                    StyleProperty::Brush(color_override)
-                ]);
-            }
-
-            builder.push_text(&self.inner.text);
-
-            let (mut layout, _) = builder.build();
-
-            if ! single_line {
-                layout.break_all_lines(Some(self.inner.max_advance));
-                layout.align(
-                    Some(self.inner.max_advance),
-                    self.inner.alignment,
-                    AlignmentOptions::default(),
-                );
-            } else {
-                layout.break_all_lines(None);
-            }
-
-            self.inner.layout = layout;
-            self.inner.needs_relayout = false;
-            
-            // todo: does this do anything?
-            self.inner.selection.selection = self.inner.selection.selection.refresh(&self.inner.layout);
-
-        });
-    }
-
-
-
     // Note: This used to be a problem when TextEdit couldn't call refresh_layout() directly.
     // Now that TextEdit has access to refresh_layout(), this is no longer an issue. 
     /// Returns a mutable reference to the text box's text buffer as a Cow.
@@ -810,41 +771,6 @@ impl<'a> TextBoxMut<'a> {
     //     Some(())
     // }
 
-    /// Update the selection, and nudge the `Generation` if something other than `h_pos` changed.
-    pub(crate) fn set_selection(&mut self, new_sel: Selection) {
-
-        // This debug code is quite useful when diagnosing selection problems.
-        #[allow(clippy::print_stderr)] // reason = "unreachable debug code"
-        if false {
-            let focus = new_sel.focus();
-            let cluster = focus.logical_clusters(&self.inner.layout);
-            let dbg = (
-                cluster[0].as_ref().map(|c| &self.inner.text[c.text_range()]),
-                focus.index(),
-                focus.affinity(),
-                cluster[1].as_ref().map(|c| &self.inner.text[c.text_range()]),
-            );
-            eprint!("{dbg:?}");
-            let cluster = focus.visual_clusters(&self.inner.layout);
-            let dbg = (
-                cluster[0].as_ref().map(|c| &self.inner.text[c.text_range()]),
-                cluster[0]
-                    .as_ref()
-                    .map(|c| if c.is_word_boundary() { " W" } else { "" })
-                    .unwrap_or_default(),
-                focus.index(),
-                focus.affinity(),
-                cluster[1].as_ref().map(|c| &self.inner.text[c.text_range()]),
-                cluster[1]
-                    .as_ref()
-                    .map(|c| if c.is_word_boundary() { " W" } else { "" })
-                    .unwrap_or_default(),
-            );
-            eprintln!(" | visual: {dbg:?}");
-        }
-        self.inner.selection.selection = new_sel;
-    }
-
     // #[cfg(feature = "accesskit")]
     // /// Perform an accessibility update, assuming that the layout is valid.
     // ///
@@ -883,134 +809,21 @@ impl<'a> TextBoxMut<'a> {
     //     node.add_action(accesskit::Action::SetTextSelection);
     // }
 
-
-    // --- MARK: Cursor Movement ---
-    /// Move the cursor to the cluster boundary nearest this point in the layout.
-    pub(crate) fn move_to_point(&mut self, x: f32, y: f32) {
-        self.set_selection(Selection::from_point(&self.inner.layout, x, y));
-    }
-
-    /// Move the cursor to the start of the text.
-    pub(crate) fn move_to_text_start(&mut self) {
-        self.set_selection(
-            self.inner.selection
-                .selection
-                .move_lines(&self.inner.layout, isize::MIN, false),
-        );
-    }
-
-    /// Move the cursor to the start of the physical line.
-    pub(crate) fn move_to_line_start(&mut self) {
-        self.set_selection(self.inner.selection.selection.line_start(&self.inner.layout, false));
-    }
-
-    /// Move the cursor to the end of the text.
-    pub(crate) fn move_to_text_end(&mut self) {
-        self.set_selection(
-            self.inner.selection
-                .selection
-                .move_lines(&self.inner.layout, isize::MAX, false),
-        );
-    }
-
-    /// Move the cursor to the end of the physical line.
-    pub(crate) fn move_to_line_end(&mut self) {
-        self.set_selection(self.inner.selection.selection.line_end(&self.inner.layout, false));
-    }
-
-    /// Move up to the closest physical cluster boundary on the previous line, preserving the horizontal position for repeated movements.
-    pub(crate) fn move_up(&mut self) {
-        self.set_selection(self.inner.selection.selection.previous_line(&self.inner.layout, false));
-    }
-
-    /// Move down to the closest physical cluster boundary on the next line, preserving the horizontal position for repeated movements.
-    pub(crate) fn move_down(&mut self) {
-        self.set_selection(self.inner.selection.selection.next_line(&self.inner.layout, false));
-    }
-
-    /// Move to the next cluster left in visual order.
-    pub(crate) fn move_left(&mut self) {
-        self.set_selection(
-            self.inner.selection
-                .selection
-                .previous_visual(&self.inner.layout, false),
-        );
-    }
-
-    /// Move to the next cluster right in visual order.
-    pub(crate) fn move_right(&mut self) {
-        self.set_selection(self.inner.selection.selection.next_visual(&self.inner.layout, false));
-    }
-
-    /// Move to the next word boundary left.
-    pub(crate) fn move_word_left(&mut self) {
-        self.set_selection(
-            self.inner.selection
-                .selection
-                .previous_visual_word(&self.inner.layout, false),
-        );
-    }
-
-
-    /// Move to the next word boundary right.
-    pub(crate) fn move_word_right(&mut self) {
-        self.set_selection(
-            self.inner.selection
-                .selection
-                .next_visual_word(&self.inner.layout, false),
-        );
-    }
-
-    /// Select the whole text.
-    pub(crate) fn select_all(&mut self) {
-        self.set_selection(
-            Selection::from_byte_index(&self.inner.layout, 0_usize, Affinity::default()).move_lines(
-                &self.inner.layout,
-                isize::MAX,
-                true,
-            ),
-        );
-    }
-
-    /// Collapse selection into caret.
-    pub(crate) fn collapse_selection(&mut self) {
-        self.set_selection(self.inner.selection.selection.collapse());
-    }
-
     /// Move the selection focus point to the cluster boundary closest to point.
     pub(crate) fn extend_selection_to_point(&mut self, x: f32, y: f32) {
         self.inner.selection.extend_selection_to_point(&self.inner.layout, x, y);
     }
 
     pub fn layout(&mut self) -> &Layout<ColorBrush> {
-        self.refresh_layout();
+        let style = &self.shared.styles[self.inner.style.i as usize];
+        self.inner.refresh_layout(style);
         &self.inner.layout
-    }
-
-    pub(crate) fn refresh_layout(&mut self) {
-        if self.inner.needs_relayout || self.style_version_changed() {
-            if self.style_version_changed() {
-                self.inner.style_version = self.style_version();
-            }
-            self.rebuild_layout(None, false);
-        }
     }
 
     pub fn set_selectable(&mut self, selectable: bool) {
         self.inner.selectable = selectable;
     }
-    
-    /// Select inside the editor based on the selection provided by accesskit.
-    pub fn select_from_accesskit(&mut self, selection: &accesskit::TextSelection) {
-        self.refresh_layout();
-        if let Some(selection) = Selection::from_access_selection(
-            selection,
-            &self.inner.layout,
-            &self.inner.layout_access,
-        ) {
-            self.set_selection(selection);
-        }
-    }
+
 }
 
 
@@ -1172,4 +985,195 @@ fn push_accesskit_update_text_box_free_function(
     }
 }
 
+impl TextBoxInner {
+    pub(crate) fn rebuild_layout(
+        &mut self,
+        color_override: Option<ColorBrush>,
+        single_line: bool,
+        style: &StyleInner,
+    ) {
+        with_text_cx(|layout_cx, font_cx| {
+            let mut builder = layout_cx.tree_builder(font_cx, 1.0, true, &style.text_style);
+    
+            if let Some(color_override) = color_override {
+                builder.push_style_modification_span(&[
+                    StyleProperty::Brush(color_override)
+                ]);
+            }
+    
+            builder.push_text(&self.text);
+    
+            let (mut layout, _) = builder.build();
+    
+            if ! single_line {
+                layout.break_all_lines(Some(self.max_advance));
+                layout.align(
+                    Some(self.max_advance),
+                    self.alignment,
+                    AlignmentOptions::default(),
+                );
+            } else {
+                layout.break_all_lines(None);
+            }
+    
+            self.layout = layout;
+            self.needs_relayout = false;
+            
+            // todo: does this do anything?
+            self.selection.selection = self.selection.selection.refresh(&self.layout);
+    
+        });
+    }
 
+    pub(crate) fn refresh_layout(&mut self, style: &StyleInner) {
+        let style_version_changed = style.version != self.style_version;
+
+        if self.needs_relayout || style_version_changed {
+            if style_version_changed {
+                self.style_version = style.version;
+            }
+            self.rebuild_layout(None, false, style);
+        }
+    }
+
+    /// Select inside the editor based on the selection provided by accesskit.
+    pub fn select_from_accesskit(&mut self, selection: &accesskit::TextSelection, style: &StyleInner) {
+        self.refresh_layout(style);
+        if let Some(selection) = Selection::from_access_selection(
+            selection,
+            &self.layout,
+            &self.layout_access,
+        ) {
+            self.set_selection(selection);
+        }
+    }
+
+    /// Update the selection, and nudge the `Generation` if something other than `h_pos` changed.
+    pub(crate) fn set_selection(&mut self, new_sel: Selection) {
+
+        // This debug code is quite useful when diagnosing selection problems.
+        #[allow(clippy::print_stderr)] // reason = "unreachable debug code"
+        if false {
+            let focus = new_sel.focus();
+            let cluster = focus.logical_clusters(&self.layout);
+            let dbg = (
+                cluster[0].as_ref().map(|c| &self.text[c.text_range()]),
+                focus.index(),
+                focus.affinity(),
+                cluster[1].as_ref().map(|c| &self.text[c.text_range()]),
+            );
+            eprint!("{dbg:?}");
+            let cluster = focus.visual_clusters(&self.layout);
+            let dbg = (
+                cluster[0].as_ref().map(|c| &self.text[c.text_range()]),
+                cluster[0]
+                    .as_ref()
+                    .map(|c| if c.is_word_boundary() { " W" } else { "" })
+                    .unwrap_or_default(),
+                focus.index(),
+                focus.affinity(),
+                cluster[1].as_ref().map(|c| &self.text[c.text_range()]),
+                cluster[1]
+                    .as_ref()
+                    .map(|c| if c.is_word_boundary() { " W" } else { "" })
+                    .unwrap_or_default(),
+            );
+            eprintln!(" | visual: {dbg:?}");
+        }
+        self.selection.selection = new_sel;
+    }
+
+
+    // --- MARK: Cursor Movement ---
+    /// Move the cursor to the cluster boundary nearest this point in the layout.
+    pub(crate) fn move_to_point(&mut self, x: f32, y: f32) {
+        self.set_selection(Selection::from_point(&self.layout, x, y));
+    }
+
+    /// Move the cursor to the start of the text.
+    pub(crate) fn move_to_text_start(&mut self) {
+        self.set_selection(
+            self.selection
+                .selection
+                .move_lines(&self.layout, isize::MIN, false),
+        );
+    }
+
+    /// Move the cursor to the start of the physical line.
+    pub(crate) fn move_to_line_start(&mut self) {
+        self.set_selection(self.selection.selection.line_start(&self.layout, false));
+    }
+
+    /// Move the cursor to the end of the text.
+    pub(crate) fn move_to_text_end(&mut self) {
+        self.set_selection(
+            self.selection
+                .selection
+                .move_lines(&self.layout, isize::MAX, false),
+        );
+    }
+
+    /// Move the cursor to the end of the physical line.
+    pub(crate) fn move_to_line_end(&mut self) {
+        self.set_selection(self.selection.selection.line_end(&self.layout, false));
+    }
+
+    /// Move up to the closest physical cluster boundary on the previous line, preserving the horizontal position for repeated movements.
+    pub(crate) fn move_up(&mut self) {
+        self.set_selection(self.selection.selection.previous_line(&self.layout, false));
+    }
+
+    /// Move down to the closest physical cluster boundary on the next line, preserving the horizontal position for repeated movements.
+    pub(crate) fn move_down(&mut self) {
+        self.set_selection(self.selection.selection.next_line(&self.layout, false));
+    }
+
+    /// Move to the next cluster left in visual order.
+    pub(crate) fn move_left(&mut self) {
+        self.set_selection(
+            self.selection
+                .selection
+                .previous_visual(&self.layout, false),
+        );
+    }
+
+    /// Move to the next cluster right in visual order.
+    pub(crate) fn move_right(&mut self) {
+        self.set_selection(self.selection.selection.next_visual(&self.layout, false));
+    }
+
+    /// Move to the next word boundary left.
+    pub(crate) fn move_word_left(&mut self) {
+        self.set_selection(
+            self.selection
+                .selection
+                .previous_visual_word(&self.layout, false),
+        );
+    }
+
+
+    /// Move to the next word boundary right.
+    pub(crate) fn move_word_right(&mut self) {
+        self.set_selection(
+            self.selection
+                .selection
+                .next_visual_word(&self.layout, false),
+        );
+    }
+
+    /// Select the whole text.
+    pub(crate) fn select_all(&mut self) {
+        self.set_selection(
+            Selection::from_byte_index(&self.layout, 0_usize, Affinity::default()).move_lines(
+                &self.layout,
+                isize::MAX,
+                true,
+            ),
+        );
+    }
+
+    /// Collapse selection into caret.
+    pub(crate) fn collapse_selection(&mut self) {
+        self.set_selection(self.selection.selection.collapse());
+    }
+}
