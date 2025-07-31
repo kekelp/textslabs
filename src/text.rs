@@ -1386,6 +1386,39 @@ impl Text {
             },
         }
     }
+
+    // Wrapper methods for TextBoxInner functionality
+    pub fn text_box_fadeout_clipping(&self, handle: &TextBoxHandle) -> bool {
+        self.text_boxes[handle.i as usize].fadeout_clipping()
+    }
+
+    pub fn text_box_hidden(&self, handle: &TextBoxHandle) -> bool {
+        self.text_boxes[handle.i as usize].hidden()
+    }
+
+    pub fn text_box_depth(&self, handle: &TextBoxHandle) -> f32 {
+        self.text_boxes[handle.i as usize].depth()
+    }
+
+    pub fn text_box_pos(&self, handle: &TextBoxHandle) -> (f64, f64) {
+        self.text_boxes[handle.i as usize].pos()
+    }
+
+    pub fn text_box_clip_rect(&self, handle: &TextBoxHandle) -> Option<parley::Rect> {
+        self.text_boxes[handle.i as usize].clip_rect()
+    }
+
+    pub fn text_box_auto_clip(&self, handle: &TextBoxHandle) -> bool {
+        self.text_boxes[handle.i as usize].auto_clip()
+    }
+
+    pub fn text_box_can_hide(&self, handle: &TextBoxHandle) -> bool {
+        self.text_boxes[handle.i as usize].can_hide()
+    }
+
+    pub fn text_box_accesskit_id(&self, handle: &TextBoxHandle) -> Option<NodeId> {
+        self.text_boxes[handle.i as usize].accesskit_id()
+    }
 }
 
 // I love partial borrows!

@@ -181,7 +181,7 @@ impl State {
                                 self.text.set_text_edit_disabled(&self.single_line_input, !is_disabled);
                             }
                             "h" => {
-                                let current_fadeout = self.text.get_text_box(&self.clipped_text_box).inner.fadeout_clipping();
+                                let current_fadeout = self.text.text_box_fadeout_clipping(&self.clipped_text_box);
                                 self.text.get_text_box_mut(&self.clipped_text_box).set_fadeout_clipping(!current_fadeout);
                             }
                             _ => {}
