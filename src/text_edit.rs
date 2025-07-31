@@ -254,7 +254,7 @@ impl<'a> TextEditMut<'a> {
         }
         
         // Capture initial state for comparison
-        let initial_selection = self.text_box.selection();
+        let initial_selection = self.text_box.inner.selection();
         let initial_show_cursor = self.inner.show_cursor;
         
         let mut result = TextEventResult::nothing();
@@ -288,7 +288,7 @@ impl<'a> TextEditMut<'a> {
                             match c.as_str() {
                                 "x" if !shift => {
                                     with_clipboard(|cb| {
-                                        if let Some(text) = self.text_box.selected_text() {
+                                        if let Some(text) = self.text_box.inner.selected_text() {
                                             cb.set_text(text.to_owned()).ok();
                                             self.delete_selection();
                                             result.text_changed = true;
@@ -487,7 +487,7 @@ impl<'a> TextEditMut<'a> {
 
         self.restore_placeholder_if_any();
 
-        if selection_decorations_changed(initial_selection, self.text_box.selection(), initial_show_cursor, self.inner.show_cursor, !self.inner.disabled) {
+        if selection_decorations_changed(initial_selection, self.text_box.inner.selection(), initial_show_cursor, self.inner.show_cursor, !self.inner.disabled) {
             {
                 let this = &mut result;
                 this.decorations_changed = true;
@@ -533,9 +533,9 @@ impl<'a> TextEditMut<'a> {
     }
 
     fn replace_selection_and_record(&mut self, s: &str) {
-        let old_selection = self.text_box.selection();
+        let old_selection = self.text_box.inner.selection();
 
-        let range = self.text_box.selection().text_range();
+        let range = self.text_box.inner.selection().text_range();
         let old_text = &self.text_box.inner.text_inner()[range.clone()];
 
         let new_range_start = range.start;
@@ -596,17 +596,17 @@ impl<'a> TextEditMut<'a> {
     pub(crate) fn delete(&mut self) {
         assert!(!self.is_composing());
 
-        if self.text_box.selection().is_collapsed() {
+        if self.text_box.inner.selection().is_collapsed() {
             // Upstream cluster range
             if let Some(range) = self
-                .text_box.selection()
+                .text_box.inner.selection()
                 .focus()
                 .logical_clusters(&self.text_box.layout())[1]
                 .as_ref()
                 .map(|cluster| cluster.text_range())
                 .and_then(|range| (!range.is_empty()).then_some(range))
             {
-                self.replace_range_and_record(range, self.text_box.selection(), "");
+                self.replace_range_and_record(range, self.text_box.inner.selection(), "");
                 self.refresh_layout();
             }
         } else {
@@ -618,12 +618,12 @@ impl<'a> TextEditMut<'a> {
     pub(crate) fn delete_word(&mut self) {
         assert!(!self.is_composing());
 
-        if self.text_box.selection().is_collapsed() {
-            let focus = self.text_box.selection().focus();
+        if self.text_box.inner.selection().is_collapsed() {
+            let focus = self.text_box.inner.selection().focus();
             let start = focus.index();
             let end = focus.next_logical_word(&self.text_box.layout()).index();
             if self.text_box.inner.text_inner().get(start..end).is_some() {
-                self.replace_range_and_record(start..end, self.text_box.selection(), "");
+                self.replace_range_and_record(start..end, self.text_box.inner.selection(), "");
                 self.refresh_layout();
                 self.text_box.inner.set_selection(
                     Cursor::from_byte_index(&self.text_box.inner.layout, start, Affinity::Downstream).into(),
@@ -638,10 +638,10 @@ impl<'a> TextEditMut<'a> {
     pub(crate) fn backdelete(&mut self) {
         assert!(!self.is_composing());
 
-        if self.text_box.selection().is_collapsed() {
+        if self.text_box.inner.selection().is_collapsed() {
             // Upstream cluster
             if let Some(cluster) = self
-                .text_box.selection()
+                .text_box.inner.selection()
                 .focus()
                 .logical_clusters(&self.text_box.layout())[0]
                 .clone()
@@ -662,7 +662,7 @@ impl<'a> TextEditMut<'a> {
                     };
                     start
                 };
-                self.replace_range_and_record(start..end, self.text_box.selection(), "");
+                self.replace_range_and_record(start..end, self.text_box.inner.selection(), "");
                 self.refresh_layout();
                 self.text_box.inner.set_selection(
                     Cursor::from_byte_index(&self.text_box.inner.layout, start, Affinity::Downstream).into(),
@@ -677,12 +677,12 @@ impl<'a> TextEditMut<'a> {
     pub(crate) fn backdelete_word(&mut self) {
         assert!(!self.is_composing());
 
-        if self.text_box.selection().is_collapsed() {
-            let focus = self.text_box.selection().focus();
+        if self.text_box.inner.selection().is_collapsed() {
+            let focus = self.text_box.inner.selection().focus();
             let end = focus.index();
             let start = focus.previous_logical_word(&self.text_box.layout()).index();
             if self.text_box.inner.text_inner().get(start..end).is_some() {
-                self.replace_range_and_record(start..end, self.text_box.selection(), "");
+                self.replace_range_and_record(start..end, self.text_box.inner.selection(), "");
                 self.refresh_layout();
                 self.text_box.inner.set_selection(
                     Cursor::from_byte_index(&self.text_box.inner.layout, start, Affinity::Downstream).into(),
@@ -712,8 +712,8 @@ impl<'a> TextEditMut<'a> {
             self.text_box.text_mut().replace_range(preedit_range.clone(), text);
             preedit_range.start
         } else {
-            let selection_start = self.text_box.selection().text_range().start;
-            if self.text_box.selection().is_collapsed() {
+            let selection_start = self.text_box.inner.selection().text_range().start;
+            if self.text_box.inner.selection().is_collapsed() {
                 self.text_box.text_mut()
                     .insert_str(selection_start, text);
                 
@@ -721,7 +721,7 @@ impl<'a> TextEditMut<'a> {
                     self.remove_newlines();
                 }
             } else {
-                let range = self.text_box.selection().text_range();
+                let range = self.text_box.inner.selection().text_range();
                 self.text_box.text_mut()
                     .replace_range(range, text);
             }
@@ -852,9 +852,9 @@ impl<'a> TextEditMut<'a> {
     }
 
     pub fn replace_selection_inner(&mut self, s: &str) {
-        let range = self.text_box.selection().text_range();
+        let range = self.text_box.inner.selection().text_range();
         let start = range.start;
-        if self.text_box.selection().is_collapsed() {
+        if self.text_box.inner.selection().is_collapsed() {
             self.text_box.text_mut().insert_str(start, s);
             
             if self.inner.single_line {
@@ -1275,7 +1275,7 @@ impl_for_textedit_and_texteditmut! {
     }
     
     pub fn selected_text(&self) -> Option<&str> {
-        self.text_box.selected_text()
+        self.text_box.inner.selected_text()
     }
     
     pub fn pos(&self) -> (f64, f64) {
@@ -1303,11 +1303,11 @@ impl_for_textedit_and_texteditmut! {
     }
     
     pub fn scroll_offset(&self) -> (f32, f32) {
-        self.text_box.scroll_offset()
+        self.text_box.inner.scroll_offset()
     }
 
     pub fn selection(&self) -> Selection {
-        self.text_box.selection()
+        self.text_box.inner.selection()
     }
 }
 
@@ -1406,7 +1406,7 @@ impl<'a> TextEditMut<'a> {
                 let text_width = self.text_box.inner.max_advance;
                 let cursor_left = cursor_rect.x0 as f32;
                 let cursor_right = cursor_rect.x1 as f32;
-                let current_scroll = self.text_box.scroll_offset().0;
+                let current_scroll = self.text_box.inner.scroll_offset().0;
                 let total_text_width = self.text_box.inner.layout.full_width();
                 let max_scroll = (total_text_width - text_width).max(0.0).round() + CURSOR_WIDTH;
                 
@@ -1429,7 +1429,7 @@ impl<'a> TextEditMut<'a> {
                 let text_height = self.text_box.inner.height;
                 let cursor_top = cursor_rect.y0 as f32;
                 let cursor_bottom = cursor_rect.y1 as f32;
-                let current_scroll = self.text_box.scroll_offset().1;
+                let current_scroll = self.text_box.inner.scroll_offset().1;
                 
                 // Get the total text height to check if we're overflowing
                 let total_text_height = self.text_box.inner.layout.height();
@@ -1475,17 +1475,17 @@ impl<'a> TextEditMut<'a> {
         }
         
         self.refresh_layout();
-        Some(self.text_box.selection().focus().geometry(&self.text_box.inner.layout, size))
+        Some(self.text_box.inner.selection().focus().geometry(&self.text_box.inner.layout, size))
     }
     
     pub fn selection_geometry(&mut self) -> Vec<(Rect, usize)> {
         self.refresh_layout();
-        self.text_box.selection_geometry()
+        self.text_box.inner.selection_geometry()
     }
     
     pub fn selection_geometry_with(&mut self, f: impl FnMut(Rect, usize)) {
         self.refresh_layout();
-        self.text_box.selection_geometry_with(f)
+        self.text_box.inner.selection_geometry_with(f)
     }
 
     pub fn refresh_layout(&mut self) {

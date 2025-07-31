@@ -1,5 +1,6 @@
 use crate::*;
 use accesskit::{NodeId, TreeUpdate};
+use parley::{Selection, Rect};
 use slab::Slab;
 use std::collections::HashMap;
 use std::sync::mpsc;
@@ -1232,7 +1233,7 @@ impl Text {
         if let Some(AnyBox::TextEdit(i)) = self.focused {
             let handle = TextEditHandle { i: i as u32 };
             let text_edit = self.get_full_text_edit(&handle);
-            if text_edit.text_box.selection().is_collapsed() {
+            if text_edit.text_box.inner.selection().is_collapsed() {
                 
                 self.cursor_blink_start = Some(Instant::now());
                 self.decorations_changed = true;
@@ -1418,6 +1419,30 @@ impl Text {
 
     pub fn text_box_accesskit_id(&self, handle: &TextBoxHandle) -> Option<NodeId> {
         self.text_boxes[handle.i as usize].accesskit_id()
+    }
+
+    pub fn text_box_selected_text(&self, handle: &TextBoxHandle) -> Option<&str> {
+        self.text_boxes[handle.i as usize].selected_text()
+    }
+
+    pub fn text_box_selection(&self, handle: &TextBoxHandle) -> Selection {
+        self.text_boxes[handle.i as usize].selection()
+    }
+
+    pub fn text_box_scroll_offset(&self, handle: &TextBoxHandle) -> (f32, f32) {
+        self.text_boxes[handle.i as usize].scroll_offset()
+    }
+
+    pub fn text_box_selection_geometry(&self, handle: &TextBoxHandle) -> Vec<(Rect, usize)> {
+        self.text_boxes[handle.i as usize].selection_geometry()
+    }
+
+    pub fn text_box_selection_geometry_with(&self, handle: &TextBoxHandle, f: impl FnMut(Rect, usize)) {
+        self.text_boxes[handle.i as usize].selection_geometry_with(f);
+    }
+
+    pub fn text_box_effective_clip_rect(&self, handle: &TextBoxHandle) -> Option<parley::Rect> {
+        self.text_boxes[handle.i as usize].effective_clip_rect()
     }
 }
 

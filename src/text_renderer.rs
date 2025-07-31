@@ -341,11 +341,11 @@ impl TextRenderer {
                 
         let (left, top) = text_box.inner.pos();
         let (left, top) = (left as f32, top as f32);
-        let clip_rect = text_box.effective_clip_rect();
+        let clip_rect = text_box.inner.effective_clip_rect();
         let fade = text_box.inner.fadeout_clipping();
 
-        let content_left = left - text_box.scroll_offset().0;
-        let content_top = top - text_box.scroll_offset().1;
+        let content_left = left - text_box.inner.scroll_offset().0;
+        let content_top = top - text_box.inner.scroll_offset().1;
 
         // Capture quad counts before rendering
         self.capture_quad_ranges_before();
@@ -354,7 +354,7 @@ impl TextRenderer {
         self.text_renderer.needs_gpu_sync = true;
         
         // Update quad storage with new ranges
-        let scroll_offset = text_box.scroll_offset();
+        let scroll_offset = text_box.inner.scroll_offset();
         self.capture_quad_ranges_after(&mut text_box.inner.quad_storage, scroll_offset);
     }
 
@@ -367,7 +367,7 @@ impl TextRenderer {
 
         let (left, top) = text_edit.pos();
         let (left, top) = (left as f32, top as f32);
-        let clip_rect = text_edit.text_box.effective_clip_rect();
+        let clip_rect = text_edit.text_box.inner.effective_clip_rect();
         let fade = text_edit.fadeout_clipping();
 
         let content_left = left - text_edit.scroll_offset().0;
@@ -387,22 +387,22 @@ impl TextRenderer {
     pub fn prepare_text_box_decorations(&mut self, text_box: &TextBoxMut, show_cursor: bool) {
         let (left, top) = text_box.inner.pos();
         let (left, top) = (left as f32, top as f32);
-        let clip_rect = text_box.effective_clip_rect();
+        let clip_rect = text_box.inner.effective_clip_rect();
 
-        let content_left = left - text_box.scroll_offset().0;
-        let content_top = top - text_box.scroll_offset().1;
+        let content_left = left - text_box.inner.scroll_offset().0;
+        let content_top = top - text_box.inner.scroll_offset().1;
 
         let selection_color = 0x33_33_ff_aa;
         let cursor_color = 0xee_ee_ee_ff;
 
-        text_box.selection().geometry_with(&text_box.inner.layout, |rect, _line_i| {
+        text_box.inner.selection().geometry_with(&text_box.inner.layout, |rect, _line_i| {
             self.text_renderer.add_selection_rect(rect, content_left, content_top, selection_color, clip_rect);
         });
         
-        let show_cursor = show_cursor && text_box.selection().is_collapsed();
+        let show_cursor = show_cursor && text_box.inner.selection().is_collapsed();
         if show_cursor {
             let size = CURSOR_WIDTH;
-            let cursor_rect = text_box.selection().focus().geometry(&text_box.inner.layout, size);
+            let cursor_rect = text_box.inner.selection().focus().geometry(&text_box.inner.layout, size);
             self.text_renderer.add_selection_rect(cursor_rect, content_left, content_top, cursor_color, clip_rect);
         }
         self.text_renderer.needs_gpu_sync = true;

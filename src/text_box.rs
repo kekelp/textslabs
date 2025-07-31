@@ -244,69 +244,8 @@ impl_for_textbox_and_textboxmut! {
     }
 
 
-    pub fn selected_text(&self) -> Option<&str> {
-        if !self.inner.selection.selection.is_collapsed() {
-            self.inner.text.get(self.inner.selection.selection.text_range())
-        } else {
-            None
-        }
-    }
 
-    pub fn selection(&self) -> Selection {
-        self.inner.selection.selection
-    }
 
-    pub fn scroll_offset(&self) -> (f32, f32) {
-        self.inner.scroll_offset
-    }
-
-    pub fn selection_geometry(&self) -> Vec<(Rect, usize)> {
-        self.inner.selection.selection.geometry(&self.inner.layout)
-    }
-
-    pub fn selection_geometry_with(&self, f: impl FnMut(Rect, usize)) {
-        self.inner.selection.selection.geometry_with(&self.inner.layout, f);
-    }
-
-    pub fn effective_clip_rect(&self) -> Option<parley::Rect> {
-        let auto_clip_rect = if self.inner.auto_clip {
-            Some(parley::Rect {
-                x0: self.inner.scroll_offset.0 as f64,
-                y0: self.inner.scroll_offset.1 as f64,
-                x1: (self.inner.scroll_offset.0 + self.inner.max_advance) as f64,
-                y1: (self.inner.scroll_offset.1 + self.inner.height) as f64,
-            })
-        } else {
-            None
-        };
-
-        let clip_rect = self.inner.clip_rect.map(|explicit| {
-            parley::Rect {
-                x0: explicit.x0 + self.inner.scroll_offset.0 as f64,
-                y0: explicit.y0 + self.inner.scroll_offset.1 as f64,
-                x1: explicit.x1 + self.inner.scroll_offset.0 as f64,
-                y1: explicit.y1 + self.inner.scroll_offset.1 as f64,
-            }
-        });
-
-        match (auto_clip_rect, clip_rect) {
-            (None, None) => None,
-            (Some(auto), None) => Some(auto),
-            (None, Some(explicit)) => Some(explicit),
-            (Some(auto), Some(explicit)) => {
-                let x0 = auto.x0.max(explicit.x0);
-                let y0 = auto.y0.max(explicit.y0);
-                let x1 = auto.x1.min(explicit.x1);
-                let y1 = auto.y1.min(explicit.y1);
-                
-                if x0 < x1 && y0 < y1 {
-                    Some(parley::Rect { x0, y0, x1, y1 })
-                } else {
-                    Some(parley::Rect { x0: 0.0, y0: 0.0, x1: 0.0, y1: 0.0 })
-                }
-            }
-        }
-    }
 
     pub fn selectable(&self) -> bool {
         self.inner.selectable
@@ -576,7 +515,7 @@ impl<'a> TextBoxMut<'a> {
                             match c.as_str() {
                                 "c" if !shift => {
                                     with_clipboard(|cb| {
-                                        if let Some(text) = self.selected_text() {
+                                        if let Some(text) = self.inner.selected_text() {
                                             cb.set_text(text.to_owned()).ok();
                                         }
                                     })
@@ -1177,5 +1116,69 @@ impl TextBoxInner {
 
     pub fn auto_clip(&self) -> bool {
         self.auto_clip
+    }
+
+    pub fn selected_text(&self) -> Option<&str> {
+        if !self.selection.selection.is_collapsed() {
+            self.text.get(self.selection.selection.text_range())
+        } else {
+            None
+        }
+    }
+
+    pub fn selection(&self) -> Selection {
+        self.selection.selection
+    }
+
+    pub fn scroll_offset(&self) -> (f32, f32) {
+        self.scroll_offset
+    }
+
+    pub fn selection_geometry(&self) -> Vec<(Rect, usize)> {
+        self.selection.selection.geometry(&self.layout)
+    }
+
+    pub fn selection_geometry_with(&self, f: impl FnMut(Rect, usize)) {
+        self.selection.selection.geometry_with(&self.layout, f);
+    }
+
+    pub fn effective_clip_rect(&self) -> Option<parley::Rect> {
+        let auto_clip_rect = if self.auto_clip {
+            Some(parley::Rect {
+                x0: self.scroll_offset.0 as f64,
+                y0: self.scroll_offset.1 as f64,
+                x1: (self.scroll_offset.0 + self.max_advance) as f64,
+                y1: (self.scroll_offset.1 + self.height) as f64,
+            })
+        } else {
+            None
+        };
+
+        let clip_rect = self.clip_rect.map(|explicit| {
+            parley::Rect {
+                x0: explicit.x0 + self.scroll_offset.0 as f64,
+                y0: explicit.y0 + self.scroll_offset.1 as f64,
+                x1: explicit.x1 + self.scroll_offset.0 as f64,
+                y1: explicit.y1 + self.scroll_offset.1 as f64,
+            }
+        });
+
+        match (auto_clip_rect, clip_rect) {
+            (None, None) => None,
+            (Some(auto), None) => Some(auto),
+            (None, Some(explicit)) => Some(explicit),
+            (Some(auto), Some(explicit)) => {
+                let x0 = auto.x0.max(explicit.x0);
+                let y0 = auto.y0.max(explicit.y0);
+                let x1 = auto.x1.min(explicit.x1);
+                let y1 = auto.y1.min(explicit.y1);
+                
+                if x0 < x1 && y0 < y1 {
+                    Some(parley::Rect { x0, y0, x1, y1 })
+                } else {
+                    Some(parley::Rect { x0: 0.0, y0: 0.0, x1: 0.0, y1: 0.0 })
+                }
+            }
+        }
     }
 }
