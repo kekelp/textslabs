@@ -199,56 +199,6 @@ impl TextBoxInner {
     }    
 }
 
-
-macro_rules! impl_for_textbox_and_textboxmut {
-    ($($(#[$attr:meta])* $item:item)*) => {
-        impl<'a> TextBox<'a> {
-            $($item)*
-        }
-       
-        impl<'a> TextBoxMut<'a> {
-            $($item)*
-        }
-    };
-}
-
-
-impl_for_textbox_and_textboxmut! {
-    pub fn accesskit_node(&self) -> Node {
-        let mut node = Node::new(Role::Label);
-        // let mut node = Node::new(Role::Paragraph);
-        let text_content = self.inner.text.to_string();
-        node.set_value(text_content.clone());
-        node.set_description(text_content);
-        
-        let (left, top) = self.inner.pos();
-        let bounds = AccessRect::new(
-            left,
-            top,
-            left + self.inner.layout.width() as f64,
-            top + self.inner.layout.height() as f64
-        );
-
-        node.set_bounds(bounds);
-
-        return node;
-    }
-
-    pub fn style(&'a self) -> &'a TextStyle2 {
-        &self.shared.styles[self.inner.style.i as usize].text_style
-    }
-
-
-    pub fn text(self) -> &'a str {
-        &self.inner.text
-    }
-
-
-
-
-
-}
-
 impl<'a> TextBox<'a> {
     pub fn can_hide(&self) -> bool {
         self.inner.can_hide
@@ -258,7 +208,7 @@ impl<'a> TextBox<'a> {
 impl<'a> TextBoxMut<'a> {
     pub fn push_accesskit_update(&mut self, tree_update: &mut TreeUpdate) {
         let accesskit_id = self.inner.accesskit_id;
-        let node = self.accesskit_node();
+        let node = self.inner.accesskit_node();
         let (left, top) = self.inner.pos();
         
         push_accesskit_update_text_box_free_function(
@@ -274,7 +224,7 @@ impl<'a> TextBoxMut<'a> {
 
     pub(crate) fn push_accesskit_update_to_self(&mut self) {
         let accesskit_id = self.inner.accesskit_id;
-        let node = self.accesskit_node();
+        let node = self.inner.accesskit_node();
         let (left, top) = self.inner.pos();
         
         push_accesskit_update_text_box_free_function(
@@ -595,11 +545,6 @@ impl<'a> TextBoxMut<'a> {
     pub(crate) fn style_version(&self) -> u64 {
         self.shared.styles[self.inner.style.i as usize].version
     }
-
-    pub(crate) fn style_version_changed(&self) -> bool {
-        self.style_version() != self.inner.style_version
-    }
-
 
     // Note: This used to be a problem when TextEdit couldn't call refresh_layout() directly.
     // Now that TextEdit has access to refresh_layout(), this is no longer an issue. 
@@ -1181,5 +1126,29 @@ impl TextBoxInner {
 
     pub fn selectable(&self) -> bool {
         self.selectable
+    }
+
+    pub fn accesskit_node(&self) -> Node {
+        let mut node = Node::new(Role::Label);
+        // let mut node = Node::new(Role::Paragraph);
+        let text_content = self.text.to_string();
+        node.set_value(text_content.clone());
+        node.set_description(text_content);
+        
+        let (left, top) = self.pos();
+        let bounds = AccessRect::new(
+            left,
+            top,
+            left + self.layout.width() as f64,
+            top + self.layout.height() as f64,
+        );
+
+        node.set_bounds(bounds);
+
+        return node;
+    }
+
+    pub fn text(&self) -> &str {
+        &self.text
     }
 }

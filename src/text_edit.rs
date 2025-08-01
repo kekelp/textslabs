@@ -891,7 +891,7 @@ impl<'a> TextEditMut<'a> {
 
     pub fn push_accesskit_update(&mut self, tree_update: &mut TreeUpdate) {
         let accesskit_id = self.text_box.inner.accesskit_id;
-        let node = self.accesskit_node();
+        let node = self.text_box.inner.accesskit_node();
         let (left, top) = self.pos();
         
         push_accesskit_update_textedit_free_function(
@@ -907,7 +907,7 @@ impl<'a> TextEditMut<'a> {
 
     pub(crate) fn push_accesskit_update_to_self(&mut self) {
         let accesskit_id = self.text_box.inner.accesskit_id;
-        let node = self.accesskit_node();
+        let node = self.text_box.inner.accesskit_node();
         let (left, top) = self.pos();
         
         push_accesskit_update_textedit_free_function(
@@ -1271,7 +1271,7 @@ impl_for_textedit_and_texteditmut! {
     }
 
     pub fn raw_text(self) -> &'a str {
-        self.text_box.text()
+        self.text_box.inner.text()
     }
     
     pub fn selected_text(&self) -> Option<&str> {

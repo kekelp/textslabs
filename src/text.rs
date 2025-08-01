@@ -1,5 +1,5 @@
 use crate::*;
-use accesskit::{NodeId, TreeUpdate};
+use accesskit::{Node, NodeId, TreeUpdate};
 use parley::{Selection, Rect};
 use slab::Slab;
 use std::collections::HashMap;
@@ -1451,6 +1451,19 @@ impl Text {
 
     pub fn text_box_text_inner(&self, handle: &TextBoxHandle) -> &str {
         self.text_boxes[handle.i as usize].text_inner()
+    }
+
+    pub fn text_box_style(&self, handle: &TextBoxHandle) -> &TextStyle2 {
+        let style_handle = &self.text_boxes[handle.i as usize].style;
+        &self.shared.styles[style_handle.i as usize].text_style
+    }
+
+    pub fn text_box_accesskit_node(&self, handle: &TextBoxHandle) -> Node {
+        self.text_boxes[handle.i as usize].accesskit_node()
+    }
+
+    pub fn text_box_text(&self, handle: &TextBoxHandle) -> &str {
+        self.text_boxes[handle.i as usize].text()
     }
 }
 
