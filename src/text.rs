@@ -1444,6 +1444,14 @@ impl Text {
     pub fn text_box_effective_clip_rect(&self, handle: &TextBoxHandle) -> Option<parley::Rect> {
         self.text_boxes[handle.i as usize].effective_clip_rect()
     }
+
+    pub fn text_box_selectable(&self, handle: &TextBoxHandle) -> bool {
+        self.text_boxes[handle.i as usize].selectable()
+    }
+
+    pub fn text_box_text_inner(&self, handle: &TextBoxHandle) -> &str {
+        self.text_boxes[handle.i as usize].text_inner()
+    }
 }
 
 // I love partial borrows!

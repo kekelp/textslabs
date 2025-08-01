@@ -247,9 +247,6 @@ impl_for_textbox_and_textboxmut! {
 
 
 
-    pub fn selectable(&self) -> bool {
-        self.inner.selectable
-    }
 }
 
 impl<'a> TextBox<'a> {
@@ -1180,5 +1177,9 @@ impl TextBoxInner {
                 }
             }
         }
+    }
+
+    pub fn selectable(&self) -> bool {
+        self.selectable
     }
 }
