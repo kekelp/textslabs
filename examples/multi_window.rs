@@ -75,7 +75,7 @@ impl State {
     fn render_window(&mut self, window_id: winit::window::WindowId) {
         if let Some(window_state) = self.windows.iter_mut().find(|w| w.window.id() == window_id) {
             window_state.text.prepare_all(&mut window_state.text_renderer);
-            window_state.text_renderer.gpu_load(&window_state.device, &window_state.queue);
+            window_state.text_renderer.load_to_gpu(&window_state.device, &window_state.queue);
 
             let frame = window_state.surface.get_current_texture().unwrap();
             let view = frame.texture.create_view(&TextureViewDescriptor::default());

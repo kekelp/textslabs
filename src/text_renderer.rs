@@ -406,15 +406,15 @@ impl TextRenderer {
         self.text_renderer.needs_gpu_sync = true;
     }
 
-    pub fn gpu_load(&mut self, device: &Device, queue: &Queue) {
-        self.text_renderer.gpu_load(device, queue);
+    pub fn load_to_gpu(&mut self, device: &Device, queue: &Queue) {
+        self.text_renderer.load_to_gpu(device, queue);
     }
 
     pub fn render(&self, pass: &mut RenderPass<'_>) {
         self.text_renderer.render(pass);
     }
 
-    pub fn gpu_load_atlas_debug(&mut self, device: &Device, queue: &Queue) {
+    pub fn load_to_gpu_atlas_debug(&mut self, device: &Device, queue: &Queue) {
         let atlas_size = self.text_renderer.atlas_size;
         
         for (i, page) in self.text_renderer.mask_atlas_pages.iter_mut().enumerate() {
@@ -446,7 +446,7 @@ impl TextRenderer {
         }
         
         // Update shared vertex buffer with debug quads
-        self.text_renderer.gpu_load(device, queue);
+        self.text_renderer.load_to_gpu(device, queue);
     }
     
     pub fn render_atlas_debug(&self, pass: &mut RenderPass<'_>) {

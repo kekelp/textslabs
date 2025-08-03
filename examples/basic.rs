@@ -132,7 +132,7 @@ impl State {
                 // Prepare the cpu-side text data for rendering.
                 self.text.prepare_all(&mut self.text_renderer);
                 // Load the text renderer's data on the gpu.
-                self.text_renderer.gpu_load(&self.device, &self.queue);
+                self.text_renderer.load_to_gpu(&self.device, &self.queue);
 
                 // A bunch of wgpu boilerplate to be able to draw on the screen.
                 let surface_texture = self.surface.get_current_texture().unwrap();

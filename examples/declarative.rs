@@ -170,7 +170,7 @@ impl DeclarativeGrid {
     
     fn render(&mut self, view: &TextureView, device: &Device, queue: &Queue) {
         self.text.prepare_all(&mut self.text_renderer);
-        self.text_renderer.gpu_load(device, queue);
+        self.text_renderer.load_to_gpu(device, queue);
         
         let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor { label: None });
         {

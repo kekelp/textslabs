@@ -303,7 +303,7 @@ impl ContextlessTextRenderer {
 }
 
 impl ContextlessTextRenderer {
-    pub fn gpu_load(&mut self, device: &Device, queue: &Queue) {
+    pub fn load_to_gpu(&mut self, device: &Device, queue: &Queue) {
         if !self.needs_gpu_sync {
             return;
         }

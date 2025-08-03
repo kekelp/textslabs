@@ -108,7 +108,7 @@ impl State {
                 self.text_renderer.prepare_layout(&self.text_layouts[self.current_layout], 50.0, 50.0, None, false);
                 println!("prepare(): {:?}", now.elapsed());
 
-                self.text_renderer.gpu_load(&self.device, &self.queue);
+                self.text_renderer.load_to_gpu(&self.device, &self.queue);
 
                 let mut encoder = self
                     .device
@@ -130,7 +130,7 @@ impl State {
                     });
 
                     if self.show_atlas {
-                        self.text_renderer.gpu_load_atlas_debug(&self.device, &self.queue);
+                        self.text_renderer.load_to_gpu_atlas_debug(&self.device, &self.queue);
                         self.text_renderer.render_atlas_debug(&mut pass);
                     } else {
                         self.text_renderer.render(&mut pass);

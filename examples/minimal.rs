@@ -37,7 +37,7 @@ impl State {
 
     fn render(&mut self) {
         self.text.prepare_all(&mut self.text_renderer);
-        self.text_renderer.gpu_load(&self.device, &self.queue);
+        self.text_renderer.load_to_gpu(&self.device, &self.queue);
 
         let frame = self.surface.get_current_texture().unwrap();
         let mut encoder = self.device.create_command_encoder(&CommandEncoderDescriptor::default());
