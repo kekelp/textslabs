@@ -103,7 +103,7 @@ impl State {
                 let view = frame.texture.create_view(&TextureViewDescriptor::default());
 
                 self.text.prepare_all(&mut self.text_renderer);
-                self.text_renderer.gpu_load(&self.device, &self.queue);
+                self.text_renderer.load_to_gpu(&self.device, &self.queue);
 
                 let mut encoder = self.device.create_command_encoder(&CommandEncoderDescriptor { label: None });
                 {

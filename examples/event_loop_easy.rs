@@ -111,7 +111,7 @@ impl State {
         println!("Rerender at {:?}", std::time::Instant::now());
         
         self.text.prepare_all(&mut self.text_renderer);
-        self.text_renderer.gpu_load(&self.device, &self.queue);
+        self.text_renderer.load_to_gpu(&self.device, &self.queue);
 
         let surface_texture = self.surface.get_current_texture().unwrap();
         let view = surface_texture
