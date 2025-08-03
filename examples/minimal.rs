@@ -39,13 +39,13 @@ impl State {
         self.text.prepare_all(&mut self.text_renderer);
         self.text_renderer.load_to_gpu(&self.device, &self.queue);
 
-        let frame = self.surface.get_current_texture().unwrap();
+        let surface_texture = self.surface.get_current_texture().unwrap();
         let mut encoder = self.device.create_command_encoder(&CommandEncoderDescriptor::default());
 
         {
             let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
                 color_attachments: &[Some(RenderPassColorAttachment {
-                    view: &frame.texture.create_view(&TextureViewDescriptor::default()),
+                    view: &surface_texture.texture.create_view(&TextureViewDescriptor::default()),
                     resolve_target: None,
                     ops: Operations { load: LoadOp::Clear(Color::BLACK), store: StoreOp::Store },
                 })],
@@ -55,7 +55,7 @@ impl State {
         }
 
         self.queue.submit(std::iter::once(encoder.finish()));
-        frame.present();
+        surface_texture.present();
     }
 }
 
