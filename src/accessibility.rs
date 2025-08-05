@@ -71,9 +71,11 @@ impl Text {
     }
 }
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Clone, Copy)]
 pub enum FocusUpdate {
-    FocusedNewNode(NodeId),
-    Defocused,
+    Changed {
+        old_focus: Option<NodeId>,
+        new_focus: Option<NodeId>,
+    },
     Unchanged,
 }

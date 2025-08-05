@@ -150,9 +150,13 @@ impl State {
     fn handle_window_event(&mut self, event: &WindowEvent) {
         self.text.handle_event(event, &self.window);
         
-        let current_focus = self.text.focused_accesskit_id().unwrap_or(WINDOW_ID);
+        // Because of how accesskit updates work, we always have to specify a value for the current focus, even if we don't want to change it.
+        // In this example, there's only text elements, so we ask Text for the current focused element, and then we pass it back to Text, which looks a bit weird.
+        // But in general, other GUI elements could have focus. In that case, instead of this line we'd ask the GUI library for the currently focused accesskit NodeId. Then we pass it to Text, so that if it doesn't want to change the focus, it can use that.
+        // I don't know why accesskit updates work this way.
+        let current_focus = self.text.focused_accesskit_id();
         if let Some((tree_update, _focus_update)) = self.text.accesskit_update(current_focus, WINDOW_ID) {
-             self.send_accesskit_update(tree_update);
+            self.send_accesskit_update(tree_update);
         }
         
 

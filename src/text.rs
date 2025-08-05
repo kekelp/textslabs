@@ -69,10 +69,23 @@ pub struct Shared {
     #[cfg(feature = "accessibility")]
     pub(crate) accesskit_tree_update: TreeUpdate,
     #[cfg(feature = "accessibility")]
-    pub(crate) accesskit_focus_update: (Option<NodeId>, u64),
+    pub(crate) accesskit_focus_tracker: FocusChange,
     pub(crate) current_event_number: u64,
     #[cfg(feature = "accessibility")]
     pub(crate) node_id_generator: fn() -> NodeId,
+}
+
+#[cfg(feature = "accessibility")]
+pub(crate) struct FocusChange {
+    new_focus: Option<NodeId>,
+    old_focus: Option<NodeId>,
+    event_number: u64,
+}
+#[cfg(feature = "accessibility")]
+impl FocusChange {
+    pub(crate) fn new() -> FocusChange {
+        FocusChange { new_focus: None, old_focus: None, event_number: 0 }
+    }
 }
 
 /// Handle for a text edit box.
@@ -287,7 +300,7 @@ impl Text {
                 scrolled: true,
                 event_consumed: true,
                 #[cfg(feature = "accessibility")]
-                accesskit_focus_update: (Some(NodeId(0)), 0),
+                accesskit_focus_tracker: FocusChange::new(),
                 current_event_number: 1,
                 #[cfg(feature = "accessibility")]
                 node_id_generator: crate::accessibility::next_node_id,
@@ -844,6 +857,15 @@ impl Text {
             if let Some(old_focus) = self.focused {
                 self.remove_focus(old_focus);
             }
+
+            #[cfg(feature = "accessibility")]
+            {
+                let new_focus_ak_id = new_focus.and_then(|new_focus| self.get_accesskit_id(new_focus));
+                let old_focus_ak_id = self.focused.and_then(|old_focus| self.get_accesskit_id(old_focus));
+                self.shared.accesskit_focus_tracker.new_focus = new_focus_ak_id;
+                self.shared.accesskit_focus_tracker.old_focus = old_focus_ak_id;
+                self.shared.accesskit_focus_tracker.event_number = self.shared.current_event_number;
+            }
         }
 
         self.focused = new_focus;
@@ -852,12 +874,6 @@ impl Text {
             // todo: could skip some rerenders here if the old focus wasn't editable and had collapsed selection.
             self.decorations_changed = true;
             self.reset_cursor_blink();
-
-            #[cfg(feature = "accessibility")]
-            {
-                let new_focus_ak_id = new_focus.and_then(|new_focus| self.get_accesskit_id(new_focus));
-                self.shared.accesskit_focus_update = (new_focus_ak_id, self.shared.current_event_number);
-            }
         }
     }
 
@@ -1329,7 +1345,7 @@ impl Text {
         self.focused
     }
     
-    /// Get the AccessKit node ID of the currently focused text element
+    /// Get the AccessKit node ID of the currently focused text element.
     /// 
     /// Returns `None` if no element is focused or if the focused element doesn't have an AccessKit ID.
     #[cfg(feature = "accessibility")]
@@ -1356,8 +1372,15 @@ impl Text {
         }
     }
 
+    /// Returns an Accesskit update for all the changes to the text content that happened since the last update, or `None` if nothing happened at all.
+    /// 
+    /// It can be very hard to understand what actually happened to the focus from the data in the `accesskit::TreeUpdate` alone, so this function also returns a [`FocusUpdate`]. It might be wiser for users of this function to read the value of `FocusUpdate` and fill in the value of `TreeUpdate`'s `focus` themselves.
+    /// 
+    /// In particular, if the user clicks outside of all text boxes, the `TreeUpdate`'s `focus` will be set to `root_node_id`, because that's what Accesskit wants to signal that nothing is focused anymore. But this means that if the focus went to some other non-text element in the GUI library, the GUI library will have to send its update *after* this one, or it will be overwritten by the `root_node_id`. 
+    /// 
+    /// Ideally, Accesskit would allow `Text` to report that a `NodeId` just lost focus, and figure out itself what to do from there. (Actually, it would probably be a list of nodes that definitely don't have focus anymore. I guess that would be a bit complicated.)
     #[cfg(feature = "accessibility")]
-    pub fn accesskit_update(&mut self, current_focused_node_id: NodeId, root_node_id: NodeId) -> Option<(TreeUpdate, FocusUpdate)> {
+    pub fn accesskit_update(&mut self, current_focused_node_id: Option<NodeId>, root_node_id: NodeId) -> Option<(TreeUpdate, FocusUpdate)> {
         // For some reason, every update that we send must specify the focus again.
         // If something else changed it, we'd end up overriding it.
         // So we have to ask for the current one from outside and fill that in, in case that nothing happened.
@@ -1365,35 +1388,47 @@ impl Text {
         // However, this means that the focus actually goes to the whole window, Windows Narrator says the name of the window, and the blue box covers the whole window. I don't really see this behavior anywhere else.
 
         let mut focus_update = FocusUpdate::Unchanged;
+
+        let old_focus = self.shared.accesskit_focus_tracker.old_focus;
+        let new_focus = self.shared.accesskit_focus_tracker.new_focus;
+
+        if old_focus != new_focus {
+            focus_update = FocusUpdate::Changed { old_focus, new_focus };
+        }
         
-        let focus_update_is_fresh = self.shared.current_event_number == self.shared.accesskit_focus_update.1;
-        if focus_update_is_fresh {
-            if let Some(focus) = self.shared.accesskit_focus_update.0 {
-                focus_update = FocusUpdate::FocusedNewNode(focus);
-            } else {
-                focus_update = FocusUpdate::Defocused;
-            }
+        // Make a different focus update to try to figure out the least wrong thing to stick in the TreeUpdate.
+        let mut focus_update_for_tree = focus_update;
+
+        // If the focus update is old, it might be riskier to even report it. Not sure, though.
+        let focus_update_is_fresh = self.shared.current_event_number == self.shared.accesskit_focus_tracker.event_number;
+        if ! focus_update_is_fresh {
+            focus_update_for_tree = FocusUpdate::Unchanged;
         }
 
-        if focus_update == FocusUpdate::Unchanged && self.shared.accesskit_tree_update.nodes.is_empty() {
+        if (focus_update_for_tree == FocusUpdate::Unchanged) && self.shared.accesskit_tree_update.nodes.is_empty() {
             return None;
         }
 
-        let focus_value = match focus_update {
-            FocusUpdate::FocusedNewNode(node_id) => node_id,
-            FocusUpdate::Defocused => root_node_id,
+        let current_focused_node_id = current_focused_node_id.unwrap_or(root_node_id);
+
+        let focus_value_for_tree = match focus_update_for_tree {
+            FocusUpdate::Changed { old_focus: _, new_focus } => {
+                if let Some(new_focus) = new_focus {
+                    new_focus
+                } else {
+                    root_node_id
+                }
+            }
             FocusUpdate::Unchanged => current_focused_node_id,
         };
 
-        self.shared.accesskit_tree_update.focus = focus_value;
+        self.shared.accesskit_tree_update.focus = focus_value_for_tree;
         let res = self.shared.accesskit_tree_update.clone();
 
         // Reset to an empty update.
-        self.shared.accesskit_tree_update = TreeUpdate {
-            nodes: Vec::new(),
-            tree: None,
-            focus: NodeId(0), // This doesn't matter.
-        };
+        self.shared.accesskit_tree_update.nodes.clear();
+        self.shared.accesskit_tree_update.tree = None;
+
         return Some((res, focus_update));
     }
 
