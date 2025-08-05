@@ -100,11 +100,7 @@ impl winit::application::ApplicationHandler for Application {
                 WindowEvent::RedrawRequested => {
                     let window_state = &mut state.windows[window_index];
                     
-                    // Only prepare text for this window
-                    window_state.text_renderer.clear();
-                    for handle in &window_state.handles {
-                        window_state.text_renderer.prepare_text_box_layout(&mut state.text.get_text_box_mut(handle));
-                    }
+                    state.text.prepare_all(&mut window_state.text_renderer);
                     window_state.text_renderer.load_to_gpu(&state.device, &state.queue);
 
                     let surface_texture = window_state.surface.get_current_texture().unwrap();
