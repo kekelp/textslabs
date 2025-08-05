@@ -50,7 +50,7 @@ impl State {
             let text_renderer = TextRenderer::new(&device, &queue, surface_config.format);
             
             // Create window-specific text
-            let _handle = text.add_text_box_for_window(
+            let _handle = text.add_text_edit_for_window(
                 format!("Window {} text", i + 1),
                 (50.0, 50.0),
                 (400.0, 100.0),
@@ -101,7 +101,7 @@ impl winit::application::ApplicationHandler for Application {
         
         if let Some(window_index) = window_index {
             let window_state = &mut state.windows[window_index];
-            state.text.handle_event(&event, &window_state.window);
+            state.text.handle_event_for_window(&event, &window_state.window, window_id);
             match event {
                 WindowEvent::RedrawRequested => {
                     

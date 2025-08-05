@@ -900,6 +900,116 @@ impl Text {
         }
     }
 
+    /// Handle window events for text widgets in a specific window.
+    /// 
+    /// This is the multi-window version of [`Text::handle_event()`]. 
+    /// Only text elements belonging to the specified window (or with no window restriction) will respond to events.
+    pub fn handle_event_for_window(&mut self, event: &WindowEvent, window: &Window, window_id: WindowId) {
+        self.shared.current_event_number += 1;
+        
+        self.input_state.handle_event(event);
+
+        if let WindowEvent::Resized(size) = event {
+            self.screen_width = size.width as f32;
+            self.screen_height = size.height as f32;
+            self.shared.text_changed = true;
+        }
+
+        // update smooth scrolling animations
+        if let WindowEvent::RedrawRequested = event {
+            let animation_updated = self.update_smooth_scrolling();
+            if animation_updated {
+                self.shared.scrolled = true;
+            }
+        }
+
+        if let WindowEvent::MouseInput { state, button, .. } = event {
+            if state.is_pressed() && *button == MouseButton::Left {
+                let new_focus = self.find_topmost_at_pos_for_window(self.input_state.mouse.cursor_pos, window_id);
+                if new_focus.is_some() {
+                    self.shared.event_consumed = true;
+                }
+                self.refocus(new_focus);
+                self.handle_click_counting();
+            }
+        }
+
+        if let WindowEvent::MouseWheel { .. } = event {
+            let hovered = self.find_topmost_at_pos_for_window(self.input_state.mouse.cursor_pos, window_id);
+            if let Some(hovered_widget) = hovered {
+                self.shared.event_consumed = true;
+                self.handle_hovered_event(hovered_widget, event, window);
+            }
+            return;
+        }
+
+        if let Some(focused) = self.focused {
+            // Only handle the event if the focused element belongs to this window
+            let focused_belongs_to_window = match focused {
+                AnyBox::TextEdit(i) => {
+                    if let Some((_text_edit, text_box)) = self.text_edits.get(i as usize) {
+                        text_box.window_id.is_none() || text_box.window_id == Some(window_id)
+                    } else {
+                        false
+                    }
+                },
+                AnyBox::TextBox(i) => {
+                    if let Some(text_box) = self.text_boxes.get(i as usize) {
+                        text_box.window_id.is_none() || text_box.window_id == Some(window_id)
+                    } else {
+                        false
+                    }
+                },
+            };
+
+            if focused_belongs_to_window {
+                self.shared.event_consumed = true;
+                self.handle_focused_event(focused, event, window);
+
+                #[cfg(feature = "accessibility")] {   
+                    // todo: not the best, this includes decoration changes and stuff.
+                    if self.need_rerender() {
+                        self.push_ak_update_for_focused(focused);
+                    }
+                }
+            }
+        }
+    }
+
+    fn find_topmost_at_pos_for_window(&mut self, cursor_pos: (f64, f64), window_id: WindowId) -> Option<AnyBox> {
+        self.mouse_hit_stack.clear();
+
+        // Find all text widgets at this position that belong to this window
+        for (i, (_text_edit, text_box)) in self.text_edits.iter_mut() {
+            if !text_box.hidden && text_box.last_frame_touched == self.current_visibility_frame && text_box.hit_full_rect(cursor_pos) {
+                // Only consider if this text edit belongs to this window (or has no window restriction)
+                if text_box.window_id.is_none() || text_box.window_id == Some(window_id) {
+                    self.mouse_hit_stack.push((AnyBox::TextEdit(i as u32), text_box.depth));
+                }
+            }
+        }
+        for (i, text_box) in self.text_boxes.iter_mut() {
+            if !text_box.hidden && text_box.last_frame_touched == self.current_visibility_frame && text_box.hit_bounding_box(cursor_pos) {
+                // Only consider if this text box belongs to this window (or has no window restriction)
+                if text_box.window_id.is_none() || text_box.window_id == Some(window_id) {
+                    self.mouse_hit_stack.push((AnyBox::TextBox(i as u32), text_box.depth));
+                }
+            }
+        }
+
+        // Find the topmost (lowest depth value)
+        let mut topmost = None;
+        let mut top_z = f32::MAX;
+        for (id, z) in self.mouse_hit_stack.iter() {
+            if *z < top_z {
+                top_z = *z;
+                topmost = Some(*id);
+            }
+        }
+
+        topmost
+    }
+
     #[cfg(feature = "accessibility")]
     fn get_accesskit_id(&mut self, i: AnyBox) -> Option<NodeId> {
         return match i {
