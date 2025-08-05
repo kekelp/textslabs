@@ -48,6 +48,9 @@ pub(crate) struct TextBoxInner {
     pub(crate) last_frame_touched: u64,
     pub(crate) can_hide: bool,
     
+    // Multi-window support
+    pub(crate) window_id: Option<winit::window::WindowId>,
+    
     /// Tracks quad storage for fast scrolling
     pub(crate) quad_storage: QuadStorage,
 }
@@ -185,6 +188,7 @@ impl TextBoxInner {
             hidden: false,
             last_frame_touched: 0,
             can_hide: false,
+            window_id: None,
             quad_storage: QuadStorage::default(),
         }
     }

@@ -358,6 +358,36 @@ impl Text {
         TextEditHandle { i }
     }
 
+    /// Add a text box for a specific window and return a handle.
+    /// 
+    /// This is the multi-window version of [`Text::add_text_box()`].
+    /// Only use this when you have multiple windows and want to restrict this text box to a specific window.
+    #[must_use]
+    pub fn add_text_box_for_window(&mut self, text: impl Into<Cow<'static, str>>, pos: (f64, f64), size: (f32, f32), depth: f32, window_id: WindowId) -> TextBoxHandle {
+        let mut text_box = TextBoxInner::new(text, pos, size, depth);
+        text_box.last_frame_touched = self.current_visibility_frame;
+        text_box.style_version = self.shared.styles[text_box.style.i as usize].version;
+        text_box.window_id = Some(window_id);
+        let i = self.text_boxes.insert(text_box) as u32;
+        self.shared.text_changed = true;
+        TextBoxHandle { i }
+    }
+
+    /// Add a text edit for a specific window and return a handle.
+    /// 
+    /// This is the multi-window version of [`Text::add_text_edit()`].
+    /// Only use this when you have multiple windows and want to restrict this text edit to a specific window.
+    #[must_use]
+    pub fn add_text_edit_for_window(&mut self, text: String, pos: (f64, f64), size: (f32, f32), depth: f32, window_id: WindowId) -> TextEditHandle {
+        let (text_edit, mut text_box) = TextEditInner::new(text, pos, size, depth);
+        text_box.last_frame_touched = self.current_visibility_frame;
+        text_box.style_version = self.shared.styles[text_box.style.i as usize].version;
+        text_box.window_id = Some(window_id);
+        let i = self.text_edits.insert((text_edit, text_box)) as u32;
+        self.shared.text_changed = true;
+        TextEditHandle { i }
+    }
+
 
 
 
@@ -641,14 +671,20 @@ impl Text {
                 for (_, text_edit) in self.text_edits.iter_mut() {
                     let mut text_edit = get_full_text_edit_free_function_but_for_iterating((&mut text_edit.0, &mut text_edit.1), &mut self.shared);
                     if !text_edit.hidden() && text_edit.text_box.inner.last_frame_touched == current_frame {
-                        text_renderer.prepare_text_edit_layout(&mut text_edit);
+                        // Only render if this text edit belongs to this window (or has no window restriction)
+                        if text_edit.text_box.inner.window_id.is_none() || text_edit.text_box.inner.window_id == Some(window_id) {
+                            text_renderer.prepare_text_edit_layout(&mut text_edit);
+                        }
                     }
                 }
 
                 for (_, text_box) in self.text_boxes.iter_mut() {
                     let mut text_box = get_full_text_box_free_function_but_for_iterating(text_box, &mut self.shared);
                     if !text_box.hidden() && text_box.inner.last_frame_touched == current_frame {
-                        text_renderer.prepare_text_box_layout(&mut text_box);
+                        // Only render if this text box belongs to this window (or has no window restriction)
+                        if text_box.inner.window_id.is_none() || text_box.inner.window_id == Some(window_id) {
+                            text_renderer.prepare_text_box_layout(&mut text_box);
+                        }
                     }
                 }
             }

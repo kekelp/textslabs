@@ -40,7 +40,8 @@ impl State {
         
         let mut window_states = Vec::new();
         for (i, window) in windows.into_iter().enumerate() {
-            text.register_window(window.id());
+            let window_id = window.id();
+            text.register_window(window_id);
             
             let surface = instance.create_surface(window.clone()).expect("Create surface");
             let surface_config = surface.get_default_config(&adapter, physical_size.width, physical_size.height).unwrap();
@@ -48,11 +49,13 @@ impl State {
             
             let text_renderer = TextRenderer::new(&device, &queue, surface_config.format);
             
-            let _handle = text.add_text_box(
+            // Create window-specific text
+            let _handle = text.add_text_box_for_window(
                 format!("Window {} text", i + 1),
                 (50.0, 50.0),
                 (400.0, 100.0),
-                0.0
+                0.0,
+                window_id
             );
             
             window_states.push(WindowState {
@@ -91,13 +94,16 @@ impl winit::application::ApplicationHandler for Application {
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, window_id: WindowId, event: WindowEvent) {
-        if let Some(state) = &mut self.state {
+        
+        let state = self.state.as_mut().unwrap();
+
         let window_index = state.windows.iter().position(|w| w.window.id() == window_id);
         
         if let Some(window_index) = window_index {
+            let window_state = &mut state.windows[window_index];
+            state.text.handle_event(&event, &window_state.window);
             match event {
                 WindowEvent::RedrawRequested => {
-                    let window_state = &mut state.windows[window_index];
                     
                     state.text.prepare_all_for_window(&mut window_state.text_renderer, window_id);
                     window_state.text_renderer.load_to_gpu(&state.device, &state.queue);
@@ -129,6 +135,6 @@ impl winit::application::ApplicationHandler for Application {
                 _ => {}
             }
         }
-        }
+        
     }
 }
