@@ -9,6 +9,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 use winit::{event::{Modifiers, MouseButton, WindowEvent}, window::Window};
 use std::sync::{Arc, Weak};
+use winit::window::WindowId;
 
 const MULTICLICK_DELAY: f64 = 0.4;
 const MULTICLICK_TOLERANCE_SQUARED: f64 = 26.0;
@@ -52,6 +53,9 @@ pub struct Text {
     pub(crate) screen_height: f32,
 
     pub(crate) slot_for_text_box_mut: Option<TextBoxMut<'static>>,
+
+    // Multi-window support
+    pub(crate) registered_windows: Vec<(WindowId, bool)>,
 
     #[cfg(feature = "accessibility")]
     pub(crate) accesskit_id_to_text_handle_map: HashMap<NodeId, AnyBox>,
@@ -289,6 +293,8 @@ impl Text {
             screen_height: 600.0,
 
             slot_for_text_box_mut: None,
+
+            registered_windows: Vec::new(),
 
             #[cfg(feature = "accessibility")]
             accesskit_id_to_text_handle_map: HashMap::with_capacity(50),
@@ -559,6 +565,123 @@ impl Text {
     /// If any text boxes are set to this style, they will revert to the default style.
     pub fn remove_style(&mut self, handle: StyleHandle) {
         self.shared.styles.remove(handle.i as usize);
+    }
+
+    /// Register a window for multi-window rendering.
+    /// 
+    /// This tells the Text system to wait for all registered windows to call `prepare_all_for_window`
+    /// before clearing the `text_changed` flag.
+    pub fn register_window(&mut self, window_id: WindowId) {
+        self.registered_windows.push((window_id, false));
+    }
+
+    /// Unregister a window from multi-window rendering.
+    pub fn unregister_window(&mut self, window_id: WindowId) {
+        self.registered_windows.retain(|(id, _)| *id != window_id);
+    }
+
+    // todo: deduplicate
+    /// Prepare text for a specific window in a multi-window setup.
+    /// 
+    /// Use this instead of `prepare_all` when you have multiple windows.
+    pub fn prepare_all_for_window(&mut self, text_renderer: &mut TextRenderer, window_id: WindowId) {
+        // Only do the heavy work on the first window preparation this frame
+        let is_first_window = !self.registered_windows.iter().any(|(_, prepared)| *prepared);
+        if is_first_window {
+            text_renderer.update_resolution(self.screen_width, self.screen_height);
+            
+            if ! self.shared.text_changed && self.using_frame_based_visibility {
+                // see if any text boxes were just hidden
+                for (_i, (_text_edit, text_box)) in self.text_edits.iter_mut() {
+                    if text_box.last_frame_touched == self.current_visibility_frame - 1 {
+                        self.shared.text_changed = true;
+                    }
+                }
+                for (_i, text_box) in self.text_boxes.iter_mut() {
+                    if text_box.last_frame_touched == self.current_visibility_frame - 1 {
+                        self.shared.text_changed = true;
+                    }
+                }
+            }
+        }
+
+        let (show_cursor, blink_changed) = self.cursor_blinked_out(true);
+
+        if self.shared.text_changed {
+            text_renderer.clear();
+        } else if self.decorations_changed || !self.scrolled_moved_indices.is_empty() || blink_changed {
+            text_renderer.clear_decorations_only();
+        }
+
+        if self.decorations_changed || self.shared.text_changed  || !self.scrolled_moved_indices.is_empty() || blink_changed {
+            if let Some(focused) = self.focused {
+                match focused {
+                    AnyBox::TextEdit(i) => {
+                        let handle = TextEditHandle { i: i as u32 };
+                        let text_edit = self.get_full_text_edit(&handle);
+                        text_renderer.prepare_text_box_decorations(&text_edit.text_box, show_cursor);
+                    },
+                    AnyBox::TextBox(i) => {
+                        let handle = TextBoxHandle { i: i as u32 };
+                        let text_box = self.get_full_text_box(&handle);
+                        text_renderer.prepare_text_box_decorations(&text_box, false);
+                    },
+                }
+            }
+        }
+
+        // Prepare text layout for all text boxes/edits
+        if !self.shared.text_changed {
+            if !self.scrolled_moved_indices.is_empty() {
+                self.handle_scroll_fast_path(text_renderer);
+            }
+        } else {
+            let current_frame = self.current_visibility_frame;
+            if self.shared.text_changed {
+                for (_, text_edit) in self.text_edits.iter_mut() {
+                    let mut text_edit = get_full_text_edit_free_function_but_for_iterating((&mut text_edit.0, &mut text_edit.1), &mut self.shared);
+                    if !text_edit.hidden() && text_edit.text_box.inner.last_frame_touched == current_frame {
+                        text_renderer.prepare_text_edit_layout(&mut text_edit);
+                    }
+                }
+
+                for (_, text_box) in self.text_boxes.iter_mut() {
+                    let mut text_box = get_full_text_box_free_function_but_for_iterating(text_box, &mut self.shared);
+                    if !text_box.hidden() && text_box.inner.last_frame_touched == current_frame {
+                        text_renderer.prepare_text_box_layout(&mut text_box);
+                    }
+                }
+            }
+        }
+
+        // Mark this window as prepared
+        if let Some((_, prepared)) = self.registered_windows.iter_mut().find(|(id, _)| *id == window_id) {
+            *prepared = true;
+        }
+
+        // Only clear flags if all registered windows have been prepared
+        let all_prepared = self.registered_windows.iter().all(|(_, prepared)| *prepared);
+        if all_prepared {
+            self.clear_finished_scroll_animations();
+
+            self.shared.text_changed = false;
+            self.shared.decorations_changed = false;
+            self.shared.event_consumed = false;
+
+            self.using_frame_based_visibility = false;
+
+            // Reset all windows to unprepared for next frame
+            for (_, prepared) in &mut self.registered_windows {
+                *prepared = false;
+            }
+
+            // If animations are still running, we need to keep rerendering
+            if self.get_max_animation_duration().is_some() {
+                self.shared.scrolled = true;
+            } else {
+                self.shared.scrolled = false;
+            }
+        }
     }
 
     pub fn prepare_all(&mut self, text_renderer: &mut TextRenderer) {

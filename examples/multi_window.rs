@@ -20,7 +20,6 @@ struct WindowState {
     _surface_config: SurfaceConfiguration,
     window: Arc<Window>,
     text_renderer: TextRenderer,
-    handles: Vec<TextBoxHandle>,
 }
 
 struct State {
@@ -41,14 +40,15 @@ impl State {
         
         let mut window_states = Vec::new();
         for (i, window) in windows.into_iter().enumerate() {
+            text.register_window(window.id());
+            
             let surface = instance.create_surface(window.clone()).expect("Create surface");
             let surface_config = surface.get_default_config(&adapter, physical_size.width, physical_size.height).unwrap();
             surface.configure(&device, &surface_config);
             
             let text_renderer = TextRenderer::new(&device, &queue, surface_config.format);
             
-            // Create text for this window
-            let handle = text.add_text_box(
+            let _handle = text.add_text_box(
                 format!("Window {} text", i + 1),
                 (50.0, 50.0),
                 (400.0, 100.0),
@@ -60,7 +60,6 @@ impl State {
                 _surface_config: surface_config,
                 window,
                 text_renderer,
-                handles: vec![handle],
             });
         }
 
@@ -100,7 +99,7 @@ impl winit::application::ApplicationHandler for Application {
                 WindowEvent::RedrawRequested => {
                     let window_state = &mut state.windows[window_index];
                     
-                    state.text.prepare_all(&mut window_state.text_renderer);
+                    state.text.prepare_all_for_window(&mut window_state.text_renderer, window_id);
                     window_state.text_renderer.load_to_gpu(&state.device, &state.queue);
 
                     let surface_texture = window_state.surface.get_current_texture().unwrap();
