@@ -645,17 +645,37 @@ impl Text {
 
         if self.decorations_changed || self.shared.text_changed  || !self.scrolled_moved_indices.is_empty() || blink_changed {
             if let Some(focused) = self.focused {
-                match focused {
+                // Only prepare decorations if the focused element belongs to this window
+                let focused_belongs_to_window = match focused {
                     AnyBox::TextEdit(i) => {
-                        let handle = TextEditHandle { i: i as u32 };
-                        let text_edit = self.get_full_text_edit(&handle);
-                        text_renderer.prepare_text_box_decorations(&text_edit.text_box, show_cursor);
+                        if let Some((_text_edit, text_box)) = self.text_edits.get(i as usize) {
+                            text_box.window_id.is_none() || text_box.window_id == Some(window_id)
+                        } else {
+                            false
+                        }
                     },
                     AnyBox::TextBox(i) => {
-                        let handle = TextBoxHandle { i: i as u32 };
-                        let text_box = self.get_full_text_box(&handle);
-                        text_renderer.prepare_text_box_decorations(&text_box, false);
+                        if let Some(text_box) = self.text_boxes.get(i as usize) {
+                            text_box.window_id.is_none() || text_box.window_id == Some(window_id)
+                        } else {
+                            false
+                        }
                     },
+                };
+
+                if focused_belongs_to_window {
+                    match focused {
+                        AnyBox::TextEdit(i) => {
+                            let handle = TextEditHandle { i: i as u32 };
+                            let text_edit = self.get_full_text_edit(&handle);
+                            text_renderer.prepare_text_box_decorations(&text_edit.text_box, show_cursor);
+                        },
+                        AnyBox::TextBox(i) => {
+                            let handle = TextBoxHandle { i: i as u32 };
+                            let text_box = self.get_full_text_box(&handle);
+                            text_renderer.prepare_text_box_decorations(&text_box, false);
+                        },
+                    }
                 }
             }
         }
