@@ -10,13 +10,13 @@ use std::time::{Duration, Instant};
 use winit::{event::{Modifiers, MouseButton, WindowEvent}, window::Window};
 use std::sync::{Arc, Weak};
 use winit::window::WindowId;
-use std::collections::HashMap;
 
 const MULTICLICK_DELAY: f64 = 0.4;
 const MULTICLICK_TOLERANCE_SQUARED: f64 = 26.0;
 
 #[derive(Debug, Clone)]
 pub(crate) struct WindowInfo {
+    pub(crate) window_id: Option<WindowId>,
     pub(crate) dimensions: (f32, f32),
     pub(crate) prepared: bool,
 }
@@ -58,8 +58,7 @@ pub struct Text {
     
     pub(crate) slot_for_text_box_mut: Option<TextBoxMut<'static>>,
 
-    // Multi-window support
-    pub(crate) windows: HashMap<Option<WindowId>, WindowInfo>,
+    pub(crate) windows: Vec<WindowInfo>,
 
     #[cfg(feature = "accessibility")]
     pub(crate) accesskit_id_to_text_handle_map: HashMap<NodeId, AnyBox>,
@@ -295,7 +294,7 @@ impl Text {
 
             slot_for_text_box_mut: None,
 
-            windows: HashMap::new(),
+            windows: Vec::new(),
 
             #[cfg(feature = "accessibility")]
             accesskit_id_to_text_handle_map: HashMap::with_capacity(50),
@@ -611,8 +610,9 @@ impl Text {
     }
 
     fn prepare_all_impl(&mut self, text_renderer: &mut TextRenderer, window_id: Option<WindowId>) {
-        // todo: can we just assume that we registered the window and unwrap? What if the the user forgot to handle events?
-        let (width, height) = self.windows.get(&window_id).map(|info| info.dimensions).unwrap_or((800.0, 600.0));
+        // Each window needs its own resolution set
+        let (width, height) = self.windows.iter().find(|info| info.window_id == window_id)
+            .map(|info| info.dimensions).unwrap_or((800.0, 600.0));
         text_renderer.update_resolution(width, height);
 
         // todo: not sure if this works correctly with multi-window.           
@@ -722,51 +722,30 @@ impl Text {
             }
         }
 
-        if let Some(window_id) = window_id {
-            // Mark this window as prepared
-            if let Some(window_info) = self.windows.get_mut(&Some(window_id)) {
+        // Multi-window: mark prepared and check if all windows done. Single-window: always clear.
+        let should_clear_flags = if let Some(window_id) = window_id {
+            if let Some(window_info) = self.windows.iter_mut().find(|info| info.window_id == Some(window_id)) {
                 window_info.prepared = true;
             }
-
-            // Only clear flags if all windows have been prepared
-            let all_prepared = self.windows.values().all(|info| info.prepared);
-            if all_prepared {
-                self.clear_finished_scroll_animations();
-
-                self.shared.text_changed = false;
-                self.shared.decorations_changed = false;
-                self.shared.event_consumed = false;
-
-                self.using_frame_based_visibility = false;
-
-                // Reset all windows to unprepared for next frame
-                for window_info in self.windows.values_mut() {
-                    window_info.prepared = false;
-                }
-
-                // If animations are still running, we need to keep rerendering
-                if self.get_max_animation_duration().is_some() {
-                    self.shared.scrolled = true;
-                } else {
-                    self.shared.scrolled = false;
-                }
-            }
+            self.windows.iter().all(|info| info.prepared)
         } else {
-            // Single window mode: Always clear flags
+            true
+        };
+
+        if should_clear_flags {
             self.clear_finished_scroll_animations();
 
             self.shared.text_changed = false;
             self.shared.decorations_changed = false;
             self.shared.event_consumed = false;
-
             self.using_frame_based_visibility = false;
 
-            // If animations are still running, we need to keep rerendering
-            if self.get_max_animation_duration().is_some() {
-                self.shared.scrolled = true;
-            } else {
-                self.shared.scrolled = false;
+            // Reset all windows to unprepared for next frame
+            for window_info in &mut self.windows {
+                window_info.prepared = false;
             }
+
+            self.shared.scrolled = self.get_max_animation_duration().is_some();
         }
     }
 
@@ -816,8 +795,15 @@ impl Text {
         self.input_state.handle_event(event);
 
         if let WindowEvent::Resized(size) = event {
-            self.windows.entry(None).or_insert(WindowInfo { dimensions: (800.0, 600.0), prepared: false })
-                .dimensions = (size.width as f32, size.height as f32);
+            if let Some(window_info) = self.windows.iter_mut().find(|info| info.window_id == None) {
+                window_info.dimensions = (size.width as f32, size.height as f32);
+            } else {
+                self.windows.push(WindowInfo { 
+                    window_id: None, 
+                    dimensions: (size.width as f32, size.height as f32), 
+                    prepared: false 
+                });
+            }
             self.shared.text_changed = true;
         }
 
@@ -872,8 +858,15 @@ impl Text {
         self.input_state.handle_event(event);
 
         if let WindowEvent::Resized(size) = event {
-            self.windows.entry(Some(window_id)).or_insert(WindowInfo { dimensions: (800.0, 600.0), prepared: false })
-                .dimensions = (size.width as f32, size.height as f32);
+            if let Some(window_info) = self.windows.iter_mut().find(|info| info.window_id == Some(window_id)) {
+                window_info.dimensions = (size.width as f32, size.height as f32);
+            } else {
+                self.windows.push(WindowInfo { 
+                    window_id: Some(window_id), 
+                    dimensions: (size.width as f32, size.height as f32), 
+                    prepared: false 
+                });
+            }
             self.shared.text_changed = true;
         }
 
