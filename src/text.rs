@@ -10,6 +10,7 @@ use std::time::{Duration, Instant};
 use winit::{event::{Modifiers, MouseButton, WindowEvent}, window::Window};
 use std::sync::{Arc, Weak};
 use winit::window::WindowId;
+use std::collections::HashMap;
 
 const MULTICLICK_DELAY: f64 = 0.4;
 const MULTICLICK_TOLERANCE_SQUARED: f64 = 26.0;
@@ -49,8 +50,7 @@ pub struct Text {
     
     pub(crate) cursor_blink_timer: Option<CursorBlinkWaker>,
     
-    pub(crate) screen_width: f32,
-    pub(crate) screen_height: f32,
+    pub(crate) window_dimensions: HashMap<Option<WindowId>, (f32, f32)>,
 
     pub(crate) slot_for_text_box_mut: Option<TextBoxMut<'static>>,
 
@@ -289,8 +289,11 @@ impl Text {
             cursor_currently_blinked_out: false,
             cursor_blink_timer,
 
-            screen_width: 800.0,
-            screen_height: 600.0,
+            window_dimensions: {
+                let mut map = HashMap::new();
+                map.insert(None, (800.0, 600.0)); // Default dimensions for single-window mode
+                map
+            },
 
             slot_for_text_box_mut: None,
 
@@ -610,15 +613,27 @@ impl Text {
         self.registered_windows.retain(|(id, _)| *id != window_id);
     }
 
-    // todo: deduplicate
     /// Prepare text for a specific window in a multi-window setup.
     /// 
     /// Use this instead of `prepare_all` when you have multiple windows.
     pub fn prepare_all_for_window(&mut self, text_renderer: &mut TextRenderer, window_id: WindowId) {
-        // Only do the heavy work on the first window preparation this frame
-        let is_first_window = !self.registered_windows.iter().any(|(_, prepared)| *prepared);
+        self.prepare_all_internal(text_renderer, Some(window_id));
+    }
+
+    pub fn prepare_all(&mut self, text_renderer: &mut TextRenderer) {
+        self.prepare_all_internal(text_renderer, None);
+    }
+
+    fn prepare_all_internal(&mut self, text_renderer: &mut TextRenderer, window_id: Option<WindowId>) {
+        let is_first_window = if window_id.is_some() {
+            !self.registered_windows.iter().any(|(_, prepared)| *prepared)
+        } else {
+            true
+        };
+
         if is_first_window {
-            text_renderer.update_resolution(self.screen_width, self.screen_height);
+            let (width, height) = self.window_dimensions.get(&window_id).copied().unwrap_or((800.0, 600.0));
+            text_renderer.update_resolution(width, height);
             
             if ! self.shared.text_changed && self.using_frame_based_visibility {
                 // see if any text boxes were just hidden
@@ -645,22 +660,26 @@ impl Text {
 
         if self.decorations_changed || self.shared.text_changed  || !self.scrolled_moved_indices.is_empty() || blink_changed {
             if let Some(focused) = self.focused {
-                // Only prepare decorations if the focused element belongs to this window
-                let focused_belongs_to_window = match focused {
-                    AnyBox::TextEdit(i) => {
-                        if let Some((_text_edit, text_box)) = self.text_edits.get(i as usize) {
-                            text_box.window_id.is_none() || text_box.window_id == Some(window_id)
-                        } else {
-                            false
-                        }
-                    },
-                    AnyBox::TextBox(i) => {
-                        if let Some(text_box) = self.text_boxes.get(i as usize) {
-                            text_box.window_id.is_none() || text_box.window_id == Some(window_id)
-                        } else {
-                            false
-                        }
-                    },
+                // For multi-window, only prepare decorations if the focused element belongs to this window
+                let focused_belongs_to_window = if let Some(window_id) = window_id {
+                    match focused {
+                        AnyBox::TextEdit(i) => {
+                            if let Some((_text_edit, text_box)) = self.text_edits.get(i as usize) {
+                                text_box.window_id.is_none() || text_box.window_id == Some(window_id)
+                            } else {
+                                false
+                            }
+                        },
+                        AnyBox::TextBox(i) => {
+                            if let Some(text_box) = self.text_boxes.get(i as usize) {
+                                text_box.window_id.is_none() || text_box.window_id == Some(window_id)
+                            } else {
+                                false
+                            }
+                        },
+                    }
+                } else {
+                    true // Single window mode - always show decorations
                 };
 
                 if focused_belongs_to_window {
@@ -691,8 +710,14 @@ impl Text {
                 for (_, text_edit) in self.text_edits.iter_mut() {
                     let mut text_edit = get_full_text_edit_free_function_but_for_iterating((&mut text_edit.0, &mut text_edit.1), &mut self.shared);
                     if !text_edit.hidden() && text_edit.text_box.inner.last_frame_touched == current_frame {
-                        // Only render if this text edit belongs to this window (or has no window restriction)
-                        if text_edit.text_box.inner.window_id.is_none() || text_edit.text_box.inner.window_id == Some(window_id) {
+                        // For multi-window, only render if this text edit belongs to this window (or has no window restriction)
+                        let should_render = if let Some(window_id) = window_id {
+                            text_edit.text_box.inner.window_id.is_none() || text_edit.text_box.inner.window_id == Some(window_id)
+                        } else {
+                            true
+                        };
+                        
+                        if should_render {
                             text_renderer.prepare_text_edit_layout(&mut text_edit);
                         }
                     }
@@ -701,8 +726,14 @@ impl Text {
                 for (_, text_box) in self.text_boxes.iter_mut() {
                     let mut text_box = get_full_text_box_free_function_but_for_iterating(text_box, &mut self.shared);
                     if !text_box.hidden() && text_box.inner.last_frame_touched == current_frame {
-                        // Only render if this text box belongs to this window (or has no window restriction)
-                        if text_box.inner.window_id.is_none() || text_box.inner.window_id == Some(window_id) {
+                        // For multi-window: Only render if this text box belongs to this window (or has no window restriction)
+                        let should_render = if let Some(window_id) = window_id {
+                            text_box.inner.window_id.is_none() || text_box.inner.window_id == Some(window_id)
+                        } else {
+                            true // Single window mode - render all
+                        };
+                        
+                        if should_render {
                             text_renderer.prepare_text_box_layout(&mut text_box);
                         }
                     }
@@ -710,14 +741,38 @@ impl Text {
             }
         }
 
-        // Mark this window as prepared
-        if let Some((_, prepared)) = self.registered_windows.iter_mut().find(|(id, _)| *id == window_id) {
-            *prepared = true;
-        }
+        // Multi-window specific: Mark this window as prepared and handle flag clearing
+        if let Some(window_id) = window_id {
+            // Mark this window as prepared
+            if let Some((_, prepared)) = self.registered_windows.iter_mut().find(|(id, _)| *id == window_id) {
+                *prepared = true;
+            }
 
-        // Only clear flags if all registered windows have been prepared
-        let all_prepared = self.registered_windows.iter().all(|(_, prepared)| *prepared);
-        if all_prepared {
+            // Only clear flags if all registered windows have been prepared
+            let all_prepared = self.registered_windows.iter().all(|(_, prepared)| *prepared);
+            if all_prepared {
+                self.clear_finished_scroll_animations();
+
+                self.shared.text_changed = false;
+                self.shared.decorations_changed = false;
+                self.shared.event_consumed = false;
+
+                self.using_frame_based_visibility = false;
+
+                // Reset all windows to unprepared for next frame
+                for (_, prepared) in &mut self.registered_windows {
+                    *prepared = false;
+                }
+
+                // If animations are still running, we need to keep rerendering
+                if self.get_max_animation_duration().is_some() {
+                    self.shared.scrolled = true;
+                } else {
+                    self.shared.scrolled = false;
+                }
+            }
+        } else {
+            // Single window mode: Always clear flags
             self.clear_finished_scroll_animations();
 
             self.shared.text_changed = false;
@@ -726,105 +781,12 @@ impl Text {
 
             self.using_frame_based_visibility = false;
 
-            // Reset all windows to unprepared for next frame
-            for (_, prepared) in &mut self.registered_windows {
-                *prepared = false;
-            }
-
             // If animations are still running, we need to keep rerendering
             if self.get_max_animation_duration().is_some() {
                 self.shared.scrolled = true;
             } else {
                 self.shared.scrolled = false;
             }
-        }
-    }
-
-    pub fn prepare_all(&mut self, text_renderer: &mut TextRenderer) {
-        text_renderer.update_resolution(self.screen_width, self.screen_height);
-        
-        if ! self.shared.text_changed && self.using_frame_based_visibility {
-            // see if any text boxes were just hidden
-            for (_i, (_text_edit, text_box)) in self.text_edits.iter_mut() {
-                if text_box.last_frame_touched == self.current_visibility_frame - 1 {
-                    self.shared.text_changed = true;
-                }
-            }
-            for (_i, text_box) in self.text_boxes.iter_mut() {
-                if text_box.last_frame_touched == self.current_visibility_frame - 1 {
-                    self.shared.text_changed = true;
-                }
-
-            }
-        }
-
-        
-        // decorations
-        let (show_cursor, blink_changed) = self.cursor_blinked_out(true);
-
-        if self.shared.text_changed {
-            text_renderer.clear();
-        } else if self.decorations_changed || !self.scrolled_moved_indices.is_empty() || blink_changed {
-            text_renderer.clear_decorations_only();
-        }
-
-        if self.decorations_changed || self.shared.text_changed  || !self.scrolled_moved_indices.is_empty() || blink_changed {
-            if let Some(focused) = self.focused {
-                match focused {
-                    AnyBox::TextEdit(i) => {
-                        let handle = TextEditHandle { i: i as u32 };
-                        let text_edit = self.get_full_text_edit(&handle);
-                        text_renderer.prepare_text_box_decorations(&text_edit.text_box, show_cursor);
-                    },
-                    AnyBox::TextBox(i) => {
-                        let handle = TextBoxHandle { i: i as u32 };
-                        let text_box = self.get_full_text_box(&handle);
-                        text_renderer.prepare_text_box_decorations(&text_box, false);
-                    },
-                }
-            }
-        }
-
-        // if only scrolling or movement occurred, move quads in-place
-        if !self.shared.text_changed {
-            if !self.scrolled_moved_indices.is_empty() {
-                self.handle_scroll_fast_path(text_renderer);
-            }
-
-        } else {
-        // if self.shared.text_changed || !self.scrolled_moved_indices.is_empty(){
-
-            let current_frame = self.current_visibility_frame;
-            if self.shared.text_changed {
-                for (_, text_edit) in self.text_edits.iter_mut() {
-                    let mut text_edit = get_full_text_edit_free_function_but_for_iterating((&mut text_edit.0, &mut text_edit.1), &mut self.shared);
-                    if !text_edit.hidden() && text_edit.text_box.inner.last_frame_touched == current_frame {
-                        text_renderer.prepare_text_edit_layout(&mut text_edit);
-                    }
-                }
-
-                for (_, text_box) in self.text_boxes.iter_mut() {
-                    let mut text_box = get_full_text_box_free_function_but_for_iterating(text_box, &mut self.shared);
-                    if !text_box.hidden() && text_box.inner.last_frame_touched == current_frame {
-                        text_renderer.prepare_text_box_layout(&mut text_box);
-                    }
-                }
-            }
-        }
-
-        self.clear_finished_scroll_animations();
-
-        self.shared.text_changed = false;
-        self.shared.decorations_changed = false;
-        self.shared.event_consumed = false;
-
-        self.using_frame_based_visibility = false;
-
-        // If animations are still running, we need to keep rerendering. Maybe we could use a different flag for clarity.
-        if self.get_max_animation_duration().is_some() {
-            self.shared.scrolled = true;
-        } else {
-            self.shared.scrolled = false;
         }
     }
 
@@ -874,8 +836,7 @@ impl Text {
         self.input_state.handle_event(event);
 
         if let WindowEvent::Resized(size) = event {
-            self.screen_width = size.width as f32;
-            self.screen_height = size.height as f32;
+            self.window_dimensions.insert(None, (size.width as f32, size.height as f32));
             self.shared.text_changed = true;
         }
 
@@ -930,8 +891,7 @@ impl Text {
         self.input_state.handle_event(event);
 
         if let WindowEvent::Resized(size) = event {
-            self.screen_width = size.width as f32;
-            self.screen_height = size.height as f32;
+            self.window_dimensions.insert(Some(window_id), (size.width as f32, size.height as f32));
             self.shared.text_changed = true;
         }
 
@@ -1632,6 +1592,17 @@ impl Text {
 
     pub fn focus(&self) -> Option<AnyBox> {
         self.focused
+    }
+
+    /// Get the dimensions for a specific window (or None for single-window mode)
+    pub fn get_window_dimensions(&self, window_id: Option<WindowId>) -> Option<(f32, f32)> {
+        self.window_dimensions.get(&window_id).copied()
+    }
+
+    /// Set the dimensions for a specific window (or None for single-window mode)
+    pub fn set_window_dimensions(&mut self, window_id: Option<WindowId>, width: f32, height: f32) {
+        self.window_dimensions.insert(window_id, (width, height));
+        self.shared.text_changed = true;
     }
     
     /// Get the AccessKit node ID of the currently focused text element.

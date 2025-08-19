@@ -17,7 +17,7 @@ fn main() {
 
 struct WindowState {
     surface: wgpu::Surface<'static>,
-    _surface_config: SurfaceConfiguration,
+    surface_config: SurfaceConfiguration,
     window: Arc<Window>,
     text_renderer: TextRenderer,
 }
@@ -31,7 +31,6 @@ struct State {
 
 impl State {
     fn new(windows: Vec<Arc<Window>>) -> Self {
-        let physical_size = windows[0].inner_size();
         let instance = Instance::new(InstanceDescriptor::default());
         let adapter = pollster::block_on(instance.request_adapter(&RequestAdapterOptions::default())).unwrap();
         let (device, queue) = pollster::block_on(adapter.request_device(&DeviceDescriptor::default(), None)).unwrap();
@@ -43,7 +42,8 @@ impl State {
             let window_id = window.id();
             text.register_window(window_id);
             
-            let surface = instance.create_surface(window.clone()).expect("Create surface");
+            let surface = instance.create_surface(window.clone()).unwrap();
+            let physical_size = window.inner_size();
             let surface_config = surface.get_default_config(&adapter, physical_size.width, physical_size.height).unwrap();
             surface.configure(&device, &surface_config);
             
@@ -60,7 +60,7 @@ impl State {
             
             window_states.push(WindowState {
                 surface,
-                _surface_config: surface_config,
+                surface_config,
                 window,
                 text_renderer,
             });
@@ -86,7 +86,7 @@ impl winit::application::ApplicationHandler for Application {
         
         let window2 = Arc::new(event_loop.create_window(
             Window::default_attributes()
-                .with_inner_size(LogicalSize::new(600, 400))
+                .with_inner_size(LogicalSize::new(800, 600))
                 .with_title("Window 2")
         ).unwrap());
 
@@ -131,6 +131,12 @@ impl winit::application::ApplicationHandler for Application {
                 }
                 WindowEvent::CloseRequested => {
                     event_loop.exit()
+                }
+                WindowEvent::Resized(size) => {
+                    window_state.surface_config.width = size.width;
+                    window_state.surface_config.height = size.height;
+                    window_state.surface.configure(&state.device, &window_state.surface_config);
+                    window_state.window.request_redraw();
                 }
                 _ => {}
             }
