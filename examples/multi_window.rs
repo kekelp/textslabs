@@ -40,7 +40,6 @@ impl State {
         let mut window_states = Vec::new();
         for (i, window) in windows.into_iter().enumerate() {
             let window_id = window.id();
-            text.register_window(window_id);
             
             let surface = instance.create_surface(window.clone()).unwrap();
             let physical_size = window.inner_size();
@@ -49,9 +48,8 @@ impl State {
             
             let text_renderer = TextRenderer::new(&device, &queue, surface_config.format);
             
-            // Create window-specific text
             let _handle = text.add_text_edit_for_window(
-                format!("Window {} text", i + 1),
+                format!("Window {} text edit box", i + 1),
                 (50.0, 50.0),
                 (400.0, 100.0),
                 0.0,
@@ -141,6 +139,5 @@ impl winit::application::ApplicationHandler for Application {
                 _ => {}
             }
         }
-        
     }
 }

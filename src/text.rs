@@ -15,6 +15,12 @@ use std::collections::HashMap;
 const MULTICLICK_DELAY: f64 = 0.4;
 const MULTICLICK_TOLERANCE_SQUARED: f64 = 26.0;
 
+#[derive(Debug, Clone)]
+pub(crate) struct WindowInfo {
+    pub(crate) dimensions: (f32, f32),
+    pub(crate) prepared: bool,
+}
+
 #[derive(Debug)]
 pub(crate) struct StyleInner {
     pub(crate) text_style: TextStyle2,
@@ -50,12 +56,10 @@ pub struct Text {
     
     pub(crate) cursor_blink_timer: Option<CursorBlinkWaker>,
     
-    pub(crate) window_dimensions: HashMap<Option<WindowId>, (f32, f32)>,
-
     pub(crate) slot_for_text_box_mut: Option<TextBoxMut<'static>>,
 
     // Multi-window support
-    pub(crate) registered_windows: Vec<(WindowId, bool)>,
+    pub(crate) windows: HashMap<Option<WindowId>, WindowInfo>,
 
     #[cfg(feature = "accessibility")]
     pub(crate) accesskit_id_to_text_handle_map: HashMap<NodeId, AnyBox>,
@@ -289,15 +293,9 @@ impl Text {
             cursor_currently_blinked_out: false,
             cursor_blink_timer,
 
-            window_dimensions: {
-                let mut map = HashMap::new();
-                map.insert(None, (800.0, 600.0)); // Default dimensions for single-window mode
-                map
-            },
-
             slot_for_text_box_mut: None,
 
-            registered_windows: Vec::new(),
+            windows: HashMap::new(),
 
             #[cfg(feature = "accessibility")]
             accesskit_id_to_text_handle_map: HashMap::with_capacity(50),
@@ -600,55 +598,38 @@ impl Text {
         self.shared.styles.remove(handle.i as usize);
     }
 
-    /// Register a window for multi-window rendering.
-    /// 
-    /// This tells the Text system to wait for all registered windows to call `prepare_all_for_window`
-    /// before clearing the `text_changed` flag.
-    pub fn register_window(&mut self, window_id: WindowId) {
-        self.registered_windows.push((window_id, false));
-    }
-
-    /// Unregister a window from multi-window rendering.
-    pub fn unregister_window(&mut self, window_id: WindowId) {
-        self.registered_windows.retain(|(id, _)| *id != window_id);
-    }
 
     /// Prepare text for a specific window in a multi-window setup.
     /// 
     /// Use this instead of `prepare_all` when you have multiple windows.
     pub fn prepare_all_for_window(&mut self, text_renderer: &mut TextRenderer, window_id: WindowId) {
-        self.prepare_all_internal(text_renderer, Some(window_id));
+        self.prepare_all_impl(text_renderer, Some(window_id));
     }
 
     pub fn prepare_all(&mut self, text_renderer: &mut TextRenderer) {
-        self.prepare_all_internal(text_renderer, None);
+        self.prepare_all_impl(text_renderer, None);
     }
 
-    fn prepare_all_internal(&mut self, text_renderer: &mut TextRenderer, window_id: Option<WindowId>) {
-        let is_first_window = if window_id.is_some() {
-            !self.registered_windows.iter().any(|(_, prepared)| *prepared)
-        } else {
-            true
-        };
+    fn prepare_all_impl(&mut self, text_renderer: &mut TextRenderer, window_id: Option<WindowId>) {
+        // todo: can we just assume that we registered the window and unwrap? What if the the user forgot to handle events?
+        let (width, height) = self.windows.get(&window_id).map(|info| info.dimensions).unwrap_or((800.0, 600.0));
+        text_renderer.update_resolution(width, height);
 
-        if is_first_window {
-            let (width, height) = self.window_dimensions.get(&window_id).copied().unwrap_or((800.0, 600.0));
-            text_renderer.update_resolution(width, height);
-            
-            if ! self.shared.text_changed && self.using_frame_based_visibility {
-                // see if any text boxes were just hidden
-                for (_i, (_text_edit, text_box)) in self.text_edits.iter_mut() {
-                    if text_box.last_frame_touched == self.current_visibility_frame - 1 {
-                        self.shared.text_changed = true;
-                    }
+        // todo: not sure if this works correctly with multi-window.           
+        if ! self.shared.text_changed && self.using_frame_based_visibility {
+            // see if any text boxes were just hidden
+            for (_i, (_text_edit, text_box)) in self.text_edits.iter_mut() {
+                if text_box.last_frame_touched == self.current_visibility_frame - 1 {
+                    self.shared.text_changed = true;
                 }
-                for (_i, text_box) in self.text_boxes.iter_mut() {
-                    if text_box.last_frame_touched == self.current_visibility_frame - 1 {
-                        self.shared.text_changed = true;
-                    }
+            }
+            for (_i, text_box) in self.text_boxes.iter_mut() {
+                if text_box.last_frame_touched == self.current_visibility_frame - 1 {
+                    self.shared.text_changed = true;
                 }
             }
         }
+        
 
         let (show_cursor, blink_changed) = self.cursor_blinked_out(true);
 
@@ -741,15 +722,14 @@ impl Text {
             }
         }
 
-        // Multi-window specific: Mark this window as prepared and handle flag clearing
         if let Some(window_id) = window_id {
             // Mark this window as prepared
-            if let Some((_, prepared)) = self.registered_windows.iter_mut().find(|(id, _)| *id == window_id) {
-                *prepared = true;
+            if let Some(window_info) = self.windows.get_mut(&Some(window_id)) {
+                window_info.prepared = true;
             }
 
-            // Only clear flags if all registered windows have been prepared
-            let all_prepared = self.registered_windows.iter().all(|(_, prepared)| *prepared);
+            // Only clear flags if all windows have been prepared
+            let all_prepared = self.windows.values().all(|info| info.prepared);
             if all_prepared {
                 self.clear_finished_scroll_animations();
 
@@ -760,8 +740,8 @@ impl Text {
                 self.using_frame_based_visibility = false;
 
                 // Reset all windows to unprepared for next frame
-                for (_, prepared) in &mut self.registered_windows {
-                    *prepared = false;
+                for window_info in self.windows.values_mut() {
+                    window_info.prepared = false;
                 }
 
                 // If animations are still running, we need to keep rerendering
@@ -836,7 +816,8 @@ impl Text {
         self.input_state.handle_event(event);
 
         if let WindowEvent::Resized(size) = event {
-            self.window_dimensions.insert(None, (size.width as f32, size.height as f32));
+            self.windows.entry(None).or_insert(WindowInfo { dimensions: (800.0, 600.0), prepared: false })
+                .dimensions = (size.width as f32, size.height as f32);
             self.shared.text_changed = true;
         }
 
@@ -891,7 +872,8 @@ impl Text {
         self.input_state.handle_event(event);
 
         if let WindowEvent::Resized(size) = event {
-            self.window_dimensions.insert(Some(window_id), (size.width as f32, size.height as f32));
+            self.windows.entry(Some(window_id)).or_insert(WindowInfo { dimensions: (800.0, 600.0), prepared: false })
+                .dimensions = (size.width as f32, size.height as f32);
             self.shared.text_changed = true;
         }
 
@@ -1594,16 +1576,6 @@ impl Text {
         self.focused
     }
 
-    /// Get the dimensions for a specific window (or None for single-window mode)
-    pub fn get_window_dimensions(&self, window_id: Option<WindowId>) -> Option<(f32, f32)> {
-        self.window_dimensions.get(&window_id).copied()
-    }
-
-    /// Set the dimensions for a specific window (or None for single-window mode)
-    pub fn set_window_dimensions(&mut self, window_id: Option<WindowId>, width: f32, height: f32) {
-        self.window_dimensions.insert(window_id, (width, height));
-        self.shared.text_changed = true;
-    }
     
     /// Get the AccessKit node ID of the currently focused text element.
     /// 
