@@ -601,15 +601,16 @@ impl Text {
     /// Prepare text for a specific window in a multi-window setup.
     /// 
     /// Use this instead of `prepare_all` when you have multiple windows.
-    pub fn prepare_all_for_window(&mut self, text_renderer: &mut TextRenderer, window_id: WindowId) {
-        self.prepare_all_impl(text_renderer, Some(window_id));
+    pub fn prepare_all_for_window(&mut self, text_renderer: &mut TextRenderer, window: &Window) {
+        self.prepare_all_impl(text_renderer, Some(window));
     }
 
     pub fn prepare_all(&mut self, text_renderer: &mut TextRenderer) {
         self.prepare_all_impl(text_renderer, None);
     }
 
-    fn prepare_all_impl(&mut self, text_renderer: &mut TextRenderer, window_id: Option<WindowId>) {
+    fn prepare_all_impl(&mut self, text_renderer: &mut TextRenderer, window: Option<&Window>) {
+        let window_id = window.map(|w| w.id());
         // Each window needs its own resolution set
         let (width, height) = self.windows.iter().find(|info| info.window_id == window_id)
             .map(|info| info.dimensions).unwrap_or((800.0, 600.0));
@@ -852,22 +853,27 @@ impl Text {
     /// 
     /// This is the multi-window version of [`Text::handle_event()`]. 
     /// Only text elements belonging to the specified window (or with no window restriction) will respond to events.
-    pub fn handle_event_for_window(&mut self, event: &WindowEvent, window: &Window, window_id: WindowId) {
+    pub fn handle_event_for_window(&mut self, event: &WindowEvent, window: &Window) {
+        
         self.shared.current_event_number += 1;
         
         self.input_state.handle_event(event);
 
         if let WindowEvent::Resized(size) = event {
-            if let Some(window_info) = self.windows.iter_mut().find(|info| info.window_id == Some(window_id)) {
+            if let Some(window_info) = self.windows.iter_mut().find(|info| info.window_id == Some(window.id())) {
                 window_info.dimensions = (size.width as f32, size.height as f32);
             } else {
                 self.windows.push(WindowInfo { 
-                    window_id: Some(window_id), 
+                    window_id: Some(window.id()), 
                     dimensions: (size.width as f32, size.height as f32), 
                     prepared: false 
                 });
             }
             self.shared.text_changed = true;
+        }
+
+        if let WindowEvent::CloseRequested | WindowEvent::Destroyed = event {
+            self.windows.retain(|info| info.window_id != Some(window.id()));
         }
 
         // update smooth scrolling animations
@@ -880,7 +886,7 @@ impl Text {
 
         if let WindowEvent::MouseInput { state, button, .. } = event {
             if state.is_pressed() && *button == MouseButton::Left {
-                let new_focus = self.find_topmost_at_pos_for_window(self.input_state.mouse.cursor_pos, window_id);
+                let new_focus = self.find_topmost_at_pos_for_window(self.input_state.mouse.cursor_pos, window.id());
                 if new_focus.is_some() {
                     self.shared.event_consumed = true;
                 }
@@ -890,7 +896,7 @@ impl Text {
         }
 
         if let WindowEvent::MouseWheel { .. } = event {
-            let hovered = self.find_topmost_at_pos_for_window(self.input_state.mouse.cursor_pos, window_id);
+            let hovered = self.find_topmost_at_pos_for_window(self.input_state.mouse.cursor_pos, window.id());
             if let Some(hovered_widget) = hovered {
                 self.shared.event_consumed = true;
                 self.handle_hovered_event(hovered_widget, event, window);
@@ -903,14 +909,14 @@ impl Text {
             let focused_belongs_to_window = match focused {
                 AnyBox::TextEdit(i) => {
                     if let Some((_text_edit, text_box)) = self.text_edits.get(i as usize) {
-                        text_box.window_id.is_none() || text_box.window_id == Some(window_id)
+                        text_box.window_id.is_none() || text_box.window_id == Some(window.id())
                     } else {
                         false
                     }
                 },
                 AnyBox::TextBox(i) => {
                     if let Some(text_box) = self.text_boxes.get(i as usize) {
-                        text_box.window_id.is_none() || text_box.window_id == Some(window_id)
+                        text_box.window_id.is_none() || text_box.window_id == Some(window.id())
                     } else {
                         false
                     }

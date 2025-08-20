@@ -99,11 +99,11 @@ impl winit::application::ApplicationHandler for Application {
         
         if let Some(window_index) = window_index {
             let window_state = &mut state.windows[window_index];
-            state.text.handle_event_for_window(&event, &window_state.window, window_id);
+            state.text.handle_event_for_window(&event, &window_state.window);
             match event {
                 WindowEvent::RedrawRequested => {
                     
-                    state.text.prepare_all_for_window(&mut window_state.text_renderer, window_id);
+                    state.text.prepare_all_for_window(&mut window_state.text_renderer, &window_state.window);
                     window_state.text_renderer.load_to_gpu(&state.device, &state.queue);
 
                     let surface_texture = window_state.surface.get_current_texture().unwrap();
