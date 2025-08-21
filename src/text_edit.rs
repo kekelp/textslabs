@@ -14,8 +14,7 @@ pub(crate) const CURSOR_WIDTH: f32 = 3.0;
 
 use crate::*;
 
-// I love partial borrows!
-macro_rules! clear_placeholder {
+macro_rules! clear_placeholder_partial_borrows {
     ($self:expr) => {
         if $self.inner.showing_placeholder {
             $self.text_box.text_mut().clear();
@@ -533,8 +532,7 @@ impl<'a> TextEditMut<'a> {
     }
 
     pub(crate) fn clear_placeholder(&mut self) {
-        // I love partial borrows!
-        clear_placeholder!(self);
+        clear_placeholder_partial_borrows!(self);
         self.text_box.shared.text_changed = true;
     }
 
@@ -773,7 +771,7 @@ impl<'a> TextEditMut<'a> {
         if let Some(op) = self.inner.history.undo(self.text_box.text_mut()) {
 
             if ! op.text_to_restore.is_empty() {
-                clear_placeholder!(self);
+                clear_placeholder_partial_borrows!(self);
             }
 
             self
@@ -803,7 +801,7 @@ impl<'a> TextEditMut<'a> {
                 .replace_range(op.range_to_clear.clone(), "");
 
             if ! op.text_to_restore.is_empty() {
-                clear_placeholder!(self);
+                clear_placeholder_partial_borrows!(self);
             }
 
             self
