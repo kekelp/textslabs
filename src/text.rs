@@ -1175,7 +1175,10 @@ impl Text {
                 let handle = TextEditHandle { i: i as u32 };
                 let mut text_edit = get_full_text_edit_partial_borrows(&mut self.text_edits, &mut self.shared, &handle);
 
-                text_edit.handle_event(event, window, &self.input_state);
+                if !text_edit.inner.disabled {
+                    text_edit.handle_event_editable(event, window, &self.input_state);
+                }
+
                 if self.shared.text_changed {
                     self.reset_cursor_blink();
                 }

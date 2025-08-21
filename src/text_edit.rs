@@ -181,13 +181,6 @@ impl ScrollAnimation {
 }
 
 impl<'a> TextEditMut<'a> {
-    // todo remove this function
-    pub(crate) fn handle_event(&mut self, event: &WindowEvent, window: &Window, input_state: &TextInputState) {
-        if !self.inner.disabled {
-            self.handle_event_editable(event, window, input_state);
-        }
-    }
-
     pub fn set_single_line(&mut self, single_line: bool) {
         if self.inner.single_line != single_line {
             self.inner.single_line = single_line;

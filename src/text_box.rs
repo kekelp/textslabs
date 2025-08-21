@@ -1041,7 +1041,6 @@ impl<'a> Ext1 for TextBox<'a> {
             cursor_pos.1 as f64 - self.inner.top,
         );
 
-        // todo: does this need to refresh layout? if yes, also need to set the stupid thread local style
         assert!(!self.inner.needs_relayout);
         let hit = offset.0 > -X_TOLERANCE
             && offset.0 < self.inner.layout.full_width() as f64 + X_TOLERANCE
