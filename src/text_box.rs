@@ -360,7 +360,7 @@ impl<'a> TextBoxMut<'a> {
         let node = self.accesskit_node();
         let (left, top) = self.pos();
         
-        push_accesskit_update_text_box_free_function(
+        push_accesskit_update_text_box_partial_borrows(
             accesskit_id,
             node,
             &mut self.inner,
@@ -377,7 +377,7 @@ impl<'a> TextBoxMut<'a> {
         let node = self.accesskit_node();
         let (left, top) = self.pos();
         
-        push_accesskit_update_text_box_free_function(
+        push_accesskit_update_text_box_partial_borrows(
             accesskit_id,
             node,
             &mut self.inner,
@@ -1155,7 +1155,7 @@ impl Ext1 for TextBoxInner {
 }
 
 #[cfg(feature = "accessibility")]
-fn push_accesskit_update_text_box_free_function(
+fn push_accesskit_update_text_box_partial_borrows(
     accesskit_id: Option<accesskit::NodeId>,
     mut node: accesskit::Node,
     inner: &mut TextBoxInner,

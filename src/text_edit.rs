@@ -862,7 +862,7 @@ impl<'a> TextEditMut<'a> {
         let node = self.accesskit_node();
         let (left, top) = self.pos();
         
-        push_accesskit_update_textedit_free_function(
+        push_accesskit_update_textedit_partial_borrows(
             accesskit_id,
             node,
             &mut self.text_box.inner,
@@ -879,7 +879,7 @@ impl<'a> TextEditMut<'a> {
         let node = self.accesskit_node();
         let (left, top) = self.pos();
         
-        push_accesskit_update_textedit_free_function(
+        push_accesskit_update_textedit_partial_borrows(
             accesskit_id,
             node,
             &mut self.text_box.inner,
@@ -1541,9 +1541,8 @@ pub(crate) fn should_use_animation(delta: &winit::event::MouseScrollDelta, verti
     }
 }
 
-// Partial borrows moment.
 #[cfg(feature = "accessibility")]
-fn push_accesskit_update_textedit_free_function(
+fn push_accesskit_update_textedit_partial_borrows(
     accesskit_id: Option<accesskit::NodeId>,
     mut node: accesskit::Node,
     inner: &mut text_box::TextBoxInner,

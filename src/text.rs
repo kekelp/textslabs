@@ -690,7 +690,7 @@ impl Text {
             let current_frame = self.current_visibility_frame;
             if self.shared.text_changed {
                 for (_, text_edit) in self.text_edits.iter_mut() {
-                    let mut text_edit = get_full_text_edit_free_function_but_for_iterating((&mut text_edit.0, &mut text_edit.1), &mut self.shared);
+                    let mut text_edit = get_full_text_edit_partial_borrows_but_for_iterating((&mut text_edit.0, &mut text_edit.1), &mut self.shared);
                     if !text_edit.hidden() && text_edit.text_box.inner.last_frame_touched == current_frame {
                         // For multi-window, only render if this text edit belongs to this window (or has no window restriction)
                         let should_render = if let Some(window_id) = window_id {
@@ -706,7 +706,7 @@ impl Text {
                 }
 
                 for (_, text_box) in self.text_boxes.iter_mut() {
-                    let mut text_box = get_full_text_box_free_function_but_for_iterating(text_box, &mut self.shared);
+                    let mut text_box = get_full_text_box_partial_borrows_but_for_iterating(text_box, &mut self.shared);
                     if !text_box.hidden() && text_box.inner.last_frame_touched == current_frame {
                         // For multi-window: Only render if this text box belongs to this window (or has no window restriction)
                         let should_render = if let Some(window_id) = window_id {
@@ -976,12 +976,12 @@ impl Text {
         return match i {
             AnyBox::TextEdit(i) => {
                 let handle = TextEditHandle { i: i as u32 };
-                let text_edit = get_full_text_edit_free_function(&mut self.text_edits, &mut self.shared, &handle);
+                let text_edit = get_full_text_edit_partial_borrows(&mut self.text_edits, &mut self.shared, &handle);
                 text_edit.accesskit_id()
             },
             AnyBox::TextBox(i) => {
                 let handle = TextBoxHandle { i: i as u32 };
-                let text_box = get_full_text_box_free_function(&mut self.text_boxes, &mut self.shared, &handle);
+                let text_box = get_full_text_box_partial_borrows(&mut self.text_boxes, &mut self.shared, &handle);
                 text_box.accesskit_id()
             },
         }
@@ -1173,7 +1173,7 @@ impl Text {
         match focused {
             AnyBox::TextEdit(i) => {
                 let handle = TextEditHandle { i: i as u32 };
-                let mut text_edit = get_full_text_edit_free_function(&mut self.text_edits, &mut self.shared, &handle);
+                let mut text_edit = get_full_text_edit_partial_borrows(&mut self.text_edits, &mut self.shared, &handle);
 
                 text_edit.handle_event(event, window, &self.input_state);
                 if self.shared.text_changed {
@@ -1189,7 +1189,7 @@ impl Text {
             },
             AnyBox::TextBox(i) => {
                 let handle = TextBoxHandle { i: i as u32 };
-                let mut text_box = get_full_text_box_free_function(&mut self.text_boxes, &mut self.shared, &handle);
+                let mut text_box = get_full_text_box_partial_borrows(&mut self.text_boxes, &mut self.shared, &handle);
 
                 text_box.handle_event(event, window, &self.input_state);
                 if self.shared.decorations_changed {
@@ -1293,11 +1293,11 @@ impl Text {
     }
 
     pub(crate) fn get_full_text_box(&mut self, i: &TextBoxHandle) -> TextBoxMut<'_> {
-        get_full_text_box_free_function(&mut self.text_boxes, &mut self.shared, i)
+        get_full_text_box_partial_borrows(&mut self.text_boxes, &mut self.shared, i)
     }
 
     pub(crate) fn get_full_text_edit(&mut self, i: &TextEditHandle) -> TextEditMut<'_> {
-        get_full_text_edit_free_function(&mut self.text_edits, &mut self.shared, i)
+        get_full_text_edit_partial_borrows(&mut self.text_edits, &mut self.shared, i)
     }
 
     /// Add a scroll animation for a text edit
@@ -1680,8 +1680,7 @@ impl Text {
     }
 }
 
-// I love partial borrows!
-pub(crate) fn get_full_text_box_free_function<'a>(
+pub(crate) fn get_full_text_box_partial_borrows<'a>(
     text_boxes: &'a mut Slab<TextBoxInner>,
     shared: &'a mut Shared,
     i: &TextBoxHandle,
@@ -1690,7 +1689,7 @@ pub(crate) fn get_full_text_box_free_function<'a>(
     TextBoxMut { inner: text_box_inner, shared }
 }
 
-pub(crate) fn get_full_text_edit_free_function<'a>(
+pub(crate) fn get_full_text_edit_partial_borrows<'a>(
     text_edits: &'a mut Slab<(TextEditInner, TextBoxInner)>,
     shared: &'a mut Shared,
     i: &TextEditHandle,
@@ -1700,7 +1699,7 @@ pub(crate) fn get_full_text_edit_free_function<'a>(
     TextEditMut { inner: text_edit_inner, text_box }
 }
 
-pub(crate) fn get_full_text_edit_free_function_but_for_iterating<'a>(
+pub(crate) fn get_full_text_edit_partial_borrows_but_for_iterating<'a>(
     text_edit: (&'a mut TextEditInner, &'a mut TextBoxInner),
     shared: &'a mut Shared,
 ) -> TextEditMut<'a> {
@@ -1709,7 +1708,7 @@ pub(crate) fn get_full_text_edit_free_function_but_for_iterating<'a>(
     TextEditMut { inner: text_edit_inner, text_box }
 }
 
-pub(crate) fn get_full_text_box_free_function_but_for_iterating<'a>(
+pub(crate) fn get_full_text_box_partial_borrows_but_for_iterating<'a>(
     text_box_inner: &'a mut TextBoxInner,
     shared: &'a mut Shared,
 ) -> TextBoxMut<'a> {
