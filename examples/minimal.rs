@@ -81,8 +81,7 @@ impl winit::application::ApplicationHandler for Application {
         match event {
             WindowEvent::CloseRequested => event_loop.exit(),
             WindowEvent::Resized(size) => {
-                state.surface_config.width = size.width;
-                state.surface_config.height = size.height;
+                (state.surface_config.width, state.surface_config.height) = (size.width, size.height);
                 state.surface.configure(&state.device, &state.surface_config);
             }
             WindowEvent::RedrawRequested => {
