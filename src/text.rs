@@ -1056,10 +1056,10 @@ impl Text {
 
     /// Handle window events with a pre-determined topmost text box.
     /// 
-    /// Use this for complex z-ordering scenarios where text boxs might be occluded by other objects.
+    /// Use this in cases where text boxes might be occluded by other objects.
     /// Pass `Some(text_box_id)` if a text box should receive the event, or `None` if it's occluded.
     /// 
-    /// If the text box is occluded, this function should still be called with `None`, so that text boxes can defocus.
+    /// If the text box is occluded, this function should still be called with `None`, so that other text boxes can defocus.
     pub fn handle_event_with_topmost(&mut self, event: &WindowEvent, window: &Window, topmost_text_box: Option<AnyBox>) {        
         self.input_state.handle_event(event);
 
