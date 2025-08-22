@@ -222,32 +222,26 @@ impl MouseState {
     }
 }
 
-/// Enum that can represent any type of text box (text box or text edit).
+/// A non-owning reference to either a `TextBox` or a `TextEditBox`.
 /// 
-///[`TextBoxHandle`] and [`TextEditHandle`] can be converted into `AnyBox`: `handle.keynto()`.
+///[`TextBoxHandle`] and [`TextEditHandle`] can be converted into `AnyBox`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AnyBox {
     TextEdit(DefaultKey),
     TextBox(DefaultKey),
 }
 
-// todo: you can use this to clone a handle basically
 pub trait IntoAnyBox {
-    fn into_anybox(&self) -> AnyBox;
+    fn get_anybox(&self) -> AnyBox;
 }
 impl IntoAnyBox for TextBoxHandle {
-    fn into_anybox(&self) -> AnyBox {
+    fn get_anybox(&self) -> AnyBox {
         AnyBox::TextBox(self.key)
     }
 }
 impl IntoAnyBox for TextEditHandle {
-    fn into_anybox(&self) -> AnyBox {
+    fn get_anybox(&self) -> AnyBox {
         AnyBox::TextEdit(self.key)
-    }
-}
-impl IntoAnyBox for AnyBox {
-    fn into_anybox(&self) -> AnyBox {
-        self.clone()
     }
 }
 
@@ -1584,7 +1578,7 @@ impl Text {
     }
     
     pub fn set_focus<T: IntoAnyBox>(&mut self, handle: &T) {
-        let handle: AnyBox = (*handle).into_anybox();
+        let handle: AnyBox = (*handle).get_anybox();
         self.refocus(Some(handle));
     }
     
