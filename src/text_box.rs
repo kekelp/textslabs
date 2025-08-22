@@ -13,6 +13,7 @@ use parley::{Affinity, Alignment, Selection};
 
 use crate::*;
 use smallvec::SmallVec;
+use slotmap::DefaultKey;
 
 const X_TOLERANCE: f64 = 35.0;
 
@@ -63,6 +64,8 @@ pub(crate) struct TextBoxInner {
 pub struct TextBoxMut<'a> {
     pub(crate) inner: &'a mut TextBoxInner,
     pub(crate) shared: &'a mut Shared,
+    // This key is only useful for set_focus. Yikes!
+    pub(crate) key: DefaultKey,
 }
 
 /// A struct that refers to a text box stored inside a [`Text`] struct.
@@ -1020,6 +1023,11 @@ impl<'a> TextBoxMut<'a> {
         ) {
             self.set_selection(selection);
         }
+    }
+
+    /// Set focus to this text box.
+    pub fn set_focus(&mut self) {
+        self.shared.focused = Some(crate::AnyBox::TextBox(self.key));
     }
 }
 

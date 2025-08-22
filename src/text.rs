@@ -731,8 +731,8 @@ impl Text {
         } else {
             let current_frame = self.current_visibility_frame;
             if self.shared.text_changed {
-                for (_, text_edit) in self.text_edits.iter_mut() {
-                    let mut text_edit = get_full_text_edit_partial_borrows_but_for_iterating((&mut text_edit.0, &mut text_edit.1), &mut self.shared);
+                for (key, text_edit) in self.text_edits.iter_mut() {
+                    let mut text_edit = get_full_text_edit_partial_borrows_but_for_iterating((&mut text_edit.0, &mut text_edit.1), &mut self.shared, key);
                     if !text_edit.hidden() && text_edit.text_box.inner.last_frame_touched == current_frame {
                         // For multi-window, only render if this text edit belongs to this window (or has no window restriction)
                         let should_render = if let Some(window_id) = window_id {
@@ -747,8 +747,8 @@ impl Text {
                     }
                 }
 
-                for (_, text_box) in self.text_boxes.iter_mut() {
-                    let mut text_box = get_full_text_box_partial_borrows_but_for_iterating(text_box, &mut self.shared);
+                for (key, text_box) in self.text_boxes.iter_mut() {
+                    let mut text_box = get_full_text_box_partial_borrows_but_for_iterating(text_box, &mut self.shared, key);
                     if !text_box.hidden() && text_box.inner.last_frame_touched == current_frame {
                         // For multi-window: Only render if this text box belongs to this window (or has no window restriction)
                         let should_render = if let Some(window_id) = window_id {
@@ -1293,7 +1293,7 @@ impl Text {
     /// This is a fast lookup operation that does not require any hashing.
     pub fn get_text_box_mut(&mut self, handle: &TextBoxHandle) -> TextBoxMut {
         let text_box_inner = &mut self.text_boxes[handle.key];
-        TextBoxMut { inner: text_box_inner, shared: &mut self.shared }
+        TextBoxMut { inner: text_box_inner, shared: &mut self.shared, key: handle.key }
     }
 
     /// If we did it this way, we could return a real reference to the fake struct, instead of the fake struct. It would be a much better interface. We could get rid of the TextBox/TextBoxMut split and use normal mutability of reference, just like if we were returning a real reference to a real inner struct.
@@ -1313,6 +1313,7 @@ impl Text {
             self.slot_for_text_box_mut = Some(TextBoxMut {
                 inner: std::mem::transmute(text_box_inner),
                 shared: std::mem::transmute(&mut self.shared),
+                key: handle.key,
             });
 
             // Transmute the TextBoxMut in the slot, which is 'static, to have the lifetime of 'self.
@@ -1350,7 +1351,7 @@ impl Text {
     /// This is a fast lookup operation that does not require any hashing.
     pub fn try_get_text_box_mut(&mut self, handle: &ClonedTextBoxHandle) -> Option<TextBoxMut> {
         let text_box_inner = self.text_boxes.get_mut(handle.key)?;
-        Some(TextBoxMut { inner: text_box_inner, shared: &mut self.shared })
+        Some(TextBoxMut { inner: text_box_inner, shared: &mut self.shared, key: handle.key })
     }
 
     pub(crate) fn get_full_text_box(&mut self, i: &TextBoxHandle) -> TextBoxMut<'_> {
@@ -1752,7 +1753,7 @@ pub(crate) fn get_full_text_box_partial_borrows<'a>(
     i: &TextBoxHandle,
 ) -> TextBoxMut<'a> {
     let text_box_inner = &mut text_boxes[i.key];
-    TextBoxMut { inner: text_box_inner, shared }
+    TextBoxMut { inner: text_box_inner, shared, key: i.key }
 }
 
 pub(crate) fn get_full_text_edit_partial_borrows<'a>(
@@ -1761,24 +1762,26 @@ pub(crate) fn get_full_text_edit_partial_borrows<'a>(
     i: &TextEditHandle,
 ) -> TextEditMut<'a> {
     let (text_edit_inner, text_box_inner) = text_edits.get_mut(i.key).unwrap();
-    let text_box = TextBoxMut { inner: text_box_inner, shared };
+    let text_box = TextBoxMut { inner: text_box_inner, shared, key: i.key };
     TextEditMut { inner: text_edit_inner, text_box }
 }
 
 pub(crate) fn get_full_text_edit_partial_borrows_but_for_iterating<'a>(
     text_edit: (&'a mut TextEditInner, &'a mut TextBoxInner),
     shared: &'a mut Shared,
+    key: DefaultKey,
 ) -> TextEditMut<'a> {
     let (text_edit_inner, text_box_inner) = text_edit;
-    let text_box = TextBoxMut { inner: text_box_inner, shared };
+    let text_box = TextBoxMut { inner: text_box_inner, shared, key };
     TextEditMut { inner: text_edit_inner, text_box }
 }
 
 pub(crate) fn get_full_text_box_partial_borrows_but_for_iterating<'a>(
     text_box_inner: &'a mut TextBoxInner,
     shared: &'a mut Shared,
+    key: DefaultKey,
 ) -> TextBoxMut<'a> {
-    TextBoxMut { inner: text_box_inner, shared }
+    TextBoxMut { inner: text_box_inner, shared, key }
 }
 
 /// Move quads in atlas pages to reflect new scroll position

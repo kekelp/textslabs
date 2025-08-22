@@ -1276,13 +1276,11 @@ impl_for_textedit_and_texteditmut! {
     }
 }
 
-/// A text edit with access to both inner data and style.
+/// A struct that refers to a text edit box stored inside a [`Text`] struct.
 /// 
-/// This struct provides a convenient interface for working with text edits
-/// while having access to the style for operations like layout refresh.
+/// This struct can't be created directly. Instead, use [`Text::add_text_edit_box()`] to create one within [`Text`] and get a [`TextEditHandle`] back.
 /// 
-/// Instances of this struct are returned by [`Text::get_text_edit()`] and [`Text::get_text_edit_mut()`].
-/// It provides methods to access and modify the text edit's content, styling, and positioning.
+/// Then, the handle can be used to get a `TextEditMut` with [`Text::get_text_edit_mut()`].
 pub struct TextEditMut<'a> {
     pub(crate) inner: &'a mut TextEditInner,
     pub(crate) text_box: TextBoxMut<'a>,
@@ -1516,6 +1514,11 @@ impl<'a> TextEditMut<'a> {
                 winit::dpi::PhysicalSize::new(area.width(), area.height()),
             );
         }
+    }
+
+    /// Set focus to this text edit.
+    pub fn set_focus(&mut self) {
+        self.text_box.shared.focused = Some(crate::AnyBox::TextEdit(self.text_box.key));
     }
 }
 
