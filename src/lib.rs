@@ -15,7 +15,7 @@
 //! 
 //! ```rust,no_run
 //! use textslabs::*;
-//! let mut text = Text::new_without_blink_wakeup();
+//! let mut text = Text::new_without_auto_wakeup();
 //! 
 //! // Add text boxes and get handles
 //! let handle = text.add_text_box("Hello", (10.0, 10.0), (200.0, 50.0), 0.0);
