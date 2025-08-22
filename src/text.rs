@@ -42,7 +42,6 @@ pub struct Text {
 
     pub(crate) input_state: TextInputState,
 
-    pub(crate) focused: Option<AnyBox>,
     pub(crate) mouse_hit_stack: Vec<(AnyBox, f32)>,
     
     pub(crate) using_frame_based_visibility: bool,
@@ -68,12 +67,13 @@ pub struct Text {
 /// Data that TextBoxMut and similar things need to have a reference to. Kept all together so that TextBoxMut and similar things can hold a single pointer to all of it.
 /// 
 /// A cooler way to do this would be to make the TextBoxMut be TextBoxMut { i: u32, text: &mut Text }. So you have access to the whole Text struct unconditionally, and you don't have to separate things this way. And to get the actual text box, you do self.text.text_boxes[i] every time. But we're trying this way this time
-pub struct Shared {
+pub struct Shared {    
     pub(crate) styles: Slab<StyleInner>,
     pub(crate) text_changed: bool,
     pub(crate) decorations_changed: bool,
     pub(crate) scrolled: bool,
     pub(crate) event_consumed: bool,
+    pub(crate) focused: Option<AnyBox>,
     #[cfg(feature = "accessibility")]
     pub(crate) accesskit_tree_update: TreeUpdate,
     #[cfg(feature = "accessibility")]
@@ -316,7 +316,6 @@ impl Text {
             text_edits: SlotMap::with_capacity(10),
             style_version_id_counter: 0,
             input_state: TextInputState::new(),
-            focused: None,
             mouse_hit_stack: Vec::with_capacity(6),
             decorations_changed: true,
             scrolled_moved_indices: Vec::new(),
@@ -340,6 +339,7 @@ impl Text {
                 decorations_changed: true,
                 scrolled: true,
                 event_consumed: true,
+                focused: None,
                 #[cfg(feature = "accessibility")]
                 accesskit_focus_tracker: FocusChange::new(),
                 current_event_number: 1,
@@ -551,7 +551,7 @@ impl Text {
 
     pub fn remove_old_nodes(&mut self) {
         // Clear focus if the focused text box will be removed
-        if let Some(focused) = self.focused {
+        if let Some(focused) = self.shared.focused {
             let should_clear_focus = match focused {
                 AnyBox::TextBox(i) => {
                     if let Some(text_box) = self.text_boxes.get(i) {
@@ -570,7 +570,7 @@ impl Text {
             };
             
             if should_clear_focus {
-                self.focused = None;
+                self.shared.focused = None;
             }
         }
 
@@ -590,9 +590,9 @@ impl Text {
     /// `handle` is the handle that was returned when first creating the text box with [`Text::add_text_box()`].
     pub fn remove_text_box(&mut self, handle: TextBoxHandle) {
         self.shared.text_changed = true;
-        if let Some(AnyBox::TextBox(key)) = self.focused {
+        if let Some(AnyBox::TextBox(key)) = self.shared.focused {
             if key == handle.key {
-                self.focused = None;
+                self.shared.focused = None;
             }
         }
         
@@ -614,9 +614,9 @@ impl Text {
     /// `handle` is the handle that was returned when first creating the text edit with [`Text::add_text_edit()`] or similar functions.
     pub fn remove_text_edit(&mut self, handle: TextEditHandle) {
         self.shared.text_changed = true;
-        if let Some(AnyBox::TextEdit(i)) = self.focused {
+        if let Some(AnyBox::TextEdit(i)) = self.shared.focused {
             if i == handle.key {
-                self.focused = None;
+                self.shared.focused = None;
             }
         }
         
@@ -683,7 +683,7 @@ impl Text {
         }
 
         if self.decorations_changed || self.shared.text_changed  || !self.scrolled_moved_indices.is_empty() || blink_changed {
-            if let Some(focused) = self.focused {
+            if let Some(focused) = self.shared.focused {
                 // For multi-window, only prepare decorations if the focused element belongs to this window
                 let focused_belongs_to_window = if let Some(window_id) = window_id {
                     match focused {
@@ -878,7 +878,7 @@ impl Text {
             return;
         }
 
-        if let Some(focused) = self.focused {
+        if let Some(focused) = self.shared.focused {
             self.shared.event_consumed = true;
             self.handle_focused_event(focused, event, window);
 
@@ -946,7 +946,7 @@ impl Text {
             return;
         }
 
-        if let Some(focused) = self.focused {
+        if let Some(focused) = self.shared.focused {
             // Only handle the event if the focused element belongs to this window
             let focused_belongs_to_window = match focused {
                 AnyBox::TextEdit(i) => {
@@ -1088,7 +1088,7 @@ impl Text {
             }
         }
 
-        if let Some(focused) = self.focused {
+        if let Some(focused) = self.shared.focused {
             self.shared.event_consumed = true;
             self.handle_focused_event(focused, event, window);
         }
@@ -1123,24 +1123,24 @@ impl Text {
     }
 
     fn refocus(&mut self, new_focus: Option<AnyBox>) {
-        let focus_changed = new_focus != self.focused;
+        let focus_changed = new_focus != self.shared.focused;
         
         if focus_changed {
-            if let Some(old_focus) = self.focused {
+            if let Some(old_focus) = self.shared.focused {
                 self.remove_focus(old_focus);
             }
 
             #[cfg(feature = "accessibility")]
             {
                 let new_focus_ak_id = new_focus.and_then(|new_focus| self.get_accesskit_id(new_focus));
-                let old_focus_ak_id = self.focused.and_then(|old_focus| self.get_accesskit_id(old_focus));
+                let old_focus_ak_id = self.shared.focused.and_then(|old_focus| self.get_accesskit_id(old_focus));
                 self.shared.accesskit_focus_tracker.new_focus = new_focus_ak_id;
                 self.shared.accesskit_focus_tracker.old_focus = old_focus_ak_id;
                 self.shared.accesskit_focus_tracker.event_number = self.shared.current_event_number;
             }
         }
 
-        self.focused = new_focus;
+        self.shared.focused = new_focus;
         
         if focus_changed {
             // todo: could skip some rerenders here if the old focus wasn't editable and had collapsed selection.
@@ -1155,7 +1155,7 @@ impl Text {
         
         if let Some(last_info) = self.input_state.mouse.last_click_info.take() {
             if now.duration_since(last_info.time).as_secs_f64() < MULTICLICK_DELAY 
-                && last_info.focused == self.focused {
+                && last_info.focused == self.shared.focused {
                 let dx = current_pos.0 - last_info.pos.0;
                 let dy = current_pos.1 - last_info.pos.1;
                 let distance_squared = dx * dx + dy * dy;
@@ -1174,7 +1174,7 @@ impl Text {
         self.input_state.mouse.last_click_info = Some(LastClickInfo {
             time: now,
             pos: current_pos,
-            focused: self.focused,
+            focused: self.shared.focused,
         });
     }
     
@@ -1254,10 +1254,10 @@ impl Text {
         let text_edit_inner = &mut self.text_edits[handle.key].0;
         text_edit_inner.disabled = disabled;
         if disabled {
-            if let Some(AnyBox::TextEdit(e)) = self.focused {
+            if let Some(AnyBox::TextEdit(e)) = self.shared.focused {
                 if e == handle.key {
                     self.get_full_text_edit(&handle).text_box.reset_selection();
-                    self.focused = None;
+                    self.shared.focused = None;
                 }
             }
         }
@@ -1554,7 +1554,7 @@ impl Text {
 
     // If the cursor needs to be blinking, reset it. Otherwise, stop it.
     fn reset_cursor_blink(&mut self) {
-        if let Some(AnyBox::TextEdit(i)) = self.focused {
+        if let Some(AnyBox::TextEdit(i)) = self.shared.focused {
             let handle = TextEditHandle { key: i };
             let text_edit = self.get_full_text_edit(&handle);
             if text_edit.text_box.selection().is_collapsed() {
@@ -1576,12 +1576,17 @@ impl Text {
         }
 
     }
-    
-    pub fn set_focus<T: IntoAnyBox>(&mut self, handle: &T) {
+
+    // todo: would be a lot nicer to have these as methods on TextBoxMut and TextEditMut, but is it worth carrying the key around just for this?
+    pub fn set_focus_to_text_box(&mut self, handle: &TextBoxHandle) {
         let handle: AnyBox = (*handle).get_anybox();
         self.refocus(Some(handle));
     }
-    
+    pub fn set_focus_to_text_edit(&mut self, handle: &TextEditHandle) {
+        let handle: AnyBox = (*handle).get_anybox();
+        self.refocus(Some(handle));
+    }
+
     /// Update the AccessKit node ID mapping for a text box
     #[cfg(feature = "accessibility")]
     pub fn set_text_box_accesskit_id(&mut self, handle: &TextBoxHandle, accesskit_id: NodeId) {
@@ -1633,7 +1638,7 @@ impl Text {
     }
 
     pub fn focus(&self) -> Option<AnyBox> {
-        self.focused
+        self.shared.focused
     }
 
     
@@ -1642,7 +1647,7 @@ impl Text {
     /// Returns `None` if no element is focused or if the focused element doesn't have an AccessKit ID.
     #[cfg(feature = "accessibility")]
     pub fn focused_accesskit_id(&self) -> Option<NodeId> {
-        if let Some(focused) = self.focused {
+        if let Some(focused) = self.shared.focused {
             match focused {
                 AnyBox::TextEdit(i) => {
                     if let Some((_text_edit, text_box)) = self.text_edits.get(i) {
