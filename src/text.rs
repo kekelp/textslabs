@@ -2,6 +2,7 @@ use crate::*;
 #[cfg(feature = "accessibility")]
 use accesskit::{NodeId, TreeUpdate};
 use slab::Slab;
+use slotmap::{SlotMap, DefaultKey};
 #[cfg(feature = "accessibility")]
 use std::collections::HashMap;
 use std::sync::mpsc;
@@ -32,7 +33,7 @@ pub(crate) struct StyleInner {
 /// 
 /// For rendering, a [`TextRenderer`] is also needed.
 pub struct Text {
-    pub(crate) text_boxes: Slab<TextBoxInner>,
+    pub(crate) text_boxes: SlotMap<DefaultKey, TextBoxInner>,
     pub(crate) text_edits: Slab<(TextEditInner, TextBoxInner)>,
 
     pub(crate) shared: Shared,
@@ -112,7 +113,27 @@ pub struct TextEditHandle {
 /// Use with [`Text::get_text_box()`] to get a reference to the corresponding [`TextBox`].
 #[derive(Debug)]
 pub struct TextBoxHandle {
-    pub(crate) i: u32,
+    pub(crate) key: DefaultKey,
+}
+
+/// Cloneable handle for a text box.
+/// 
+/// Unlike [`TextBoxHandle`], this can be cloned multiple times but has fallible access methods
+/// since the text box it refers to might have been removed.
+/// 
+/// Use with [`Text::try_get_text_box()`] to get an optional reference to the corresponding [`TextBox`].
+#[derive(Debug, Clone, Copy)]
+pub struct ClonedTextBoxHandle {
+    pub(crate) key: DefaultKey,
+}
+
+impl TextBoxHandle {
+    /// Convert this owned handle to a cloneable handle.
+    /// 
+    /// The returned handle can be cloned multiple times but requires fallible access methods.
+    pub fn to_cloned(self) -> ClonedTextBoxHandle {
+        ClonedTextBoxHandle { key: self.key }
+    }
 }
 
 
@@ -187,7 +208,7 @@ impl MouseState {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AnyBox {
     TextEdit(u32),
-    TextBox(u32),
+    TextBox(DefaultKey),
 }
 
 // todo: you can use this to clone a handle basically
@@ -196,7 +217,7 @@ pub trait IntoAnyBox {
 }
 impl IntoAnyBox for TextBoxHandle {
     fn into_anybox(&self) -> AnyBox {
-        AnyBox::TextBox(self.i)
+        AnyBox::TextBox(self.key)
     }
 }
 impl IntoAnyBox for TextEditHandle {
@@ -277,7 +298,7 @@ impl Text {
         let cursor_blink_timer = window.map(|window| CursorBlinkWaker::new(Arc::downgrade(&window)));
 
         Self {
-            text_boxes: Slab::with_capacity(10),
+            text_boxes: SlotMap::with_capacity(10),
             text_edits: Slab::with_capacity(10),
             style_version_id_counter: 0,
             input_state: TextInputState::new(),
@@ -338,9 +359,9 @@ impl Text {
         let mut text_box = TextBoxInner::new(text, pos, size, depth);
         text_box.last_frame_touched = self.current_visibility_frame;
         text_box.style_version = self.shared.styles[text_box.style.i as usize].version;
-        let i = self.text_boxes.insert(text_box) as u32;
+        let key = self.text_boxes.insert(text_box);
         self.shared.text_changed = true;
-        TextBoxHandle { i }
+        TextBoxHandle { key }
     }
 
     /// Add a text edit and return a handle.
@@ -368,9 +389,9 @@ impl Text {
         text_box.last_frame_touched = self.current_visibility_frame;
         text_box.style_version = self.shared.styles[text_box.style.i as usize].version;
         text_box.window_id = Some(window_id);
-        let i = self.text_boxes.insert(text_box) as u32;
+        let key = self.text_boxes.insert(text_box);
         self.shared.text_changed = true;
-        TextBoxHandle { i }
+        TextBoxHandle { key }
     }
 
     /// Add a text edit for a specific window and return a handle.
@@ -480,7 +501,7 @@ impl Text {
     /// 
     /// Part of the "declarative" interface.  
     pub fn refresh_text_box(&mut self, handle: &TextBoxHandle) {
-        if let Some(text_box) = self.text_boxes.get_mut(handle.i as usize) {
+        if let Some(text_box) = self.text_boxes.get_mut(handle.key) {
             text_box.last_frame_touched = self.current_visibility_frame;
         }
     }
@@ -512,7 +533,7 @@ impl Text {
         if let Some(focused) = self.focused {
             let should_clear_focus = match focused {
                 AnyBox::TextBox(i) => {
-                    if let Some(text_box) = self.text_boxes.get(i as usize) {
+                    if let Some(text_box) = self.text_boxes.get(i) {
                         text_box.last_frame_touched != self.current_visibility_frame && !text_box.can_hide
                     } else {
                         true // Text box doesn't exist
@@ -548,21 +569,21 @@ impl Text {
     /// `handle` is the handle that was returned when first creating the text box with [`Text::add_text_box()`].
     pub fn remove_text_box(&mut self, handle: TextBoxHandle) {
         self.shared.text_changed = true;
-        if let Some(AnyBox::TextBox(i)) = self.focused {
-            if i == handle.i {
+        if let Some(AnyBox::TextBox(key)) = self.focused {
+            if key == handle.key {
                 self.focused = None;
             }
         }
         
         // Remove from accessibility mapping if it exists
         #[cfg(feature = "accessibility")]
-        if let Some(text_box) = self.text_boxes.get(handle.i as usize) {
+        if let Some(text_box) = self.text_boxes.get(handle.key) {
             if let Some(accesskit_id) = text_box.accesskit_id {
                 self.accesskit_id_to_text_handle_map.remove(&accesskit_id);
             }
         }
         
-        self.text_boxes.remove(handle.i as usize);
+        self.text_boxes.remove(handle.key);
         std::mem::forget(handle);
     }
 
@@ -653,7 +674,7 @@ impl Text {
                             }
                         },
                         AnyBox::TextBox(i) => {
-                            if let Some(text_box) = self.text_boxes.get(i as usize) {
+                            if let Some(text_box) = self.text_boxes.get(i) {
                                 text_box.window_id.is_none() || text_box.window_id == Some(window_id)
                             } else {
                                 false
@@ -672,7 +693,7 @@ impl Text {
                             text_renderer.prepare_text_box_decorations(&text_edit.text_box, show_cursor);
                         },
                         AnyBox::TextBox(i) => {
-                            let handle = TextBoxHandle { i: i as u32 };
+                            let handle = TextBoxHandle { key: i };
                             let text_box = self.get_full_text_box(&handle);
                             text_renderer.prepare_text_box_decorations(&text_box, false);
                         },
@@ -760,7 +781,7 @@ impl Text {
                     }
                 },
                 AnyBox::TextBox(i) => {
-                    if let Some(text_box_inner) = self.text_boxes.get_mut(*i as usize) {
+                    if let Some(text_box_inner) = self.text_boxes.get_mut(*i) {
                         move_quads_for_scroll(text_renderer, &mut text_box_inner.quad_storage, text_box_inner.scroll_offset);
                     }
                 },
@@ -915,7 +936,7 @@ impl Text {
                     }
                 },
                 AnyBox::TextBox(i) => {
-                    if let Some(text_box) = self.text_boxes.get(i as usize) {
+                    if let Some(text_box) = self.text_boxes.get(i) {
                         text_box.window_id.is_none() || text_box.window_id == Some(window.id())
                     } else {
                         false
@@ -953,7 +974,7 @@ impl Text {
             if !text_box.hidden && text_box.last_frame_touched == self.current_visibility_frame && text_box.hit_bounding_box(cursor_pos) {
                 // Only consider if this text box belongs to this window (or has no window restriction)
                 if text_box.window_id.is_none() || text_box.window_id == Some(window_id) {
-                    self.mouse_hit_stack.push((AnyBox::TextBox(i as u32), text_box.depth));
+                    self.mouse_hit_stack.push((AnyBox::TextBox(i), text_box.depth));
                 }
             }
         }
@@ -980,7 +1001,7 @@ impl Text {
                 text_edit.accesskit_id()
             },
             AnyBox::TextBox(i) => {
-                let handle = TextBoxHandle { i: i as u32 };
+                let handle = TextBoxHandle { key: i };
                 let text_box = get_full_text_box_partial_borrows(&mut self.text_boxes, &mut self.shared, &handle);
                 text_box.accesskit_id()
             },
@@ -1008,7 +1029,7 @@ impl Text {
     pub fn get_text_box_depth(&self, text_box_id: &AnyBox) -> f32 {
         match text_box_id {
             AnyBox::TextEdit(i) => self.text_edits.get(*i as usize).map(|(_te, tb)| tb.depth).unwrap_or(f32::MAX),
-            AnyBox::TextBox(i) => self.text_boxes.get(*i as usize).map(|tb| tb.depth).unwrap_or(f32::MAX),
+            AnyBox::TextBox(i) => self.text_boxes.get(*i).map(|tb| tb.depth).unwrap_or(f32::MAX),
         }
     }
 
@@ -1063,7 +1084,7 @@ impl Text {
         }
         for (i, text_box) in self.text_boxes.iter_mut() {
             if !text_box.hidden && text_box.last_frame_touched == self.current_visibility_frame && text_box.hit_bounding_box(cursor_pos) {
-                self.mouse_hit_stack.push((AnyBox::TextBox(i as u32), text_box.depth));
+                self.mouse_hit_stack.push((AnyBox::TextBox(i), text_box.depth));
             }
         }
 
@@ -1145,7 +1166,7 @@ impl Text {
                 text_edit.inner.show_cursor = false;
             },
             AnyBox::TextBox(i) => {
-                let handle = TextBoxHandle { i: i as u32 };
+                let handle = TextBoxHandle { key: i };
                 let mut text_box = self.get_full_text_box(&handle);
                 text_box.reset_selection();
             },
@@ -1191,7 +1212,7 @@ impl Text {
                 }
             },
             AnyBox::TextBox(i) => {
-                let handle = TextBoxHandle { i: i as u32 };
+                let handle = TextBoxHandle { key: i };
                 let mut text_box = get_full_text_box_partial_borrows(&mut self.text_boxes, &mut self.shared, &handle);
 
                 text_box.handle_event(event, window, &self.input_state);
@@ -1250,7 +1271,7 @@ impl Text {
     /// 
     /// This is a fast lookup operation that does not require any hashing.
     pub fn get_text_box_mut(&mut self, handle: &TextBoxHandle) -> TextBoxMut {
-        let text_box_inner = &mut self.text_boxes[handle.i as usize];
+        let text_box_inner = &mut self.text_boxes[handle.key];
         TextBoxMut { inner: text_box_inner, shared: &mut self.shared }
     }
 
@@ -1265,7 +1286,7 @@ impl Text {
     pub(crate) fn get_text_box_mut_but_epic<'a>(&'a mut self, handle: &TextBoxHandle) -> &'a mut TextBoxMut<'a> {
         // SAFETY: since this function borrows the whole Text struct, there's no way to call any functions that would invalidate the references.
         unsafe {
-            let text_box_inner = &mut self.text_boxes[handle.i as usize];
+            let text_box_inner = &mut self.text_boxes[handle.key];
 
             // Fill the slot with pointers to fields in `self.
             self.slot_for_text_box_mut = Some(TextBoxMut {
@@ -1291,8 +1312,24 @@ impl Text {
     /// 
     /// This is a fast lookup operation that does not require any hashing.
     pub fn get_text_box(&self, handle: &TextBoxHandle) -> TextBox {
-        let text_box_inner = &self.text_boxes[handle.i as usize];
+        let text_box_inner = &self.text_boxes[handle.key];
         TextBox { inner: text_box_inner, shared: &self.shared }
+    }
+
+    /// Try to get a text box by handle, returning `None` if the text box has been removed.
+    /// 
+    /// This is a fast lookup operation that does not require any hashing.
+    pub fn try_get_text_box(&self, handle: &ClonedTextBoxHandle) -> Option<TextBox> {
+        let text_box_inner = self.text_boxes.get(handle.key)?;
+        Some(TextBox { inner: text_box_inner, shared: &self.shared })
+    }
+
+    /// Try to get a mutable text box by handle, returning `None` if the text box has been removed.
+    /// 
+    /// This is a fast lookup operation that does not require any hashing.
+    pub fn try_get_text_box_mut(&mut self, handle: &ClonedTextBoxHandle) -> Option<TextBoxMut> {
+        let text_box_inner = self.text_boxes.get_mut(handle.key)?;
+        Some(TextBoxMut { inner: text_box_inner, shared: &mut self.shared })
     }
 
     pub(crate) fn get_full_text_box(&mut self, i: &TextBoxHandle) -> TextBoxMut<'_> {
@@ -1684,11 +1721,11 @@ impl Text {
 }
 
 pub(crate) fn get_full_text_box_partial_borrows<'a>(
-    text_boxes: &'a mut Slab<TextBoxInner>,
+    text_boxes: &'a mut SlotMap<DefaultKey, TextBoxInner>,
     shared: &'a mut Shared,
     i: &TextBoxHandle,
 ) -> TextBoxMut<'a> {
-    let text_box_inner = &mut text_boxes[i.i as usize];
+    let text_box_inner = &mut text_boxes[i.key];
     TextBoxMut { inner: text_box_inner, shared }
 }
 
