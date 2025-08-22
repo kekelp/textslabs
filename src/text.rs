@@ -34,7 +34,7 @@ pub(crate) struct StyleInner {
 /// For rendering, a [`TextRenderer`] is also needed.
 pub struct Text {
     pub(crate) text_boxes: SlotMap<DefaultKey, TextBoxInner>,
-    pub(crate) text_edits: Slab<(TextEditInner, TextBoxInner)>,
+    pub(crate) text_edits: SlotMap<DefaultKey, (TextEditInner, TextBoxInner)>,
 
     pub(crate) shared: Shared,
 
@@ -103,7 +103,18 @@ impl FocusChange {
 /// Use with [`Text::get_text_edit()`] to get a reference to the corresponding [`TextEdit`]. 
 #[derive(Debug, Clone)]
 pub struct TextEditHandle {
-    pub(crate) i: u32,
+    pub(crate) key: DefaultKey,
+}
+
+/// Cloneable handle for a text edit.
+/// 
+/// Unlike [`TextEditHandle`], this can be cloned multiple times but has fallible access methods
+/// since the text edit it refers to might have been removed.
+/// 
+/// Use with [`Text::try_get_text_edit()`] to get an optional reference to the corresponding [`TextEdit`].
+#[derive(Debug, Clone, Copy)]
+pub struct ClonedTextEditHandle {
+    pub(crate) key: DefaultKey,
 }
 
 /// Handle for a text box.
@@ -133,6 +144,15 @@ impl TextBoxHandle {
     /// The returned handle can be cloned multiple times but requires fallible access methods.
     pub fn to_cloned(self) -> ClonedTextBoxHandle {
         ClonedTextBoxHandle { key: self.key }
+    }
+}
+
+impl TextEditHandle {
+    /// Convert this owned handle to a cloneable handle.
+    /// 
+    /// The returned handle can be cloned multiple times but requires fallible access methods.
+    pub fn to_cloned(self) -> ClonedTextEditHandle {
+        ClonedTextEditHandle { key: self.key }
     }
 }
 
@@ -204,10 +224,10 @@ impl MouseState {
 
 /// Enum that can represent any type of text box (text box or text edit).
 /// 
-///[`TextBoxHandle`] and [`TextEditHandle`] can be converted into `AnyBox`: `handle.into()`.
+///[`TextBoxHandle`] and [`TextEditHandle`] can be converted into `AnyBox`: `handle.keynto()`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AnyBox {
-    TextEdit(u32),
+    TextEdit(DefaultKey),
     TextBox(DefaultKey),
 }
 
@@ -222,7 +242,7 @@ impl IntoAnyBox for TextBoxHandle {
 }
 impl IntoAnyBox for TextEditHandle {
     fn into_anybox(&self) -> AnyBox {
-        AnyBox::TextEdit(self.i)
+        AnyBox::TextEdit(self.key)
     }
 }
 impl IntoAnyBox for AnyBox {
@@ -299,7 +319,7 @@ impl Text {
 
         Self {
             text_boxes: SlotMap::with_capacity(10),
-            text_edits: Slab::with_capacity(10),
+            text_edits: SlotMap::with_capacity(10),
             style_version_id_counter: 0,
             input_state: TextInputState::new(),
             focused: None,
@@ -374,9 +394,9 @@ impl Text {
         let (text_edit, mut text_box) = TextEditInner::new(text, pos, size, depth);
         text_box.last_frame_touched = self.current_visibility_frame;
         text_box.style_version = self.shared.styles[text_box.style.i as usize].version;
-        let i = self.text_edits.insert((text_edit, text_box)) as u32;
+        let key = self.text_edits.insert((text_edit, text_box));
         self.shared.text_changed = true;
-        TextEditHandle { i }
+        TextEditHandle { key }
     }
 
     /// Add a text box for a specific window and return a handle.
@@ -404,9 +424,9 @@ impl Text {
         text_box.last_frame_touched = self.current_visibility_frame;
         text_box.style_version = self.shared.styles[text_box.style.i as usize].version;
         text_box.window_id = Some(window_id);
-        let i = self.text_edits.insert((text_edit, text_box)) as u32;
+        let key = self.text_edits.insert((text_edit, text_box));
         self.shared.text_changed = true;
-        TextEditHandle { i }
+        TextEditHandle { key }
     }
 
 
@@ -428,9 +448,16 @@ impl Text {
     ///    
     /// This is a fast lookup operation that does not require any hashing.
     pub fn get_text_edit(&mut self, handle: &TextEditHandle) -> TextEdit {
-        let (text_edit_inner, text_box_inner) = self.text_edits.get_mut(handle.i as usize).unwrap();
+        let (text_edit_inner, text_box_inner) = self.text_edits.get_mut(handle.key).unwrap();
         let text_box = TextBox { inner: text_box_inner, shared: &mut self.shared };
         TextEdit { inner: text_edit_inner, text_box }
+    }
+
+    /// Try to get a text edit by handle, returning `None` if the text edit has been removed.
+    pub fn try_get_text_edit(&mut self, handle: &ClonedTextEditHandle) -> Option<TextEdit> {
+        let (text_edit_inner, text_box_inner) = self.text_edits.get_mut(handle.key)?;
+        let text_box = TextBox { inner: text_box_inner, shared: &mut self.shared };
+        Some(TextEdit { inner: text_edit_inner, text_box })
     }
 
     #[must_use]
@@ -511,7 +538,7 @@ impl Text {
     /// 
     /// Part of the "declarative" interface.
     pub fn refresh_text_edit(&mut self, handle: &TextEditHandle) {
-        if let Some((_text_edit, text_box)) = self.text_edits.get_mut(handle.i as usize) {
+        if let Some((_text_edit, text_box)) = self.text_edits.get_mut(handle.key) {
             text_box.last_frame_touched = self.current_visibility_frame;
         }
     }
@@ -540,7 +567,7 @@ impl Text {
                     }
                 }
                 AnyBox::TextEdit(i) => {
-                    if let Some((_text_edit, text_box)) = self.text_edits.get(i as usize) {
+                    if let Some((_text_edit, text_box)) = self.text_edits.get(i) {
                         text_box.last_frame_touched != self.current_visibility_frame && !text_box.can_hide
                     } else {
                         true // Text edit doesn't exist
@@ -594,20 +621,20 @@ impl Text {
     pub fn remove_text_edit(&mut self, handle: TextEditHandle) {
         self.shared.text_changed = true;
         if let Some(AnyBox::TextEdit(i)) = self.focused {
-            if i == handle.i {
+            if i == handle.key {
                 self.focused = None;
             }
         }
         
         // Remove from accessibility mapping if it exists
         #[cfg(feature = "accessibility")]
-        if let Some((_text_edit, text_box)) = self.text_edits.get(handle.i as usize) {
+        if let Some((_text_edit, text_box)) = self.text_edits.get(handle.key) {
             if let Some(accesskit_id) = text_box.accesskit_id {
                 self.accesskit_id_to_text_handle_map.remove(&accesskit_id);
             }
         }
         
-        self.text_edits.remove(handle.i as usize);
+        self.text_edits.remove(handle.key);
         std::mem::forget(handle);
     }
 
@@ -667,7 +694,7 @@ impl Text {
                 let focused_belongs_to_window = if let Some(window_id) = window_id {
                     match focused {
                         AnyBox::TextEdit(i) => {
-                            if let Some((_text_edit, text_box)) = self.text_edits.get(i as usize) {
+                            if let Some((_text_edit, text_box)) = self.text_edits.get(i) {
                                 text_box.window_id.is_none() || text_box.window_id == Some(window_id)
                             } else {
                                 false
@@ -688,7 +715,7 @@ impl Text {
                 if focused_belongs_to_window {
                     match focused {
                         AnyBox::TextEdit(i) => {
-                            let handle = TextEditHandle { i: i as u32 };
+                            let handle = TextEditHandle { key: i };
                             let text_edit = self.get_full_text_edit(&handle);
                             text_renderer.prepare_text_box_decorations(&text_edit.text_box, show_cursor);
                         },
@@ -776,7 +803,7 @@ impl Text {
         for any_box in &self.scrolled_moved_indices {
             match any_box {
                 AnyBox::TextEdit(i) => {
-                    if let Some((_text_edit_inner, text_box_inner)) = self.text_edits.get_mut(*i as usize) {
+                    if let Some((_text_edit_inner, text_box_inner)) = self.text_edits.get_mut(*i) {
                         move_quads_for_scroll(text_renderer, &mut text_box_inner.quad_storage, text_box_inner.scroll_offset);
                     }
                 },
@@ -795,7 +822,7 @@ impl Text {
             match any_box {
                 AnyBox::TextEdit(i) => {
                     // Keep in list if any animation is still running for this text edit
-                    self.scroll_animations.iter().any(|anim| anim.handle.i == *i)
+                    self.scroll_animations.iter().any(|anim| anim.handle.key == *i)
                 },
                 AnyBox::TextBox(_i) => {
                     // Text boxes don't have animations, so they can be cleared immediately
@@ -929,7 +956,7 @@ impl Text {
             // Only handle the event if the focused element belongs to this window
             let focused_belongs_to_window = match focused {
                 AnyBox::TextEdit(i) => {
-                    if let Some((_text_edit, text_box)) = self.text_edits.get(i as usize) {
+                    if let Some((_text_edit, text_box)) = self.text_edits.get(i) {
                         text_box.window_id.is_none() || text_box.window_id == Some(window.id())
                     } else {
                         false
@@ -966,7 +993,7 @@ impl Text {
             if !text_box.hidden && text_box.last_frame_touched == self.current_visibility_frame && text_box.hit_full_rect(cursor_pos) {
                 // Only consider if this text edit belongs to this window (or has no window restriction)
                 if text_box.window_id.is_none() || text_box.window_id == Some(window_id) {
-                    self.mouse_hit_stack.push((AnyBox::TextEdit(i as u32), text_box.depth));
+                    self.mouse_hit_stack.push((AnyBox::TextEdit(i), text_box.depth));
                 }
             }
         }
@@ -996,7 +1023,7 @@ impl Text {
     fn get_accesskit_id(&mut self, i: AnyBox) -> Option<NodeId> {
         return match i {
             AnyBox::TextEdit(i) => {
-                let handle = TextEditHandle { i: i as u32 };
+                let handle = TextEditHandle { key: i };
                 let text_edit = get_full_text_edit_partial_borrows(&mut self.text_edits, &mut self.shared, &handle);
                 text_edit.accesskit_id()
             },
@@ -1028,7 +1055,7 @@ impl Text {
     /// Used for comparing depths when integrating with other objects that might occlude text boxs.
     pub fn get_text_box_depth(&self, text_box_id: &AnyBox) -> f32 {
         match text_box_id {
-            AnyBox::TextEdit(i) => self.text_edits.get(*i as usize).map(|(_te, tb)| tb.depth).unwrap_or(f32::MAX),
+            AnyBox::TextEdit(i) => self.text_edits.get(*i).map(|(_te, tb)| tb.depth).unwrap_or(f32::MAX),
             AnyBox::TextBox(i) => self.text_boxes.get(*i).map(|tb| tb.depth).unwrap_or(f32::MAX),
         }
     }
@@ -1079,7 +1106,7 @@ impl Text {
         // Find all text widgets at this position
         for (i, (_text_edit, text_box)) in self.text_edits.iter_mut() {
             if !text_box.hidden && text_box.last_frame_touched == self.current_visibility_frame && text_box.hit_full_rect(cursor_pos) {
-                self.mouse_hit_stack.push((AnyBox::TextEdit(i as u32), text_box.depth));
+                self.mouse_hit_stack.push((AnyBox::TextEdit(i), text_box.depth));
             }
         }
         for (i, text_box) in self.text_boxes.iter_mut() {
@@ -1160,7 +1187,7 @@ impl Text {
     fn remove_focus(&mut self, old_focus: AnyBox) {
         match old_focus {
             AnyBox::TextEdit(i) => {
-                let handle = TextEditHandle { i: i as u32 };
+                let handle = TextEditHandle { key: i };
                 let mut text_edit = self.get_full_text_edit(&handle);
                 text_edit.text_box.reset_selection();
                 text_edit.inner.show_cursor = false;
@@ -1178,7 +1205,7 @@ impl Text {
         if let WindowEvent::MouseWheel { .. } = event {
             match hovered {
                 AnyBox::TextEdit(i) => {
-                    let handle = TextEditHandle { i: i as u32 };
+                    let handle = TextEditHandle { key: i };
                     let did_scroll = self.handle_text_edit_scroll_event(&handle, event, window);
                     if did_scroll {
                         self.decorations_changed = true;
@@ -1193,7 +1220,7 @@ impl Text {
     fn handle_focused_event(&mut self, focused: AnyBox, event: &WindowEvent, window: &Window) {
         match focused {
             AnyBox::TextEdit(i) => {
-                let handle = TextEditHandle { i: i as u32 };
+                let handle = TextEditHandle { key: i };
                 let mut text_edit = get_full_text_edit_partial_borrows(&mut self.text_edits, &mut self.shared, &handle);
 
                 if !text_edit.inner.disabled {
@@ -1230,11 +1257,11 @@ impl Text {
     /// 
     /// When disabled, the text edit will not respond to events and will be rendered with greyed out text.
     pub fn set_text_edit_disabled(&mut self, handle: &TextEditHandle, disabled: bool) {
-        let text_edit_inner = &mut self.text_edits[handle.i as usize].0;
+        let text_edit_inner = &mut self.text_edits[handle.key].0;
         text_edit_inner.disabled = disabled;
         if disabled {
             if let Some(AnyBox::TextEdit(e)) = self.focused {
-                if e == handle.i {
+                if e == handle.key {
                     self.get_full_text_edit(&handle).text_box.reset_selection();
                     self.focused = None;
                 }
@@ -1343,7 +1370,7 @@ impl Text {
     /// Add a scroll animation for a text edit
     pub(crate) fn add_scroll_animation(&mut self, handle: TextEditHandle, start_offset: f32, target_offset: f32, duration: std::time::Duration, direction: ScrollDirection) {
         // Remove any existing animation for this handle and direction
-        self.scroll_animations.retain(|anim| !(anim.handle.i == handle.i && anim.direction == direction));
+        self.scroll_animations.retain(|anim| !(anim.handle.key == handle.key && anim.direction == direction));
         self.shared.scrolled = true;
         
         let animation = ScrollAnimation {
@@ -1391,9 +1418,9 @@ impl Text {
         let mut i = 0;
         while i < self.scroll_animations.len() {
             let animation = &self.scroll_animations[i];
-            let handle = TextEditHandle { i: animation.handle.i };
+            let handle = animation.handle.clone();
             
-            if let Some((_text_edit_inner, text_box_inner)) = self.text_edits.get_mut(handle.i as usize) {
+            if let Some((_text_edit_inner, text_box_inner)) = self.text_edits.get_mut(handle.key) {
                 let current_offset = animation.get_current_offset();
                 
                 match animation.direction {
@@ -1428,7 +1455,7 @@ impl Text {
         if let WindowEvent::MouseWheel { delta, .. } = event {
             let shift_held = self.input_state.modifiers.state().shift_key();
             
-            if let Some((text_edit_inner, text_box_inner)) = self.text_edits.get_mut(handle.i as usize) {
+            if let Some((text_edit_inner, text_box_inner)) = self.text_edits.get_mut(handle.key) {
                 if text_edit_inner.single_line {
                     // Single-line horizontal scrolling
                     let scroll_amount = match delta {
@@ -1534,7 +1561,7 @@ impl Text {
     // If the cursor needs to be blinking, reset it. Otherwise, stop it.
     fn reset_cursor_blink(&mut self) {
         if let Some(AnyBox::TextEdit(i)) = self.focused {
-            let handle = TextEditHandle { i: i as u32 };
+            let handle = TextEditHandle { key: i };
             let text_edit = self.get_full_text_edit(&handle);
             if text_edit.text_box.selection().is_collapsed() {
                 
@@ -1564,7 +1591,7 @@ impl Text {
     /// Update the AccessKit node ID mapping for a text box
     #[cfg(feature = "accessibility")]
     pub fn set_text_box_accesskit_id(&mut self, handle: &TextBoxHandle, accesskit_id: NodeId) {
-        let any_box = handle.into_anybox();
+        let any_box = handle.keynto_anybox();
         self.accesskit_id_to_text_handle_map.insert(accesskit_id, any_box);
         self.get_text_box_mut(handle).set_accesskit_id(accesskit_id);
     }
@@ -1572,7 +1599,7 @@ impl Text {
     /// Update the AccessKit node ID mapping for a text edit
     #[cfg(feature = "accessibility")]
     pub fn set_text_edit_accesskit_id(&mut self, handle: &TextEditHandle, accesskit_id: NodeId) {
-        let any_box = handle.into_anybox();
+        let any_box = handle.keynto_anybox();
         self.accesskit_id_to_text_handle_map.insert(accesskit_id, any_box);
         self.get_text_edit_mut(handle).set_accesskit_id(accesskit_id);
     }
@@ -1624,7 +1651,7 @@ impl Text {
         if let Some(focused) = self.focused {
             match focused {
                 AnyBox::TextEdit(i) => {
-                    if let Some((_text_edit, text_box)) = self.text_edits.get(i as usize) {
+                    if let Some((_text_edit, text_box)) = self.text_edits.get(i) {
                         text_box.accesskit_id
                     } else {
                         None
@@ -1730,11 +1757,11 @@ pub(crate) fn get_full_text_box_partial_borrows<'a>(
 }
 
 pub(crate) fn get_full_text_edit_partial_borrows<'a>(
-    text_edits: &'a mut Slab<(TextEditInner, TextBoxInner)>,
+    text_edits: &'a mut SlotMap<DefaultKey, (TextEditInner, TextBoxInner)>,
     shared: &'a mut Shared,
     i: &TextEditHandle,
 ) -> TextEditMut<'a> {
-    let (text_edit_inner, text_box_inner) = text_edits.get_mut(i.i as usize).unwrap();
+    let (text_edit_inner, text_box_inner) = text_edits.get_mut(i.key).unwrap();
     let text_box = TextBoxMut { inner: text_box_inner, shared };
     TextEditMut { inner: text_edit_inner, text_box }
 }
