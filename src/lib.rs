@@ -3,42 +3,74 @@
 //! 
 //! # Usage
 //! 
-//! See the `basic.rs` example in the repository to see how the library can be used.
-//! 
-//! The two main structs are:
-//! - [`Text`] - manages collections of text boxes and styles
-//! - [`TextRenderer`] - renders the text on the GPU 
-//! 
-//! ## Imperative Mode
-//! 
-//! The main way to use the library is imperative with a handle-based system:
-//! 
 //! ```rust,no_run
-//! use textslabs::*;
+//! // Create the Text struct and the Text renderer:
 //! let mut text = Text::new_without_auto_wakeup();
+//! let text_renderer = TextRenderer::new(&device, &queue, surface_config.format);
 //! 
-//! // Add text boxes and get handles
+//! // Text manages collections of text boxes and styles.
+//! // TextRenderer holds the state needed to render the text on the gpu.
+//! 
+//! // Add text boxes and get handles:
 //! let handle = text.add_text_box("Hello", (10.0, 10.0), (200.0, 50.0), 0.0);
 //! let edit_handle = text.add_text_edit("Type here".to_string(), (10.0, 70.0), (200.0, 30.0), 0.0);
 //! 
-//! // Use handles to access and modify the boxes
+//! // Use handles to access and modify the boxes:
 //! // text.get_text_box_mut(&handle).set_style(&my_style);
 //! text.get_text_box_mut(&handle).text_mut().push_str("... World");
 //! 
-//! // Manually remove text boxes
+//! // Manually remove text boxes when needed:
 //! text.remove_text_box(handle);
-//! text.remove_text_edit(edit_handle);
+//! 
+//! // In winit's window_event callback, pass the events to Text:
+//! text.handle_event(&event, &window);
+//! 
+//! // To show the text on the screen, call Text::prepare:
+//! text.prepare_all(&mut text_renderer);
+//! // Then load the data on the gpu
+//! text_renderer.load_to_gpu(&device, &queue);
+//! // Then render the text as part of a wgpu render pass:
+//! self.text_renderer.render(&mut render_pass);
+//! 
 //! ```
+//! 
+//! See the `basic.rs` or the `minimal.rs` example in the repository to see a more complete example, including the `winit` and `wgpu` boilerplate.
+//! 
+//! # Handles
+//! 
+//! As shown above, the library is imperative with a handle-based system.
 //! 
 //! This interface is ideal for retained-mode GUI libraries, but declarative GUI libraries that diff their node trees can still use the imperative interface, calling the `Text::remove_*` functions when the nodes holding the handles are removed.
 //! 
 //! Handles can't be `Clone`d or constructed manually, so they are unique references that can never be "dangling".
 //! 
-//! [`Text`] uses slabs internally, so `get_text_box_mut()` and all similar functions are basically as fast as an array lookup. There is no hashing involved.
+//! [`Text`] uses slotmaps internally, so `get_text_box_mut()` and all similar functions are basically as fast as an array lookup. There is no hashing involved.
 //! 
-//! ## Declarative Mode
+//! # Advanced Usage
 //! 
-//! There is an optional declarative interface for hiding and removing text boxes. For hiding text boxes declaratively:
+//! ## Accessibility
+//! 
+//! This library supports accessibility, but integrating it requires a bit more coordination with `winit` and with the GUI code outside of the scope of this library. In particular, this library doesn't have any concept of a tree. See the `accesibility.rs` example in the repository for a basic example.
+//! 
+//! ## Interaction
+//! 
+//! Text boxes and text edit boxes are fully interactive. In simple situations, this requires a single function call: [`Text::handle_event()`]. This function takes a `winit::WindowEvent` and updates all the text boxes accordingly.
+//! 
+//! As great as this sounds, in some cases text boxes can be occluded by other objects, such as an opaque panel. In this case, handling a mouse click event requires information that the [`Text`] struct doesn't have, so the integration needs to be a bit more complex. The process is this:
+//! 
+//! - Run `let topmost_text_box = `[`Text::find_topmost_text_box()`] to find out which text box *would* have received the event, if it wasn't for other objects.
+//! - Run some custom code to find out which other object *would* have received the event, if it wasn't for text boxes.
+//! - Compare the depth of the two candidates. For the text box, use [`Text::get_text_box_depth()`].
+//! - If the text box is on top, run [`Text::handle_event_with_topmost()`]`(Some(topmost_text_box))`, which will handle the event normally (but skip looking for the topmost box again).
+//! - If the text box, is occluded, run [`Text::handle_event_with_topmost()`]`(None)`.
+//! 
+//! For any `winit::WindowEvent` other than a `winit::WindowEvent::MouseInput` or a `winit::WindowEvent::MouseWheel`, this process can be skipped, and you can just call [`Text::handle_event()`] normally.
+//! 
+//! The `occlusion.rs` example shows how this works.
+//! 
+//! ## Declarative Visibility
+//! 
+//! There is an optional declarative interface for hiding and removing text boxes:
 //! 
 //! ```ignore
 //! // Each frame, advance an internal frame counter,
@@ -54,26 +86,15 @@
 //! // and they will be skipped when rendering or handling events.
 //! ```
 //! 
-//! There's also an experimental function for removing text boxes declaratively: [`Text::remove_old_nodes()`].
+//! This library was written for use in Keru, which is a declarative library that diffs node trees, so it uses imperative-mode calls to remove widgets. However, it uses the declarative interface for hiding text boxes that need to be kept hidden in the background.
 //! 
-//! This library was written for use in Keru. Keru is a declarative library that diffs node trees, so it uses imperative-mode calls to remove widgets. However, it uses the declarative interface for hiding text boxes that need to be kept hidden in the background.
+//! # Open Issues
 //! 
-//! ## Interaction
+//! There are two main open issues in the design of the library:
 //! 
-//! Text boxes and text edit boxes are fully interactive. In simple situations, this requires a single function call: [`Text::handle_event()`]. This function takes a `winit::WindowEvent` and updates all the text boxes accordingly.
+//! - All text boxes are rendered in a single draw call. The `TextRenderer` supports using a depth buffer, but that's not enough to get correct results when many semitransparent elements overlap. Solving this problem while keeping the integration simple enough is probably quite hard.
 //! 
-//! As great as this sounds, sometimes text boxes are occluded by other objects, such as an opaque panel. In this case, handling a mouse click event requires information that the [`Text`] struct doesn't have, so the integration needs to be a bit more complex. The process is this:
-//! 
-//! - Run `let topmost_text_box = `[`Text::find_topmost_text_box()`] to find out which text box *would* have received the event, if it wasn't for other objects.
-//! - Run some custom code to find out which other object *would* have received the event, if it wasn't for text boxes.
-//! - Compare the depth of the two candidates. For the text box, use [`Text::get_text_box_depth()`].
-//! - If the text box is on top, run [`Text::handle_event_with_topmost()`]`(Some(topmost_text_box))`, which will handle the event normally, but avoid looking for the topmost box again.
-//! - If the text box, is occluded, run [`Text::handle_event_with_topmost()`]`(None)`.
-//! 
-//! For any `winit::WindowEvent` other than a `winit::WindowEvent::MouseInput`, this process can be skipped, and you can just call [`Text::handle_event()`].
-//! 
-//! The `occlusion.rs` example shows how this works.
-//! 
+//! - the math for scrolling and smooth scrolling animations in overflowing text edit boxes is hardcoded in the library. This means that a GUI library using Textslabs might have inconsistent scrolling behavior between the Textslabs text edit boxes and the GUI library's generic scrollable containers.
 
 
 mod setup;
