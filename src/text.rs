@@ -1,7 +1,6 @@
 use crate::*;
 #[cfg(feature = "accessibility")]
 use accesskit::{NodeId, TreeUpdate};
-use slab::Slab;
 use slotmap::{SlotMap, DefaultKey};
 #[cfg(feature = "accessibility")]
 use std::collections::HashMap;
@@ -68,7 +67,8 @@ pub struct Text {
 /// 
 /// A cooler way to do this would be to make the TextBoxMut be TextBoxMut { i: u32, text: &mut Text }. So you have access to the whole Text struct unconditionally, and you don't have to separate things this way. And to get the actual text box, you do self.text.text_boxes[i] every time. But we're trying this way this time
 pub struct Shared {    
-    pub(crate) styles: Slab<StyleInner>,
+    pub(crate) styles: SlotMap<DefaultKey, StyleInner>,
+    pub(crate) default_style_key: DefaultKey,
     pub(crate) text_changed: bool,
     pub(crate) decorations_changed: bool,
     pub(crate) scrolled: bool,
@@ -187,12 +187,12 @@ impl Drop for TextBoxHandle {
 /// Handle for a text style. Use with Text methods to apply styles to text.
 #[derive(Debug, Clone, Copy)]
 pub struct StyleHandle {
-    pub(crate) i: u32,
+    pub(crate) key: DefaultKey,
 }
 impl StyleHandle {
     #[allow(dead_code)]
     pub(crate) fn sneak_clone(&self) -> Self {
-        Self { i: self.i }
+        Self { key: self.key }
     }
 }
 
@@ -277,9 +277,6 @@ impl TextInputState {
     }
 }
 
-pub(crate) const DEFAULT_STYLE_I: usize = 0;
-/// Pre-defined handle for the default text style.
-pub const DEFAULT_STYLE_HANDLE: StyleHandle = StyleHandle { i: DEFAULT_STYLE_I as u32 };
 
 impl Text {
     /// Create a new Text instance.
@@ -301,13 +298,12 @@ impl Text {
     }
 
     pub(crate) fn new_with_option(window: Option<Arc<Window>>) -> Self {
-        let mut styles = Slab::with_capacity(10);
-        let i = styles.insert(StyleInner {
+        let mut styles = SlotMap::with_capacity_and_key(10);
+        let default_style_key = styles.insert(StyleInner {
             text_style: original_default_style(),
             text_edit_style: TextEditStyle::default(),
             version: 0,
         });
-        debug_assert!(i == DEFAULT_STYLE_I);
 
         let cursor_blink_timer = window.map(|window| CursorBlinkWaker::new(Arc::downgrade(&window)));
 
@@ -335,6 +331,7 @@ impl Text {
 
             shared: Shared {
                 styles,
+                default_style_key,
                 text_changed: true,
                 decorations_changed: true,
                 scrolled: true,
@@ -370,9 +367,9 @@ impl Text {
     /// `text` can be a `String`, a `&'static str`, or a `Cow<'static, str>`.
     #[must_use]
     pub fn add_text_box(&mut self, text: impl Into<Cow<'static, str>>, pos: (f64, f64), size: (f32, f32), depth: f32) -> TextBoxHandle {
-        let mut text_box = TextBoxInner::new(text, pos, size, depth);
+        let mut text_box = TextBoxInner::new(text, pos, size, depth, self.shared.default_style_key);
         text_box.last_frame_touched = self.current_visibility_frame;
-        text_box.style_version = self.shared.styles[text_box.style.i as usize].version;
+        text_box.style_version = self.shared.styles[text_box.style.key].version;
         let key = self.text_boxes.insert(text_box);
         self.shared.text_changed = true;
         TextBoxHandle { key }
@@ -385,9 +382,9 @@ impl Text {
     /// The [`TextEdit`] must be manually removed by calling [`Text::remove_text_edit()`].
     #[must_use]
     pub fn add_text_edit(&mut self, text: String, pos: (f64, f64), size: (f32, f32), depth: f32) -> TextEditHandle {
-        let (text_edit, mut text_box) = TextEditInner::new(text, pos, size, depth);
+        let (text_edit, mut text_box) = TextEditInner::new(text, pos, size, depth, self.shared.default_style_key);
         text_box.last_frame_touched = self.current_visibility_frame;
-        text_box.style_version = self.shared.styles[text_box.style.i as usize].version;
+        text_box.style_version = self.shared.styles[text_box.style.key].version;
         let key = self.text_edits.insert((text_edit, text_box));
         self.shared.text_changed = true;
         TextEditHandle { key }
@@ -399,9 +396,9 @@ impl Text {
     /// Only use this when you have multiple windows and want to restrict this text box to a specific window.
     #[must_use]
     pub fn add_text_box_for_window(&mut self, text: impl Into<Cow<'static, str>>, pos: (f64, f64), size: (f32, f32), depth: f32, window_id: WindowId) -> TextBoxHandle {
-        let mut text_box = TextBoxInner::new(text, pos, size, depth);
+        let mut text_box = TextBoxInner::new(text, pos, size, depth, self.shared.default_style_key);
         text_box.last_frame_touched = self.current_visibility_frame;
-        text_box.style_version = self.shared.styles[text_box.style.i as usize].version;
+        text_box.style_version = self.shared.styles[text_box.style.key].version;
         text_box.window_id = Some(window_id);
         let key = self.text_boxes.insert(text_box);
         self.shared.text_changed = true;
@@ -414,9 +411,9 @@ impl Text {
     /// Only use this when you have multiple windows and want to restrict this text edit to a specific window.
     #[must_use]
     pub fn add_text_edit_for_window(&mut self, text: String, pos: (f64, f64), size: (f32, f32), depth: f32, window_id: WindowId) -> TextEditHandle {
-        let (text_edit, mut text_box) = TextEditInner::new(text, pos, size, depth);
+        let (text_edit, mut text_box) = TextEditInner::new(text, pos, size, depth, self.shared.default_style_key);
         text_box.last_frame_touched = self.current_visibility_frame;
-        text_box.style_version = self.shared.styles[text_box.style.i as usize].version;
+        text_box.style_version = self.shared.styles[text_box.style.key].version;
         text_box.window_id = Some(window_id);
         let key = self.text_edits.insert((text_edit, text_box));
         self.shared.text_changed = true;
@@ -458,48 +455,52 @@ impl Text {
     pub fn add_style(&mut self, text_style: TextStyle2, text_edit_style: Option<TextEditStyle>) -> StyleHandle {
         let text_edit_style = text_edit_style.unwrap_or_default();
         let new_version = self.new_style_version();
-        let i = self.shared.styles.insert(StyleInner {
+        let key = self.shared.styles.insert(StyleInner {
             text_style,
             text_edit_style,
             version: new_version,
-        }) as u32;
-        StyleHandle { i }
+        });
+        StyleHandle { key }
     }
 
     pub fn get_text_style(&self, handle: &StyleHandle) -> &TextStyle2 {
-        &self.shared.styles[handle.i as usize].text_style
+        &self.shared.styles[handle.key].text_style
     }
 
     pub fn get_text_style_mut(&mut self, handle: &StyleHandle) -> &mut TextStyle2 {
-        self.shared.styles[handle.i as usize].version = self.new_style_version();
+        self.shared.styles[handle.key].version = self.new_style_version();
         self.shared.text_changed = true;
-        &mut self.shared.styles[handle.i as usize].text_style
+        &mut self.shared.styles[handle.key].text_style
     }
 
     pub fn get_text_edit_style(&self, handle: &StyleHandle) -> &TextEditStyle {
-        &self.shared.styles[handle.i as usize].text_edit_style
+        &self.shared.styles[handle.key].text_edit_style
     }
 
     pub fn get_text_edit_style_mut(&mut self, handle: &StyleHandle) -> &mut TextEditStyle {
-        self.shared.styles[handle.i as usize].version = self.new_style_version();
+        self.shared.styles[handle.key].version = self.new_style_version();
         self.shared.text_changed = true;
-        &mut self.shared.styles[handle.i as usize].text_edit_style
+        &mut self.shared.styles[handle.key].text_edit_style
     }
 
     pub fn get_default_text_style(&self) -> &TextStyle2 {
-        self.get_text_style(&DEFAULT_STYLE_HANDLE)
+        &self.shared.styles[self.shared.default_style_key].text_style
     }
 
     pub fn get_default_text_style_mut(&mut self) -> &mut TextStyle2 {
-        self.get_text_style_mut(&DEFAULT_STYLE_HANDLE)
+        self.shared.styles[self.shared.default_style_key].version = self.new_style_version();
+        self.shared.text_changed = true;
+        &mut self.shared.styles[self.shared.default_style_key].text_style
     }
 
     pub fn get_default_text_edit_style(&self) -> &TextEditStyle {
-        self.get_text_edit_style(&DEFAULT_STYLE_HANDLE)
+        &self.shared.styles[self.shared.default_style_key].text_edit_style
     }
 
     pub fn get_default_text_edit_style_mut(&mut self) -> &mut TextEditStyle {
-        self.get_text_edit_style_mut(&DEFAULT_STYLE_HANDLE)
+        self.shared.styles[self.shared.default_style_key].version = self.new_style_version();
+        self.shared.text_changed = true;
+        &mut self.shared.styles[self.shared.default_style_key].text_edit_style
     }
 
     pub fn original_default_style(&self) -> TextStyle2 {
@@ -636,7 +637,7 @@ impl Text {
     /// 
     /// If any text boxes are set to this style, they will revert to the default style.
     pub fn remove_style(&mut self, handle: StyleHandle) {
-        self.shared.styles.remove(handle.i as usize);
+        self.shared.styles.remove(handle.key);
     }
 
 

@@ -3,6 +3,7 @@ use std::{
 };
 
 use parley::*;
+use slotmap::DefaultKey;
 use winit::{
     event::{Ime, Touch, WindowEvent}, keyboard::{Key, NamedKey}, platform::modifier_supplement::KeyEventExtModifierSupplement, window::Window
 };
@@ -139,8 +140,8 @@ pub enum ScrollDirection {
 }
 
 impl TextEditInner {
-    pub fn new(text: String, pos: (f64, f64), size: (f32, f32), depth: f32) -> (Self, TextBoxInner) {
-        let mut text_box = TextBoxInner::new(text, pos, size, depth);
+    pub fn new(text: String, pos: (f64, f64), size: (f32, f32), depth: f32, default_style_key: DefaultKey) -> (Self, TextBoxInner) {
+        let mut text_box = TextBoxInner::new(text, pos, size, depth, default_style_key);
         text_box.auto_clip = true;
         let text_edit = Self {
             compose: Default::default(),
@@ -1300,11 +1301,11 @@ pub struct TextEdit<'a> {
 
 impl<'a> TextEditMut<'a> {
     pub(crate) fn text_edit_style(&self) -> &TextEditStyle {
-        &self.text_box.shared.styles[self.text_box.inner.style.i as usize].text_edit_style
+        &self.text_box.shared.styles[self.text_box.inner.style.key].text_edit_style
     }
 
     pub(crate) fn style_version(&self) -> u64 {
-        self.text_box.shared.styles[self.text_box.inner.style.i as usize].version
+        self.text_box.shared.styles[self.text_box.inner.style.key].version
     }
 
     pub(crate) fn style_version_changed(&self) -> bool {

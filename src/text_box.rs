@@ -163,7 +163,7 @@ impl SelectionState {
 }
 
 impl TextBoxInner {
-    pub(crate) fn new(text: impl Into<Cow<'static, str>>, pos: (f64, f64), size: (f32, f32), depth: f32) -> Self {
+    pub(crate) fn new(text: impl Into<Cow<'static, str>>, pos: (f64, f64), size: (f32, f32), depth: f32, default_style_key: DefaultKey) -> Self {
         Self {
             text: text.into(),
             style_version: 0,
@@ -180,7 +180,7 @@ impl TextBoxInner {
             height: size.1,
             depth,
             selection: SelectionState::new(),
-            style: DEFAULT_STYLE_HANDLE,
+            style: StyleHandle { key: default_style_key },
             width: size.0, 
             alignment: Default::default(),
             scale: Default::default(),
@@ -250,7 +250,7 @@ impl_for_textbox_and_textboxmut! {
 
 impl_for_textbox_and_textboxmut! {
     pub fn style(&'a self) -> &'a TextStyle2 {
-        &self.shared.styles[self.inner.style.i as usize].text_style
+        &self.shared.styles[self.inner.style.key].text_style
     }
 
     pub fn hidden(&self) -> bool {
@@ -704,7 +704,7 @@ impl<'a> TextBoxMut<'a> {
     }
 
     pub(crate) fn style_version(&self) -> u64 {
-        self.shared.styles[self.inner.style.i as usize].version
+        self.shared.styles[self.inner.style.key].version
     }
 
     pub(crate) fn style_version_changed(&self) -> bool {
