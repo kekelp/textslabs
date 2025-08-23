@@ -258,8 +258,7 @@ impl ContextlessTextRenderer {
                 module: &shader,
                 entry_point: Some("fs_main"),
                 targets: &[Some(ColorTargetState {
-                    // todo: is this the format that needs to be the same as outside?
-                    format: TextureFormat::Bgra8UnormSrgb,
+                    format,
                     blend: Some(BlendState::ALPHA_BLENDING),
                     write_mask: ColorWrites::default(),
                 })],

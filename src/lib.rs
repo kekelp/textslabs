@@ -64,7 +64,7 @@
 //! - If the text box is on top, run [`Text::handle_event_with_topmost()`]`(Some(topmost_text_box))`, which will handle the event normally (but skip looking for the topmost box again).
 //! - If the text box, is occluded, run [`Text::handle_event_with_topmost()`]`(None)`.
 //! 
-//! For any `winit::WindowEvent` other than a `winit::WindowEvent::MouseInput` or a `winit::WindowEvent::MouseWheel`, this process can be skipped, and you can just call [`Text::handle_event()`] normally.
+//! For any `winit::WindowEvent` other than a `winit::WindowEvent::MouseInput` or a `winit::WindowEvent::MouseWheel`, this process can be skipped, and you can just call [`Text::handle_event()`] normallyw.
 //! 
 //! The `occlusion.rs` example shows how this works.
 //! 
