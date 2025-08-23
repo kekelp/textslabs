@@ -1204,6 +1204,7 @@ impl Text {
                     if did_scroll {
                         self.decorations_changed = true;
                         self.scrolled_moved_indices.push(AnyBox::TextEdit(i));
+                        self.shared.scrolled = true;
                     }
                 },
                 AnyBox::TextBox(_) => {}
@@ -1283,7 +1284,7 @@ impl Text {
 
     pub fn need_rerender(&mut self) -> bool {
         let (_, blink_changed) = self.cursor_blinked_out(true);
-        self.shared.text_changed || self.shared.decorations_changed || self.shared.scrolled || blink_changed
+        self.shared.text_changed || self.shared.decorations_changed || self.shared.scrolled || blink_changed || !self.scrolled_moved_indices.is_empty()
     }
 
     /// Get a mutable reference to a text box wrapped with its style.

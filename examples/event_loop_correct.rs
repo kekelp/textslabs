@@ -173,10 +173,10 @@ impl winit::application::ApplicationHandler<()> for Application {
         }
     }
     fn new_events(&mut self, _event_loop: &winit::event_loop::ActiveEventLoop, cause: winit::event::StartCause) {
-        let state = self.state.as_mut().unwrap();
-
-        if let winit::event::StartCause::ResumeTimeReached { .. } = cause {
-            state.window.request_redraw();
+        if let Some(state) = self.state.as_mut() {   
+            if let winit::event::StartCause::ResumeTimeReached { .. } = cause {
+                state.window.request_redraw();
+            }
         }
     }
 
