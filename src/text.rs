@@ -1304,6 +1304,8 @@ impl Text {
     /// For the non-mut version of this, you'd need a way to have an unbounded number of these fake structs, either in a slab or something or on the heap or on a temporary allocator. That would be crazy though. 
     /// 
     /// I guess the real solution would be TextBox having some sort of reference semantics, where you can make &TextBox and &mut TextBox work like the current TextBox and TextBoxMut. And there would be no such thing as a owned TextBox, it would automatically own the two references, just like a reference automatically owns its pointer. 
+    /// 
+    /// The other solution is to have a real unsafe pointer to Shared inside every TextBox. That's probably the best one, even with the memory waste and the unsafeness.
     #[allow(dead_code)]
     pub(crate) fn get_text_box_mut_but_epic<'a>(&'a mut self, handle: &TextBoxHandle) -> &'a mut TextBoxMut<'a> {
         // SAFETY: since this function borrows the whole Text struct, there's no way to call any functions that would invalidate the references.
