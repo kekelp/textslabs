@@ -22,7 +22,8 @@ struct VertexOutput {
 
 struct Params {
     screen_resolution: vec2<f32>,
-    _pad: vec2<u32>,
+    srgb: u32,
+    _pad: u32,
 };
 
 @group(0) @binding(0)
@@ -151,24 +152,31 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     
     if content_type == 1 {
         var color = textureSampleLevel(mask_atlas_texture, atlas_sampler, input.uv, 0.0);
-        color = vec4<f32>(
-            srgb_to_linear(color.r),
-            srgb_to_linear(color.g),
-            srgb_to_linear(color.b),
-            color.a,
-        );
+        if params.srgb == 0u {
+            // Surface is linear, convert color from sRGB to linear
+            color = vec4<f32>(
+                srgb_to_linear(color.r),
+                srgb_to_linear(color.g),
+                srgb_to_linear(color.b),
+                color.a,
+            );
+        }
         var result = vec4<f32>(input.color * color);
         result.a *= fade_alpha;
         return result;
     
     } else if content_type == 0 {
         var glyph_alpha = textureSampleLevel(mask_atlas_texture, atlas_sampler, input.uv, 0.0).r;
-        var color = vec3f(
-            srgb_to_linear(input.color.rgb.r),
-            srgb_to_linear(input.color.rgb.g),
-            srgb_to_linear(input.color.rgb.b),
-        );
-        return vec4<f32>(color, input.color.a * glyph_alpha * fade_alpha);
+        var text_color = input.color.rgb;
+        if params.srgb == 0u {
+            // Surface is linear, convert text color from sRGB to linear
+            text_color = vec3f(
+                srgb_to_linear(input.color.rgb.r),
+                srgb_to_linear(input.color.rgb.g),
+                srgb_to_linear(input.color.rgb.b),
+            );
+        }
+        return vec4<f32>(text_color, input.color.a * glyph_alpha * fade_alpha);
     
     } else {
         var result = vec4f(input.color);

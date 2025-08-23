@@ -80,8 +80,7 @@ impl ContextlessTextRenderer {
         depth_stencil: Option<DepthStencilState>,
         params: TextRendererParams,
     ) -> Self {
-        let _srgb = format.is_srgb();
-        // todo put this in the uniform and use it
+        let srgb = format.is_srgb();
         
         let atlas_size = params.atlas_page_size.size(device);
 
@@ -134,7 +133,8 @@ impl ContextlessTextRenderer {
         let params = Params {
             screen_resolution_width: 0.0,
             screen_resolution_height: 0.0,
-            _pad: [0, 0],
+            srgb: if srgb { 1 } else { 0 },
+            _pad: 0,
         };
 
         let params_buffer = device.create_buffer(&BufferDescriptor {
@@ -147,7 +147,7 @@ impl ContextlessTextRenderer {
         let params_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             entries: &[BindGroupLayoutEntry {
                 binding: 0,
-                visibility: ShaderStages::VERTEX,
+                visibility: ShaderStages::VERTEX.union(ShaderStages::FRAGMENT),
                 ty: BindingType::Buffer {
                     ty: BufferBindingType::Uniform,
                     has_dynamic_offset: false,

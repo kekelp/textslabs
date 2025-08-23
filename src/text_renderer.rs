@@ -292,7 +292,8 @@ pub(crate) struct Params {
     pub screen_resolution_width: f32,
     /// The height of the screen in pixels.
     pub screen_resolution_height: f32,
-    pub _pad: [u32; 2],
+    pub srgb: u32,
+    pub _pad: u32,
 }
 
 impl TextRenderer {
