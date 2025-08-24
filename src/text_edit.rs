@@ -18,7 +18,7 @@ use crate::*;
 macro_rules! clear_placeholder_partial_borrows {
     ($self:expr) => {
         if $self.inner.showing_placeholder {
-            $self.text_box.text_mut().to_mut().clear();
+            $self.text_box.text_mut_string().clear();
             $self.inner.showing_placeholder = false;
             $self.text_box.refresh_layout();
             $self.text_box.move_to_text_start();
@@ -182,6 +182,7 @@ impl ScrollAnimation {
 }
 
 impl<'a> TextEditMut<'a> {
+    /// Sets whether the text edit is single-line or multi-line.
     pub fn set_single_line(&mut self, single_line: bool) {
         if self.inner.single_line != single_line {
             self.inner.single_line = single_line;
@@ -196,23 +197,26 @@ impl<'a> TextEditMut<'a> {
         }
     }
 
+    /// Sets the newline entry mode for multi-line text edits.
     pub fn set_newline_mode(&mut self, mode: NewlineMode) {
-        // Don't allow changing newline mode in single line mode (it's always None)
         if !self.inner.single_line {
             self.inner.newline_mode = mode;
         }
     }
 
+    /// Sets whether the text edit is disabled.
     pub fn set_disabled(&mut self, disabled: bool) {
         self.inner.disabled = disabled;
     }
 
     #[cfg(feature = "accessibility")]
+    /// Sets the accessibility node ID for this text edit.
     pub fn set_accesskit_id(&mut self, accesskit_id: NodeId) {
         self.text_box.inner.accesskit_id = Some(accesskit_id);
     }
 
     #[cfg(feature = "accessibility")]
+    /// Returns the accessibility node ID for this text edit.
     pub fn accesskit_id(&self) -> Option<NodeId> {
         self.text_box.inner.accesskit_id
     }
@@ -488,7 +492,7 @@ impl<'a> TextEditMut<'a> {
         self.inner.history
             .record(&old_text, s, old_selection, new_range_start..new_range_end);
 
-        self.text_box.text_mut().to_mut().replace_range(range, s);
+        self.text_box.text_mut_string().replace_range(range, s);
         
         if self.inner.single_line {
             self.remove_newlines();
@@ -518,6 +522,7 @@ impl<'a> TextEditMut<'a> {
         self.replace_selection_and_record(s);
     }
 
+    /// Replaces the current selection with the given string.
     pub fn replace_selection(&mut self, string: &str) {
         if ! self.is_composing() {
             self.insert_or_replace_selection(string);
@@ -533,13 +538,13 @@ impl<'a> TextEditMut<'a> {
     pub(crate) fn restore_placeholder_if_any(&mut self) {
         if self.text_box.text_inner().is_empty() && !self.inner.showing_placeholder {
             if self.inner.placeholder_text.is_some() {
-                self.text_box.text_mut().to_mut().clear();
+                self.text_box.text_mut_string().clear();
                 self.refresh_layout();
                 self.text_box.move_to_text_start();
             }
 
             if let Some(placeholder) = &self.inner.placeholder_text {
-                self.text_box.text_mut().to_mut().push_str(&placeholder);
+                self.text_box.text_mut_string().push_str(&placeholder);
                 self.inner.showing_placeholder = true;
                 self.refresh_layout();
                 self.text_box.shared.text_changed = true;
@@ -671,12 +676,12 @@ impl<'a> TextEditMut<'a> {
         debug_assert!(cursor.map(|cursor| cursor.1 <= text.len()).unwrap_or(true));
 
         let start = if let Some(preedit_range) = &self.inner.compose {
-            self.text_box.text_mut().to_mut().replace_range(preedit_range.clone(), text);
+            self.text_box.text_mut_string().replace_range(preedit_range.clone(), text);
             preedit_range.start
         } else {
             let selection_start = self.text_box.selection().text_range().start;
             if self.text_box.selection().is_collapsed() {
-                self.text_box.text_mut().to_mut()
+                self.text_box.text_mut_string()
                     .insert_str(selection_start, text);
                 
                 if self.inner.single_line {
@@ -684,7 +689,7 @@ impl<'a> TextEditMut<'a> {
                 }
             } else {
                 let range = self.text_box.selection().text_range();
-                self.text_box.text_mut().to_mut()
+                self.text_box.text_mut_string()
                     .replace_range(range, text);
             }
             selection_start
@@ -713,7 +718,7 @@ impl<'a> TextEditMut<'a> {
     /// This removes the IME preedit text.
     pub(crate) fn clear_compose(&mut self) {
         if let Some(preedit_range) = self.inner.compose.take() {
-            self.text_box.text_mut().to_mut().replace_range(preedit_range.clone(), "");
+            self.text_box.text_mut_string().replace_range(preedit_range.clone(), "");
             self.inner.show_cursor = true;
 
             let (index, affinity) = if preedit_range.start >= self.text_box.text_inner().len() {
@@ -762,17 +767,17 @@ impl<'a> TextEditMut<'a> {
             return;
         }
 
-        if let Some(op) = self.inner.history.undo(self.text_box.text_mut().to_mut()) {
+        if let Some(op) = self.inner.history.undo(self.text_box.text_mut_string()) {
 
             if ! op.text_to_restore.is_empty() {
                 clear_placeholder_partial_borrows!(self);
             }
 
             self
-                .text_box.text_mut().to_mut()
+                .text_box.text_mut_string()
                 .replace_range(op.range_to_clear.clone(), "");
             self
-                .text_box.text_mut().to_mut()
+                .text_box.text_mut_string()
                 .insert_str(op.range_to_clear.start, op.text_to_restore);
 
             let prev_selection = op.prev_selection;
@@ -791,7 +796,7 @@ impl<'a> TextEditMut<'a> {
 
         if let Some(op) = self.inner.history.redo() {
             self
-                .text_box.text_mut().to_mut()
+                .text_box.text_mut_string()
                 .replace_range(op.range_to_clear.clone(), "");
 
             if ! op.text_to_restore.is_empty() {
@@ -799,7 +804,7 @@ impl<'a> TextEditMut<'a> {
             }
 
             self
-                .text_box.text_mut().to_mut()
+                .text_box.text_mut_string()
                 .insert_str(op.range_to_clear.start, op.text_to_restore);
 
             let end = op.range_to_clear.start + op.text_to_restore.len();
@@ -813,17 +818,17 @@ impl<'a> TextEditMut<'a> {
         }
     }
 
-    pub fn replace_selection_inner(&mut self, s: &str) {
+    pub(crate) fn replace_selection_inner(&mut self, s: &str) {
         let range = self.text_box.selection().text_range();
         let start = range.start;
         if self.text_box.selection().is_collapsed() {
-            self.text_box.text_mut().to_mut().insert_str(start, s);
+            self.text_box.text_mut_string().insert_str(start, s);
             
             if self.inner.single_line {
                 self.remove_newlines();
             }
         } else {
-            self.text_box.text_mut().to_mut().replace_range(range, s);
+            self.text_box.text_mut_string().replace_range(range, s);
         
         if self.inner.single_line {
             self.remove_newlines();
@@ -842,15 +847,18 @@ impl<'a> TextEditMut<'a> {
         self.text_box.inner.selection.selection = Cursor::from_byte_index(&self.text_box.inner.layout, index, affinity).into();
     }
 
+    /// Returns the layout, refreshing it if needed.
     pub fn layout(&mut self) -> &Layout<ColorBrush> {
         self.text_box.layout()
     }
 
+    /// Sets the size of the text edit box.
     pub fn set_size(&mut self, size: (f32, f32)) {
         self.text_box.set_size(size)
     }
     
     #[cfg(feature = "accessibility")]
+    /// Pushes an accessibility update for this text edit.
     pub fn push_accesskit_update(&mut self, tree_update: &mut TreeUpdate) {
         let accesskit_id = self.text_box.inner.accesskit_id;
         let node = self.accesskit_node();
@@ -1134,34 +1142,15 @@ fn remove_newlines_inplace(text: &mut String) -> bool {
 }
 
 macro_rules! impl_for_textedit_and_texteditmut {
-    ($($(#[$attr:meta])* $item:item)*) => {
-        impl<'a> TextEditMut<'a> {
-            $($item)*
-        }
-       
+    ($($items:tt)*) => {
         impl<'a> TextEdit<'a> {
-            $($item)*
+            $($items)*
+        }
+        impl<'a> TextEditMut<'a> {
+            $($items)*
         }
     };
- }
-
-// macro_rules! impl_for_textedit_and_texteditmut {
-//     ($($(#[$attr:meta])* $visibility:vis fn $fn_name:ident $(<$($generic:tt),*>)? ($(& $($lt:lifetime)?)? $self:ident $(, $param:ident: $param_ty:ty)*) $(-> $ret_ty:ty)? $body:block)*) => {
-//         impl<'a> TextEditMut<'a> {
-//             $(
-//                 $(#[$attr])*
-//                 $visibility fn $fn_name $(<$($generic),*>)? ($(& $($lt)?)? $self $(, $param: $param_ty)*) $(-> $ret_ty)? $body
-//             )*
-//         }
-        
-//         impl<'a> TextEdit<'a> {
-//             $(
-//                 $(#[$attr])*
-//                 $visibility fn $fn_name $(<$($generic),*>)? ($(& $($lt)?)? $self $(, $param: $param_ty)*) $(-> $ret_ty)? $body
-//             )*
-//         }
-//     };
-// }
+}
 
 #[cfg(feature = "accessibility")]
 impl_for_textedit_and_texteditmut! {
@@ -1204,26 +1193,32 @@ impl_for_textedit_and_texteditmut! {
 }
 
 impl_for_textedit_and_texteditmut! {
+    /// Returns `true` if the text edit is currently composing IME text.
     pub fn is_composing(&self) -> bool {
         self.inner.compose.is_some()
     }
 
+    /// Returns `true` if the text edit is in single-line mode.
     pub fn single_line(&self) -> bool {
         self.inner.single_line
     }
 
+    /// Returns the newline entry mode.
     pub fn newline_mode(&self) -> NewlineMode {
         self.inner.newline_mode
     }
 
+    /// Returns `true` if the text edit is disabled.
     pub fn disabled(&self) -> bool {
         self.inner.disabled
     }
 
+    /// Returns `true` if placeholder text is currently showing.
     pub fn showing_placeholder(&self) -> bool {
         self.inner.showing_placeholder
     }
 
+    /// Returns the next time the cursor should blink.
     pub fn next_blink_time(&self) -> Option<Instant> {
         self.inner.start_time.map(|start_time| {
             let phase = Instant::now().duration_since(start_time);
@@ -1236,42 +1231,52 @@ impl_for_textedit_and_texteditmut! {
         })
     }
 
+    /// Returns the raw text content.
     pub fn raw_text(self) -> &'a str {
         self.text_box.text()
     }
     
+    /// Returns the currently selected text, if any.
     pub fn selected_text(&self) -> Option<&str> {
         self.text_box.selected_text()
     }
     
+    /// Returns the position of the text edit box.
     pub fn pos(&self) -> (f64, f64) {
         self.text_box.position()
     }
     
+    /// Returns `true` if the text edit box is hidden.
     pub fn hidden(&self) -> bool {
         self.text_box.hidden()
     }
     
+    /// Returns the depth (z-order) of the text edit box.
     pub fn depth(&self) -> f32 {
         self.text_box.depth()
     }
     
+    /// Returns the clipping rectangle.
     pub fn clip_rect(&self) -> Option<parley::Rect> {
         self.text_box.clip_rect()
     }
     
+    /// Returns `true` if fadeout clipping is enabled.
     pub fn fadeout_clipping(&self) -> bool {
         self.text_box.fadeout_clipping()
     }
     
+    /// Returns `true` if automatic clipping is enabled.
     pub fn auto_clip(&self) -> bool {
         self.text_box.inner.auto_clip
     }
     
+    /// Returns the scroll offset.
     pub fn scroll_offset(&self) -> (f32, f32) {
         self.text_box.scroll_offset()
     }
 
+    /// Returns the current text selection.
     pub fn selection(&self) -> Selection {
         self.text_box.selection()
     }
@@ -1312,30 +1317,37 @@ impl<'a> TextEditMut<'a> {
         self.style_version() != self.text_box.inner.style_version
     }
 
+    /// Returns a mutable reference to the raw text content.
     pub fn raw_text_mut(&mut self) -> &mut String {
-        self.text_box.text_mut().to_mut()
+        self.text_box.text_mut_string()
     }
 
+    /// Sets the position of the text edit box.
     pub fn set_pos(&mut self, pos: (f64, f64)) {
         self.text_box.set_pos(pos);
     }
     
+    /// Sets whether the text edit box is hidden.
     pub fn set_hidden(&mut self, hidden: bool) {
         self.text_box.set_hidden(hidden);
     }
     
+    /// Sets the depth (z-order) of the text edit box.
     pub fn set_depth(&mut self, value: f32) {
         self.text_box.set_depth(value);
     }
     
+    /// Sets the clipping rectangle for the text edit box.
     pub fn set_clip_rect(&mut self, clip_rect: Option<parley::Rect>) {
         self.text_box.set_clip_rect(clip_rect);
     }
     
+    /// Sets whether the text fades out when it overflows the clip rectangle.
     pub fn set_fadeout_clipping(&mut self, fadeout_clipping: bool) {
         self.text_box.set_fadeout_clipping(fadeout_clipping);
     }
     
+    /// Sets the scroll offset for the text edit box.
     pub fn set_scroll_offset(&mut self, offset: (f32, f32)) {
         self.text_box.set_scroll_offset(offset);
     }
@@ -1357,8 +1369,7 @@ impl<'a> TextEditMut<'a> {
         }
     }
 
-    /// Updates scroll offset to ensure cursor is visible
-    /// Returns true if the scroll offset changed
+    /// Updates scroll offset to ensure cursor is visible.
     pub fn update_scroll_to_cursor(&mut self) -> bool {
         if let Some(cursor_rect) = self.cursor_geometry(1.0) {
             if self.inner.single_line {
@@ -1425,10 +1436,12 @@ impl<'a> TextEditMut<'a> {
         false
     }
     
+    /// Sets the style for the text edit box.
     pub fn set_style(&mut self, style: &StyleHandle) {
         self.text_box.set_style(style);
     }
     
+    /// Returns the cursor geometry if visible.
     pub fn cursor_geometry(&mut self, size: f32) -> Option<Rect> {
         if !self.inner.show_cursor {
             return None;
@@ -1438,6 +1451,7 @@ impl<'a> TextEditMut<'a> {
         Some(self.text_box.selection().focus().geometry(&self.text_box.inner.layout, size))
     }
 
+    /// Refreshes the text layout if needed.
     pub fn refresh_layout(&mut self) {
         let color_override = if self.inner.disabled {
             Some(self.text_edit_style().disabled_text_color)
@@ -1455,11 +1469,10 @@ impl<'a> TextEditMut<'a> {
         }
     }
 
-    /// Programmatically set the text content of this text edit.
-    /// This will replace all text and move the cursor to the end.
+    /// Sets the text content of the text edit.
     pub fn set_text(&mut self, new_text: String) {
-        self.text_box.text_mut().to_mut().clear();
-        self.text_box.text_mut().to_mut().push_str(&new_text);
+        self.text_box.text_mut_string().clear();
+        self.text_box.text_mut_string().push_str(&new_text);
         self.text_box.inner.needs_relayout = true;
         self.text_box.move_to_text_end();
         // Clear any composition state
@@ -1469,13 +1482,13 @@ impl<'a> TextEditMut<'a> {
         self.text_box.shared.text_changed = true;
     }
 
-    /// Set placeholder text that will be shown when the text edit is empty
+    /// Sets placeholder text that will be shown when the text edit is empty.
     pub fn set_placeholder(&mut self, placeholder: impl Into<Cow<'static, str>>) {
         let placeholder_cow = placeholder.into();
         self.inner.placeholder_text = Some(placeholder_cow.clone());
         if self.text_box.text_inner().is_empty() || self.inner.showing_placeholder {
-            self.text_box.text_mut().to_mut().clear();
-            self.text_box.text_mut().to_mut().push_str(&placeholder_cow);
+            self.text_box.text_mut_string().clear();
+            self.text_box.text_mut_string().push_str(&placeholder_cow);
             self.text_box.inner.needs_relayout = true;
             self.inner.showing_placeholder = true;
             self.text_box.reset_selection();
@@ -1485,13 +1498,14 @@ impl<'a> TextEditMut<'a> {
 
     // todo: we could also pass a range to check only the newly inserted part.
     fn remove_newlines(&mut self) {
-        let removed = remove_newlines_inplace(self.text_box.text_mut().to_mut());
+        let removed = remove_newlines_inplace(self.text_box.text_mut_string());
         if removed {
             self.text_box.inner.needs_relayout = true;
             self.text_box.shared.text_changed = true;
         }
     }
 
+    /// Sets the IME cursor area for this text edit.
     pub fn set_ime_cursor_area(&mut self, window: &Window) {
         if let Some(area) = self.cursor_geometry(1.0) {
             // Note: on X11 `set_ime_cursor_area` may cause the exclusion area to be obscured
@@ -1507,7 +1521,7 @@ impl<'a> TextEditMut<'a> {
         }
     }
 
-    /// Set focus to this text edit.
+    /// Sets focus to this text edit.
     pub fn set_focus(&mut self) {
         self.text_box.shared.focused = Some(crate::AnyBox::TextEdit(self.text_box.key));
     }

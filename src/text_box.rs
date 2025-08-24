@@ -218,8 +218,7 @@ macro_rules! impl_for_textbox_and_textboxmut {
     ($($items:tt)*) => {
         impl<'a> TextBox<'a> {
             $($items)*
-        }
-       
+        }       
         impl<'a> TextBoxMut<'a> {
             $($items)*
         }
@@ -358,6 +357,7 @@ impl<'a> TextBoxMut<'a> {
     }
 
     #[cfg(feature = "accessibility")]
+    /// Pushes an accessibility update for this text box.
     pub fn push_accesskit_update(&mut self, tree_update: &mut TreeUpdate) {
         let accesskit_id = self.inner.accesskit_id;
         let node = self.accesskit_node();
@@ -630,19 +630,32 @@ impl<'a> TextBoxMut<'a> {
         self.set_selection(self.inner.selection.selection.collapse());
     }
 
-    /// Returns 
+    /// Returns a mutable reference to the text content.
+    /// 
+    /// This returns a `Cow<'static, str>`, which can be set to a `String` or to `'static str`
+    /// 
+    /// To manipulate the text as a `String`, call `Cow::to_mut()` on the result, or use [`Self::text_mut_string()`]
     pub fn text_mut(&mut self) -> &mut Cow<'static, str> {
         self.inner.needs_relayout = true;
         self.shared.text_changed = true;
         &mut self.inner.text
     }
-    
+
+    /// Returns a mutable reference to the text content as a `String`. If the text was a borrowed `&str`, it will be cloned.
+    /// 
+    /// This is a convenience method over [`Self::text_mut()`]
+    pub fn text_mut_string(&mut self) -> &mut String {
+        self.text_mut().to_mut()
+    }
+
     #[cfg(feature = "accessibility")]
+    /// Sets the accessibility node ID for this text box.
     pub fn set_accesskit_id(&mut self, accesskit_id: NodeId) {
         self.inner.accesskit_id = Some(accesskit_id);
     }
 
     #[cfg(feature = "accessibility")]
+    /// Returns the accessibility node ID for this text box.
     pub fn accesskit_id(&self) -> Option<NodeId> {
         self.inner.accesskit_id
     }
@@ -665,26 +678,31 @@ impl<'a> TextBoxMut<'a> {
         self.shared.text_changed = true;
     }
 
+    /// Sets the depth (z-order) of the text box.
     pub fn set_depth(&mut self, depth: f32) {
         self.inner.depth = depth;
         self.shared.text_changed = true;
     }
 
+    /// Sets the clipping rectangle for the text box.
     pub fn set_clip_rect(&mut self, clip_rect: Option<parley::Rect>) {
         self.inner.clip_rect = clip_rect;
         self.shared.text_changed = true;
     }
 
+    /// Sets whether the text is rendered with an alpha fade when it overflows the clip rectangle.
     pub fn set_fadeout_clipping(&mut self, fadeout_clipping: bool) {
         self.inner.fadeout_clipping = fadeout_clipping;
         self.shared.text_changed = true;
     }
 
+    /// Sets the scroll offset for the text box.
     pub fn set_scroll_offset(&mut self, offset: (f32, f32)) {
         self.inner.scroll_offset = offset;
         self.shared.text_changed = true;
     }
 
+    /// Sets the style for the text box.
     pub fn set_style(&mut self, style: &StyleHandle) {
         self.inner.style = style.sneak_clone();
         self.inner.style_version = self.style_version();
@@ -767,14 +785,13 @@ impl<'a> TextBoxMut<'a> {
     /// This provides full access to the underlying storage type.
 
 
-    /// Set the text to a static string reference.
-    /// This is efficient for static strings and avoids allocation.
+    /// Sets the text to a static string reference.
     pub fn set_static(&mut self, text: &'static str) {
         self.inner.needs_relayout = true;
         self.inner.text = Cow::Borrowed(text);
     }
 
-    /// Set the width of the layout.
+    /// Sets the size of the text box.
     pub fn set_size(&mut self, size: (f32, f32)) {
         let relayout = (self.inner.width != size.0) || (self.inner.height != size.1) || (self.inner.max_advance != size.0);
         self.inner.width = size.0;
@@ -785,14 +802,14 @@ impl<'a> TextBoxMut<'a> {
         }
     }
 
-    /// Set the alignment of the layout.
+    /// Sets the text alignment.
     pub fn set_alignment(&mut self, alignment: Alignment) {
         self.inner.alignment = alignment;
         self.inner.needs_relayout = true;
         self.shared.text_changed = true;
     }
 
-    /// Set the scale for the layout.
+    /// Sets the scale factor for the text.
     pub fn set_scale(&mut self, scale: f32) {
         self.inner.scale = scale;
         self.inner.needs_relayout = true;
@@ -995,6 +1012,7 @@ impl<'a> TextBoxMut<'a> {
         self.inner.selection.extend_selection_to_point(&self.inner.layout, x, y);
     }
 
+    /// Returns the layout, refreshing it if needed.
     pub fn layout(&mut self) -> &Layout<ColorBrush> {
         self.refresh_layout();
         &self.inner.layout
@@ -1009,12 +1027,13 @@ impl<'a> TextBoxMut<'a> {
         }
     }
 
+    /// Sets whether the text is selectable.
     pub fn set_selectable(&mut self, selectable: bool) {
         self.inner.selectable = selectable;
     }
     
     #[cfg(feature = "accessibility")]
-    /// Select inside the editor based on the selection provided by accesskit.
+    /// Sets the text selection based on an accesskit selection.
     pub fn select_from_accesskit(&mut self, selection: &accesskit::TextSelection) {
         self.refresh_layout();
         if let Some(selection) = Selection::from_access_selection(
@@ -1026,7 +1045,7 @@ impl<'a> TextBoxMut<'a> {
         }
     }
 
-    /// Set focus to this text box.
+    /// Sets focus to this text box.
     pub fn set_focus(&mut self) {
         self.shared.focused = Some(crate::AnyBox::TextBox(self.key));
     }
