@@ -1,6 +1,3 @@
-// Example demonstrating depth texture handling with triangles and text
-// This test will show whether depth textures work correctly with TextRenderer
-
 use textslabs::*;
 use std::sync::Arc;
 use wgpu::*;
@@ -43,7 +40,7 @@ struct State {
 #[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 struct TriangleVertex {
     position: [f32; 3],
-    color: [f32; 3],
+    color: [f32; 4],
 }
 
 impl State {
@@ -75,9 +72,17 @@ impl State {
         });
         let depth_view = depth_texture.create_view(&TextureViewDescriptor::default());
 
-        let depth_stencil_state = DepthStencilState {
+        let triangle_depth_stencil_state = DepthStencilState {
             format: depth_format,
             depth_write_enabled: true,
+            depth_compare: CompareFunction::Less,
+            stencil: StencilState::default(),
+            bias: DepthBiasState::default(),
+        };
+
+        let text_depth_stencil_state = DepthStencilState {
+            format: depth_format,
+            depth_write_enabled: false,
             depth_compare: CompareFunction::Less,
             stencil: StencilState::default(),
             bias: DepthBiasState::default(),
@@ -87,28 +92,28 @@ impl State {
             &device, 
             &queue, 
             surface_config.format,
-            Some(depth_stencil_state.clone()),
+            Some(text_depth_stencil_state),
             TextRendererParams::default()
         );
 
         let text_depth = 0.5;
         let mut text = Text::new_without_auto_wakeup();
         let _text_handle = text.add_text_box(
-            "This text should appear between triangles Red triangle behind (depth=0.8). Green triangle in front (depth=0.2) Text at depth=0.5. Text, text, text, text, text, text, text, text, text, text, text, text, text, text, text, text, text, text, text, text, text, text, text, text, text, text, text, text, text, text, text",
-            (50.0, 200.0),
-            (700.0, 200.0),
+            "Text rendering supports basic depth testing, but this isn't enough to draw multiple semitransparent objects both behind and in front of text. The third triangle is rendered in a separate draw call.    Text rendering supports basic depth testing, but this isn't enough to draw multiple semitransparent objects both behind and in front of text. The third triangle is rendered in a separate draw call.    Text rendering supports basic depth testing, but this isn't enough to draw multiple semitransparent objects both behind and in front of text. The third triangle is rendered in a separate draw call.    Text rendering supports basic depth testing, but this isn't enough to draw multiple semitransparent objects both behind and in front of text. The third triangle is rendered in a separate draw call.    ",
+            (50.0, 50.0),
+            (700.0, 300.0),
             text_depth
         );
 
         let triangle_shader_source = r#"
 struct VertexInput {
     @location(0) position: vec3<f32>,
-    @location(1) color: vec3<f32>,
+    @location(1) color: vec4<f32>,
 }
 
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
-    @location(0) color: vec3<f32>,
+    @location(0) color: vec4<f32>,
 }
 
 @vertex
@@ -121,7 +126,7 @@ fn vs_main(input: VertexInput) -> VertexOutput {
 
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
-    return vec4<f32>(input.color, 1.0);
+    return input.color;
 }
 "#;
 
@@ -140,7 +145,7 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
                 buffers: &[VertexBufferLayout {
                     array_stride: std::mem::size_of::<TriangleVertex>() as BufferAddress,
                     step_mode: VertexStepMode::Vertex,
-                    attributes: &vertex_attr_array![0 => Float32x3, 1 => Float32x3],
+                    attributes: &vertex_attr_array![0 => Float32x3, 1 => Float32x4],
                 }],
                 compilation_options: PipelineCompilationOptions::default(),
             },
@@ -158,22 +163,27 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
                 topology: PrimitiveTopology::TriangleList,
                 ..Default::default()
             },
-            depth_stencil: Some(depth_stencil_state),
+            depth_stencil: Some(triangle_depth_stencil_state),
             multisample: MultisampleState::default(),
             multiview: None,
             cache: None,
         });
 
         let triangle_vertices = [
-            // behind text
-            TriangleVertex { position: [-0.8, 0.5, 0.8], color: [1.0, 0.0, 0.0] },
-            TriangleVertex { position: [-0.3, 0.5, 0.8], color: [1.0, 0.0, 0.0] },
-            TriangleVertex { position: [-0.55, -0.5, 0.8], color: [1.0, 0.0, 0.0] },
+            // behind text (opaque red)
+            TriangleVertex { position: [-0.7, 0.9, 0.8], color: [1.0, 0.0, 0.0, 1.0] },
+            TriangleVertex { position: [-0.3, 0.9, 0.8], color: [1.0, 0.0, 0.0, 1.0] },
+            TriangleVertex { position: [-0.5, 0.5, 0.8], color: [1.0, 0.0, 0.0, 1.0] },
             
-            // in front of text 
-            TriangleVertex { position: [0.3, 0.5, 0.2], color: [0.0, 1.0, 0.0] },
-            TriangleVertex { position: [0.8, 0.5, 0.2], color: [0.0, 1.0, 0.0] },
-            TriangleVertex { position: [0.55, -0.5, 0.2], color: [0.0, 1.0, 0.0] },
+            // in front of text (opaque green)
+            TriangleVertex { position: [0.3, 0.9, 0.2], color: [0.0, 1.0, 0.0, 1.0] },
+            TriangleVertex { position: [0.7, 0.9, 0.2], color: [0.0, 1.0, 0.0, 1.0] },
+            TriangleVertex { position: [0.5, 0.5, 0.2], color: [0.0, 1.0, 0.0, 1.0] },
+
+            // Semitransparent blue
+            TriangleVertex { position: [-0.2,  0.0, 0.9], color: [0.1, 0.1, 1.0, 0.7] },
+            TriangleVertex { position: [ 0.2,  0.0, 0.9], color: [0.1, 0.1, 1.0, 0.7] },
+            TriangleVertex { position: [ 0.0, -0.4, 0.9], color: [0.1, 0.1, 1.0, 0.7] },
         ];
 
         let triangle_vertex_buffer = device.create_buffer_init(&util::BufferInitDescriptor {
@@ -262,13 +272,16 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
                 occlusion_query_set: None,
             });
 
-            // Render triangles first (they should write to depth buffer)
             render_pass.set_pipeline(&self.triangle_pipeline);
             render_pass.set_vertex_buffer(0, self.triangle_vertex_buffer.slice(..));
             render_pass.draw(0..6, 0..1);
 
-            // Render text (should be depth tested against triangles)
             self.text_renderer.render(&mut render_pass);
+
+            render_pass.set_pipeline(&self.triangle_pipeline);
+            render_pass.set_vertex_buffer(0, self.triangle_vertex_buffer.slice(..));
+            render_pass.draw(6..9, 0..1);
+
         }
 
         self.queue.submit(std::iter::once(encoder.finish()));
@@ -309,7 +322,7 @@ impl winit::application::ApplicationHandler for Application {
 
         let window_attributes = Window::default_attributes()
             .with_inner_size(LogicalSize::new(WINDOW_WIDTH as f64, WINDOW_HEIGHT as f64))
-            .with_title("Depth Test - Red triangle behind text, green triangle in front");
+            .with_resizable(false);
         let window = Arc::new(event_loop.create_window(window_attributes).unwrap());
 
         self.state = Some(State::new(window));
