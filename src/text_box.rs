@@ -720,13 +720,25 @@ impl<'a> TextBoxMut<'a> {
         &self.inner.text
     }
 
+    pub(crate) fn get_scale_factor(&self) -> f64 {
+        let scale_factor = if let Some(window_id) = self.inner.window_id {           
+            self.shared.windows.iter().find(|info| info.window_id == window_id)
+                .map(|info| info.scale_factor).unwrap_or(1.0)
+        } else {
+            self.shared.windows.first().map(|w| w.scale_factor).unwrap_or(1.0)
+        };
+
+        scale_factor
+    }
+
     pub(crate) fn rebuild_layout(
         &mut self,
         color_override: Option<ColorBrush>,
         single_line: bool,
     ) {
         with_text_cx(|layout_cx, font_cx| {
-            let mut builder = layout_cx.tree_builder(font_cx, 1.0, true, self.style());
+            let scale_factor = self.get_scale_factor();
+            let mut builder = layout_cx.tree_builder(font_cx, scale_factor as f32, true, self.style());
 
             if let Some(color_override) = color_override {
                 builder.push_style_modification_span(&[

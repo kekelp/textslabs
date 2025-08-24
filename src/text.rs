@@ -16,9 +16,10 @@ const MULTICLICK_TOLERANCE_SQUARED: f64 = 26.0;
 
 #[derive(Debug, Clone)]
 pub(crate) struct WindowInfo {
-    pub(crate) window_id: Option<WindowId>,
+    pub(crate) window_id: WindowId,
     pub(crate) dimensions: (f32, f32),
     pub(crate) prepared: bool,
+    pub(crate) scale_factor: f64,
 }
 
 #[derive(Debug)]
@@ -57,8 +58,6 @@ pub struct Text {
     
     pub(crate) slot_for_text_box_mut: Option<TextBoxMut<'static>>,
 
-    pub(crate) windows: Vec<WindowInfo>,
-
     #[cfg(feature = "accessibility")]
     pub(crate) accesskit_id_to_text_handle_map: HashMap<NodeId, AnyBox>,
 }
@@ -74,6 +73,9 @@ pub struct Shared {
     pub(crate) scrolled: bool,
     pub(crate) event_consumed: bool,
     pub(crate) focused: Option<AnyBox>,
+
+    pub(crate) windows: Vec<WindowInfo>,
+
     #[cfg(feature = "accessibility")]
     pub(crate) accesskit_tree_update: TreeUpdate,
     #[cfg(feature = "accessibility")]
@@ -324,12 +326,12 @@ impl Text {
 
             slot_for_text_box_mut: None,
 
-            windows: Vec::new(),
-
+            
             #[cfg(feature = "accessibility")]
             accesskit_id_to_text_handle_map: HashMap::with_capacity(50),
-
+            
             shared: Shared {
+                windows: Vec::with_capacity(1),
                 styles,
                 default_style_key,
                 text_changed: true,
@@ -641,23 +643,27 @@ impl Text {
     }
 
 
-    /// Prepare text for a specific window in a multi-window setup.
-    /// 
-    /// Use this instead of `prepare_all` when you have multiple windows.
+    /// Layout and rasterize all text belonging to a window, prepare the render data, and pass it to `TextRenderer`.
     pub fn prepare_all_for_window(&mut self, text_renderer: &mut TextRenderer, window: &Window) {
-        self.prepare_all_impl(text_renderer, Some(window));
+        let window_id = window.id();
+        let window_size = window.inner_size();
+        let (width, height) = (window_size.width as f32, window_size.height as f32);
+
+        self.prepare_all_impl(text_renderer, window_id, (width, height));
     }
 
+    /// Layout and rasterize all text, prepare the render data, and pass it to `TextRenderer`.
+    /// 
+    /// This function is for single-window applications only. For multi-window, use [`Text::prepare_all_for_window`].
     pub fn prepare_all(&mut self, text_renderer: &mut TextRenderer) {
-        self.prepare_all_impl(text_renderer, None);
+        let (window_id, window_size) = self.shared.windows.first().map(|w| (w.window_id, w.dimensions)).expect("Text::prepare_all didn't register any windows, are you calling Text::handle_events?");
+
+        self.prepare_all_impl(text_renderer, window_id, window_size);
     }
 
-    fn prepare_all_impl(&mut self, text_renderer: &mut TextRenderer, window: Option<&Window>) {
-        let window_id = window.map(|w| w.id());
-        // Each window needs its own resolution set
-        let (width, height) = self.windows.iter().find(|info| info.window_id == window_id)
-            .map(|info| info.dimensions).unwrap_or((800.0, 600.0));
-        text_renderer.update_resolution(width, height);
+    pub fn prepare_all_impl(&mut self, text_renderer: &mut TextRenderer, window_id: WindowId, window_size: (f32, f32)) {
+
+        text_renderer.update_resolution(window_size.0, window_size.1);
 
         // todo: not sure if this works correctly with multi-window.           
         if ! self.shared.text_changed && self.using_frame_based_visibility {
@@ -674,7 +680,6 @@ impl Text {
             }
         }
         
-
         let (show_cursor, blink_changed) = self.cursor_blinked_out(true);
 
         if self.shared.text_changed {
@@ -686,27 +691,23 @@ impl Text {
         if self.decorations_changed || self.shared.text_changed  || !self.scrolled_moved_indices.is_empty() || blink_changed {
             if let Some(focused) = self.shared.focused {
                 // For multi-window, only prepare decorations if the focused element belongs to this window
-                let focused_belongs_to_window = if let Some(window_id) = window_id {
-                    match focused {
-                        AnyBox::TextEdit(i) => {
-                            if let Some((_text_edit, text_box)) = self.text_edits.get(i) {
-                                text_box.window_id.is_none() || text_box.window_id == Some(window_id)
-                            } else {
-                                false
-                            }
-                        },
-                        AnyBox::TextBox(i) => {
-                            if let Some(text_box) = self.text_boxes.get(i) {
-                                text_box.window_id.is_none() || text_box.window_id == Some(window_id)
-                            } else {
-                                false
-                            }
-                        },
-                    }
-                } else {
-                    true // Single window mode - always show decorations
+                let focused_belongs_to_window = match focused {
+                    AnyBox::TextEdit(i) => {
+                        if let Some((_text_edit, text_box)) = self.text_edits.get(i) {
+                            text_box.window_id.is_none() || text_box.window_id == Some(window_id)
+                        } else {
+                            false
+                        }
+                    },
+                    AnyBox::TextBox(i) => {
+                        if let Some(text_box) = self.text_boxes.get(i) {
+                            text_box.window_id.is_none() || text_box.window_id == Some(window_id)
+                        } else {
+                            false
+                        }
+                    },
                 };
-
+                
                 if focused_belongs_to_window {
                     match focused {
                         AnyBox::TextEdit(i) => {
@@ -736,12 +737,7 @@ impl Text {
                     let mut text_edit = get_full_text_edit_partial_borrows_but_for_iterating((&mut text_edit.0, &mut text_edit.1), &mut self.shared, key);
                     if !text_edit.hidden() && text_edit.text_box.inner.last_frame_touched == current_frame {
                         // For multi-window, only render if this text edit belongs to this window (or has no window restriction)
-                        let should_render = if let Some(window_id) = window_id {
-                            text_edit.text_box.inner.window_id.is_none() || text_edit.text_box.inner.window_id == Some(window_id)
-                        } else {
-                            true
-                        };
-                        
+                        let should_render = text_edit.text_box.inner.window_id.is_none() || text_edit.text_box.inner.window_id == Some(window_id);
                         if should_render {
                             text_renderer.prepare_text_edit_layout(&mut text_edit);
                         }
@@ -752,12 +748,7 @@ impl Text {
                     let mut text_box = get_full_text_box_partial_borrows_but_for_iterating(text_box, &mut self.shared, key);
                     if !text_box.hidden() && text_box.inner.last_frame_touched == current_frame {
                         // For multi-window: Only render if this text box belongs to this window (or has no window restriction)
-                        let should_render = if let Some(window_id) = window_id {
-                            text_box.inner.window_id.is_none() || text_box.inner.window_id == Some(window_id)
-                        } else {
-                            true // Single window mode - render all
-                        };
-                        
+                        let should_render = text_box.inner.window_id.is_none() || text_box.inner.window_id == Some(window_id);
                         if should_render {
                             text_renderer.prepare_text_box_layout(&mut text_box);
                         }
@@ -766,14 +757,12 @@ impl Text {
             }
         }
 
-        // Multi-window: mark prepared and check if all windows done. Single-window: always clear.
-        let should_clear_flags = if let Some(window_id) = window_id {
-            if let Some(window_info) = self.windows.iter_mut().find(|info| info.window_id == Some(window_id)) {
+        // Multi-window: mark prepared and check if all windows done.
+        let should_clear_flags = {
+            if let Some(window_info) = self.shared.windows.iter_mut().find(|info| info.window_id == window_id) {
                 window_info.prepared = true;
             }
-            self.windows.iter().all(|info| info.prepared)
-        } else {
-            true
+            self.shared.windows.iter().all(|info| info.prepared)
         };
 
         if should_clear_flags {
@@ -785,7 +774,7 @@ impl Text {
             self.using_frame_based_visibility = false;
 
             // Reset all windows to unprepared for next frame
-            for window_info in &mut self.windows {
+            for window_info in &mut self.shared.windows {
                 window_info.prepared = false;
             }
 
@@ -827,96 +816,39 @@ impl Text {
         });
     }
 
-    /// Handle window events for text widgets.
+    /// Handle window events for text widgets in a specific window.
     /// 
-    /// This is the simple interface that works when text widgets aren't occluded by other objects.
-    /// For complex z-ordering, use [`Text::find_topmost_text_box()`] and [`Text::handle_event_with_topmost()`], as described in the crate-level docs and shown in the `occlusion.rs` example.
-    /// 
-    /// Any events other than `winit::WindowEvent::MouseInput` can use either this method or the occlusion method interchangeably.
+    /// This is the multi-window version of [`Text::handle_event()`]. 
+    /// Only text elements belonging to the specified window (or with no window restriction) will respond to events.
     pub fn handle_event(&mut self, event: &WindowEvent, window: &Window) {
         self.shared.current_event_number += 1;
         
         self.input_state.handle_event(event);
 
-        if let WindowEvent::Resized(size) = event {
-            if let Some(window_info) = self.windows.iter_mut().find(|info| info.window_id == None) {
-                window_info.dimensions = (size.width as f32, size.height as f32);
-            } else {
-                self.windows.push(WindowInfo { 
-                    window_id: None, 
-                    dimensions: (size.width as f32, size.height as f32), 
-                    prepared: false 
+        // Register the window if not already there.
+        // Only for a few events that should be  guaranteed to arrive for new windows, to avoid a lot of needless checks
+        if let WindowEvent::Resized(_) | WindowEvent::ScaleFactorChanged { .. } = event {
+            if self.shared.windows.iter().find(|w_info| w_info.window_id == window.id()).is_none() {
+                self.shared.windows.push(WindowInfo { 
+                    window_id: window.id(), 
+                    dimensions: (window.inner_size().width as f32, window.inner_size().height as f32), 
+                    prepared: false,
+                    scale_factor: window.scale_factor(),
                 });
             }
-            self.shared.text_changed = true;
         }
-
-        // update smooth scrolling animations
-        if let WindowEvent::RedrawRequested = event {
-            let animation_updated = self.update_smooth_scrolling();
-            if animation_updated {
-                self.shared.scrolled = true;
-            }
-        }
-
-        if let WindowEvent::MouseInput { state, button, .. } = event {
-            if state.is_pressed() && *button == MouseButton::Left {
-                let new_focus = self.find_topmost_at_pos(self.input_state.mouse.cursor_pos);
-                if new_focus.is_some() {
-                    self.shared.event_consumed = true;
-                }
-                self.refocus(new_focus);
-                self.handle_click_counting();
-            }
-        }
-
-        if let WindowEvent::MouseWheel { .. } = event {
-            let hovered = self.find_topmost_at_pos(self.input_state.mouse.cursor_pos);
-            if let Some(hovered_widget) = hovered {
-                self.shared.event_consumed = true;
-                self.handle_hovered_event(hovered_widget, event, window);
-            }
-            return;
-        }
-
-        if let Some(focused) = self.shared.focused {
-            self.shared.event_consumed = true;
-            self.handle_focused_event(focused, event, window);
-
-            #[cfg(feature = "accessibility")] {   
-                // todo: not the best, this includes decoration changes and stuff.
-                if self.need_rerender() {
-                    self.push_ak_update_for_focused(focused);
-                }
-            }
-        }
-    }
-
-    /// Handle window events for text widgets in a specific window.
-    /// 
-    /// This is the multi-window version of [`Text::handle_event()`]. 
-    /// Only text elements belonging to the specified window (or with no window restriction) will respond to events.
-    pub fn handle_event_for_window(&mut self, event: &WindowEvent, window: &Window) {
-        
-        self.shared.current_event_number += 1;
-        
-        self.input_state.handle_event(event);
-
-        if let WindowEvent::Resized(size) = event {
-            if let Some(window_info) = self.windows.iter_mut().find(|info| info.window_id == Some(window.id())) {
-                window_info.dimensions = (size.width as f32, size.height as f32);
-            } else {
-                self.windows.push(WindowInfo { 
-                    window_id: Some(window.id()), 
-                    dimensions: (size.width as f32, size.height as f32), 
-                    prepared: false 
-                });
-            }
-            self.shared.text_changed = true;
-        }
-
         if let WindowEvent::CloseRequested | WindowEvent::Destroyed = event {
-            self.windows.retain(|info| info.window_id != Some(window.id()));
+            self.shared.windows.retain(|info| info.window_id != window.id());
+        }
+
+        if let WindowEvent::ScaleFactorChanged { scale_factor, inner_size_writer: _ } = event {
+            let window = self.shared.windows.iter_mut().find(|info| info.window_id == window.id()).unwrap();
+            window.scale_factor = *scale_factor;
+        }
+
+        if let WindowEvent::Resized(new_size) = event {
+            let window = self.shared.windows.iter_mut().find(|info| info.window_id == window.id()).unwrap();
+            window.dimensions = (new_size.width as f32, new_size.height as f32);
         }
 
         // update smooth scrolling animations

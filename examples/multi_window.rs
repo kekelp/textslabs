@@ -99,7 +99,7 @@ impl winit::application::ApplicationHandler for Application {
         
         if let Some(window_index) = window_index {
             let window_state = &mut state.windows[window_index];
-            state.text.handle_event_for_window(&event, &window_state.window);
+            state.text.handle_event(&event, &window_state.window);
             match event {
                 WindowEvent::RedrawRequested => {
                     
