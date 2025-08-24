@@ -1279,7 +1279,7 @@ impl_for_textedit_and_texteditmut! {
 
 /// A struct that refers to a text edit box stored inside a [`Text`] struct.
 /// 
-/// This struct can't be created directly. Instead, use [`Text::add_text_edit_box()`] to create one within [`Text`] and get a [`TextEditHandle`] back.
+/// This struct can't be created directly. Instead, use [`Text::add_text_edit()`] to create one within [`Text`] and get a [`TextEditHandle`] back.
 /// 
 /// Then, the handle can be used to get a `TextEditMut` with [`Text::get_text_edit_mut()`].
 pub struct TextEditMut<'a> {

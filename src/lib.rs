@@ -7,7 +7,6 @@
 //! // Create the Text struct and the Text renderer:
 //! let mut text = Text::new_without_auto_wakeup();
 //! let text_renderer = TextRenderer::new(&device, &queue, surface_config.format);
-//! 
 //! // Text manages collections of text boxes and styles.
 //! // TextRenderer holds the state needed to render the text on the gpu.
 //! 
@@ -22,7 +21,7 @@
 //! // Manually remove text boxes when needed:
 //! text.remove_text_box(handle);
 //! 
-//! // In winit's window_event callback, pass the events to Text:
+//! // In winit's window_event callback, pass the event to Text:
 //! text.handle_event(&event, &window);
 //! 
 //! // To show the text on the screen, call Text::prepare:
@@ -31,7 +30,6 @@
 //! text_renderer.load_to_gpu(&device, &queue);
 //! // Then render the text as part of a wgpu render pass:
 //! self.text_renderer.render(&mut render_pass);
-//! 
 //! ```
 //! 
 //! See the `basic.rs` or the `minimal.rs` example in the repository to see a more complete example, including the `winit` and `wgpu` boilerplate.
@@ -58,11 +56,11 @@
 //! 
 //! As great as this sounds, in some cases text boxes can be occluded by other objects, such as an opaque panel. In this case, handling a mouse click event requires information that the [`Text`] struct doesn't have, so the integration needs to be a bit more complex. The process is this:
 //! 
-//! - Run `let topmost_text_box = `[`Text::find_topmost_text_box()`] to find out which text box *would* have received the event, if it wasn't for other objects.
+//! - Run [`Text::find_topmost_text_box()`] to find out which text box *would* have received the event, if it wasn't for other objects.
 //! - Run some custom code to find out which other object *would* have received the event, if it wasn't for text boxes.
 //! - Compare the depth of the two candidates. For the text box, use [`Text::get_text_box_depth()`].
-//! - If the text box is on top, run [`Text::handle_event_with_topmost()`]`(Some(topmost_text_box))`, which will handle the event normally (but skip looking for the topmost box again).
-//! - If the text box, is occluded, run [`Text::handle_event_with_topmost()`]`(None)`.
+//! - If the text box is on top, call [`Text::handle_event_with_topmost()`] with `topmost_text_box = Some(topmost_text_box)`, which will handle the event normally (but skip looking for the topmost box again).
+//! - If the text box, is occluded, call [`Text::handle_event_with_topmost()`] with `topmost_text_box = None`.
 //! 
 //! For any `winit::WindowEvent` other than a `winit::WindowEvent::MouseInput` or a `winit::WindowEvent::MouseWheel`, this process can be skipped, and you can just call [`Text::handle_event()`] normallyw.
 //! 
@@ -70,9 +68,9 @@
 //! 
 //! ## Declarative Visibility
 //! 
-//! There is an optional declarative interface for hiding and removing text boxes:
+//! There is an optional declarative interface for hiding text boxes:
 //! 
-//! ```ignore
+//! ```rust,no_run
 //! // Each frame, advance an internal frame counter,
 //! // and implicitly mark all text boxes as "outdated"
 //! text.advance_frame_and_hide_boxes();
@@ -92,7 +90,7 @@
 //! 
 //! There are two main open issues in the design of the library:
 //! 
-//! - All text boxes are rendered in a single draw call. The `TextRenderer` supports using a depth buffer, but that's not enough to get correct results when many semitransparent elements overlap. Solving this problem while keeping the integration simple enough is probably quite hard.
+//! - All text boxes are rendered in a single draw call. The `TextRenderer` supports using a depth buffer, but that's not enough to get correct results when many semitransparent elements overlap. The only way to solve this problem fully is to draw elements in order. Doing this while keeping the integration simple enough is probably quite hard.
 //! 
 //! - the math for scrolling and smooth scrolling animations in overflowing text edit boxes is hardcoded in the library. This means that a GUI library using Textslabs might have inconsistent scrolling behavior between the Textslabs text edit boxes and the GUI library's generic scrollable containers.
 
@@ -121,7 +119,7 @@ pub use parley::TextStyle as ParleyTextStyle;
 
 /// Text style.
 /// 
-/// To use it, first add a `TextStyle2` into a [`Text`] with [`Text::add_style()`], and get a [`StyleHandle`] back. Then, use [`TextBox::set_style()`] to make a text box use the style.
+/// To use it, first add a `TextStyle2` into a [`Text`] with [`Text::add_style()`], and get a [`StyleHandle`] back. Then, use [`TextBoxMut::set_style()`] to make a text box use the style.
 pub type TextStyle2 = ParleyTextStyle<'static, ColorBrush>;
 
 /// Style configuration for text edit boxes.

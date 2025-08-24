@@ -65,7 +65,7 @@ pub struct Text {
 
 /// Data that TextBoxMut and similar things need to have a reference to. Kept all together so that TextBoxMut and similar things can hold a single pointer to all of it.
 /// 
-/// A cooler way to do this would be to make the TextBoxMut be TextBoxMut { i: u32, text: &mut Text }. So you have access to the whole Text struct unconditionally, and you don't have to separate things this way. And to get the actual text box, you do self.text.text_boxes[i] every time. But we're trying this way this time
+// A cooler way to do this would be to make the TextBoxMut be TextBoxMut { i: u32, text: &mut Text }. So you have access to the whole Text struct unconditionally, and you don't have to separate things this way. And to get the actual text box, you do self.text.text_boxes[i] every time. But we're trying this way this time
 pub struct Shared {    
     pub(crate) styles: SlotMap<DefaultKey, StyleInner>,
     pub(crate) default_style_key: DefaultKey,
@@ -283,7 +283,7 @@ impl Text {
     /// 
     /// `window` is used to allow `Text` to wake up the `winit` event loop automatically when it needs to redraw a blinking cursor.
     /// 
-    /// In applications that don't pause their event loops, like games, there is no need to use the wakeup system, so you can use [`Text::new_without_blink_wakeup`] instead.
+    /// In applications that don't pause their event loops, like games, there is no need to use the wakeup system, so you can use [`Text::new_without_auto_wakeup`] instead.
     /// 
     /// You can also handle cursor wakeups manually in your winit event loop with winit's `ControlFlow::WaitUntil` and [`Text::time_until_next_cursor_blink`]. See the `event_loop_smart.rs` example.
     pub fn new(window: Arc<Window>) -> Self {
@@ -513,7 +513,7 @@ impl Text {
     /// 
     /// This allows to control the visibility of text boxes in a more "declarative" way.
     /// 
-    /// Additionally, you can also use [`TextBox::set_can_hide()`] to decide if boxes should stay hidden in the background, or if they should marked as "to delete". You can the call [`Text::remove_old_nodes()`] to remove all the outdated text boxes that were marked as "to delete". 
+    /// Additionally, you can also use [`TextBoxMut::set_can_hide()`] to decide if boxes should stay hidden in the background, or if they should marked as "to delete". You can the call [`Text::remove_old_nodes()`] to remove all the outdated text boxes that were marked as "to delete". 
     pub fn advance_frame_and_hide_boxes(&mut self) {
         self.current_visibility_frame += 1;
         self.using_frame_based_visibility = true;
@@ -539,7 +539,7 @@ impl Text {
     }
 
 
-    /// Remove all text boxes that were made outdated by [`Text::advance_frame_and_hide_boxes()`], were not refreshed with [`Text::refresh_text_box()`], and were not set to remain as hidden with [`TextBox::set_can_hide()`].
+    /// Remove all text boxes that were made outdated by [`Text::advance_frame_and_hide_boxes()`], were not refreshed with [`Text::refresh_text_box()`], and were not set to remain as hidden with [`TextBoxMut::set_can_hide()`].
     /// 
     /// Because [`Text::remove_old_nodes()`] mass-removes text boxes without consuming their handles, the handles become "dangling" and should not be reused. Using them in functions like [`Text::get_text_box()`] or [`Text::remove_text_box()`] will cause panics or incorrect results.
     /// 

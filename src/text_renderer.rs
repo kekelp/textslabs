@@ -16,6 +16,8 @@ fn pack_flags(content_type: u32, fade_enabled: bool) -> u32 {
 /// A struct for rendering text and text edit boxes on the GPU.
 /// 
 /// Uses traditional CPU-size rasterizing and a dynamic glyph atlas on the GPU.
+/// 
+/// `TextRenderer` supports only one texture format at a time.
 pub struct TextRenderer {
     pub(crate) text_renderer: ContextlessTextRenderer,
     pub(crate) scale_cx: ScaleContext,
@@ -327,6 +329,9 @@ impl TextRenderer {
         self.text_renderer.clear_decorations();
     }
 
+    /// Prepare an individual `parley` layout.
+    /// 
+    /// When preparing individual layouts, [`Text::prepare_all`] should still be called once per frame before rendering, to update the screen resolution and for other bookkeeping.
     pub fn prepare_layout(&mut self, layout: &Layout<ColorBrush>, left: f32, top: f32, clip_rect: Option<parley::Rect>, fade: bool) {
         self.text_renderer.prepare_layout(layout, &mut self.scale_cx, left, top, clip_rect, fade);
         self.text_renderer.needs_gpu_sync = true;
