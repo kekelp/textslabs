@@ -1305,7 +1305,7 @@ pub struct TextEdit<'a> {
 }
 
 impl<'a> TextEditMut<'a> {
-    pub(crate) fn text_edit_style(&self) -> &TextEditStyle {
+    pub fn text_edit_style(&self) -> &TextEditStyle {
         &self.text_box.shared.styles[self.text_box.inner.style.key].text_edit_style
     }
 

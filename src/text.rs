@@ -661,7 +661,7 @@ impl Text {
         self.prepare_all_impl(text_renderer, window_id, window_size);
     }
 
-    pub fn prepare_all_impl(&mut self, text_renderer: &mut TextRenderer, window_id: WindowId, window_size: (f32, f32)) {
+    pub(crate) fn prepare_all_impl(&mut self, text_renderer: &mut TextRenderer, window_id: WindowId, window_size: (f32, f32)) {
 
         text_renderer.update_resolution(window_size.0, window_size.1);
 
