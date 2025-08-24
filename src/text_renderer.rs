@@ -343,7 +343,7 @@ impl TextRenderer {
         }
         text_box.refresh_layout();
                 
-        let (left, top) = text_box.pos();
+        let (left, top) = text_box.position();
         let (left, top) = (left as f32, top as f32);
         let clip_rect = text_box.effective_clip_rect();
         let fade = text_box.fadeout_clipping();
@@ -389,7 +389,7 @@ impl TextRenderer {
     }
 
     pub fn prepare_text_box_decorations(&mut self, text_box: &TextBoxMut, show_cursor: bool) {
-        let (left, top) = text_box.pos();
+        let (left, top) = text_box.position();
         let (left, top) = (left as f32, top as f32);
         let clip_rect = text_box.effective_clip_rect();
 

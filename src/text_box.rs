@@ -131,6 +131,7 @@ thread_local! {
     static CLIPBOARD: RefCell<Clipboard> = RefCell::new(Clipboard::new().unwrap());
 }
 
+/// Runs the given closure with mutable access to the thread-local [`Clipboard`].
 pub fn with_clipboard<R>(f: impl FnOnce(&mut Clipboard) -> R) -> R {
     let res = CLIPBOARD.with_borrow_mut(|clipboard| f(clipboard));
     res
@@ -214,13 +215,13 @@ impl TextBoxInner {
 
 
 macro_rules! impl_for_textbox_and_textboxmut {
-    ($($(#[$attr:meta])* $item:item)*) => {
+    ($($items:tt)*) => {
         impl<'a> TextBox<'a> {
-            $($item)*
+            $($items)*
         }
        
         impl<'a> TextBoxMut<'a> {
-            $($item)*
+            $($items)*
         }
     };
 }
@@ -249,38 +250,42 @@ impl_for_textbox_and_textboxmut! {
 }
 
 impl_for_textbox_and_textboxmut! {
+    /// Returns a reference to the current style of the text box.
     pub fn style(&'a self) -> &'a TextStyle2 {
         &self.shared.styles[self.inner.style.key].text_style
     }
 
+    /// Returns `true` if the text box is currently hidden.
     pub fn hidden(&self) -> bool {
         self.inner.hidden
     }
 
+    /// Returns the current depth (z) of the text box.
     pub fn depth(&self) -> f32 {
         self.inner.depth
     }
 
+    /// Returns a reference to the text in the text nox. 
     pub fn text(self) -> &'a str {
         &self.inner.text
     }
 
-    pub fn pos(&self) -> (f64, f64) {
+    /// Returns the current position of the text box.
+    pub fn position(&self) -> (f64, f64) {
         (self.inner.left, self.inner.top)
     }
 
+    /// Returns the current clip rect of the text box.
     pub fn clip_rect(&self) -> Option<parley::Rect> {
         self.inner.clip_rect
     }
-
+    
+    /// Returns `true` if the text box is set to use a fade effect when the contained text overflows its clip rect.
     pub fn fadeout_clipping(&self) -> bool {
         self.inner.fadeout_clipping
     }
 
-    pub fn auto_clip(&self) -> bool {
-        self.inner.auto_clip
-    }
-
+    /// Returns the currently selected text, or `None` if no text is currently selected.
     pub fn selected_text(&self) -> Option<&str> {
         if !self.inner.selection.selection.is_collapsed() {
             self.inner.text.get(self.inner.selection.selection.text_range())
@@ -289,23 +294,30 @@ impl_for_textbox_and_textboxmut! {
         }
     }
 
+    /// Returns the current selection of the text box.
     pub fn selection(&self) -> Selection {
         self.inner.selection.selection
     }
 
+    /// Returns the current scroll offset of the text box.
     pub fn scroll_offset(&self) -> (f32, f32) {
         self.inner.scroll_offset
     }
 
-    pub fn selection_geometry(&self) -> Vec<(Rect, usize)> {
-        self.inner.selection.selection.geometry(&self.inner.layout)
+    /// Returns `true` if the text in the text box is currently selectable.
+    pub fn selectable(&self) -> bool {
+        self.inner.selectable
     }
 
-    pub fn selection_geometry_with(&self, f: impl FnMut(Rect, usize)) {
-        self.inner.selection.selection.geometry_with(&self.inner.layout, f);
+    #[doc(hidden)] 
+    pub fn can_hide(&self) -> bool {
+        self.inner.can_hide
     }
+}
 
-    pub fn effective_clip_rect(&self) -> Option<parley::Rect> {
+impl<'a> TextBoxMut<'a> {
+
+    pub(crate) fn effective_clip_rect(&self) -> Option<parley::Rect> {
         let auto_clip_rect = if self.inner.auto_clip {
             Some(parley::Rect {
                 x0: self.inner.scroll_offset.0 as f64,
@@ -345,18 +357,6 @@ impl_for_textbox_and_textboxmut! {
         }
     }
 
-    pub fn selectable(&self) -> bool {
-        self.inner.selectable
-    }
-}
-
-impl<'a> TextBox<'a> {
-    pub fn can_hide(&self) -> bool {
-        self.inner.can_hide
-    }
-}
-
-impl<'a> TextBoxMut<'a> {
     #[cfg(feature = "accessibility")]
     pub fn push_accesskit_update(&mut self, tree_update: &mut TreeUpdate) {
         let accesskit_id = self.inner.accesskit_id;
@@ -630,10 +630,11 @@ impl<'a> TextBoxMut<'a> {
         self.set_selection(self.inner.selection.selection.collapse());
     }
 
-    pub fn text_mut(&mut self) -> &mut String {
+    /// Returns 
+    pub fn text_mut(&mut self) -> &mut Cow<'static, str> {
         self.inner.needs_relayout = true;
         self.shared.text_changed = true;
-        self.inner.text.to_mut()
+        &mut self.inner.text
     }
     
     #[cfg(feature = "accessibility")]
@@ -646,25 +647,13 @@ impl<'a> TextBoxMut<'a> {
         self.inner.accesskit_id
     }
 
-    pub fn set_auto_clip(&mut self, auto_clip: bool) {
-        self.inner.auto_clip = auto_clip;
-        self.shared.text_changed = true;
-    }
-
+    /// Sets the position of the text box.
     pub fn set_pos(&mut self, pos: (f64, f64)) {
         (self.inner.left, self.inner.top) = pos;
         self.shared.text_changed = true;
     }
 
-    pub fn can_hide(&self) -> bool {
-        self.inner.can_hide
-    }
-
-    pub fn set_can_hide(&mut self, can_hide: bool) {
-        self.inner.can_hide = can_hide;
-        self.shared.text_changed = true;
-    }
-
+    /// Hides or unhides the text box.
     pub(crate) fn set_hidden(&mut self, hidden: bool) {
         if self.inner.hidden != hidden {
             self.inner.hidden = hidden;

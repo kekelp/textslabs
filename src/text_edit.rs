@@ -18,7 +18,7 @@ use crate::*;
 macro_rules! clear_placeholder_partial_borrows {
     ($self:expr) => {
         if $self.inner.showing_placeholder {
-            $self.text_box.text_mut().clear();
+            $self.text_box.text_mut().to_mut().clear();
             $self.inner.showing_placeholder = false;
             $self.text_box.refresh_layout();
             $self.text_box.move_to_text_start();
@@ -488,7 +488,7 @@ impl<'a> TextEditMut<'a> {
         self.inner.history
             .record(&old_text, s, old_selection, new_range_start..new_range_end);
 
-        self.text_box.text_mut().replace_range(range, s);
+        self.text_box.text_mut().to_mut().replace_range(range, s);
         
         if self.inner.single_line {
             self.remove_newlines();
@@ -533,13 +533,13 @@ impl<'a> TextEditMut<'a> {
     pub(crate) fn restore_placeholder_if_any(&mut self) {
         if self.text_box.text_inner().is_empty() && !self.inner.showing_placeholder {
             if self.inner.placeholder_text.is_some() {
-                self.text_box.text_mut().clear();
+                self.text_box.text_mut().to_mut().clear();
                 self.refresh_layout();
                 self.text_box.move_to_text_start();
             }
 
             if let Some(placeholder) = &self.inner.placeholder_text {
-                self.text_box.text_mut().push_str(&placeholder);
+                self.text_box.text_mut().to_mut().push_str(&placeholder);
                 self.inner.showing_placeholder = true;
                 self.refresh_layout();
                 self.text_box.shared.text_changed = true;
@@ -671,12 +671,12 @@ impl<'a> TextEditMut<'a> {
         debug_assert!(cursor.map(|cursor| cursor.1 <= text.len()).unwrap_or(true));
 
         let start = if let Some(preedit_range) = &self.inner.compose {
-            self.text_box.text_mut().replace_range(preedit_range.clone(), text);
+            self.text_box.text_mut().to_mut().replace_range(preedit_range.clone(), text);
             preedit_range.start
         } else {
             let selection_start = self.text_box.selection().text_range().start;
             if self.text_box.selection().is_collapsed() {
-                self.text_box.text_mut()
+                self.text_box.text_mut().to_mut()
                     .insert_str(selection_start, text);
                 
                 if self.inner.single_line {
@@ -684,7 +684,7 @@ impl<'a> TextEditMut<'a> {
                 }
             } else {
                 let range = self.text_box.selection().text_range();
-                self.text_box.text_mut()
+                self.text_box.text_mut().to_mut()
                     .replace_range(range, text);
             }
             selection_start
@@ -713,7 +713,7 @@ impl<'a> TextEditMut<'a> {
     /// This removes the IME preedit text.
     pub(crate) fn clear_compose(&mut self) {
         if let Some(preedit_range) = self.inner.compose.take() {
-            self.text_box.text_mut().replace_range(preedit_range.clone(), "");
+            self.text_box.text_mut().to_mut().replace_range(preedit_range.clone(), "");
             self.inner.show_cursor = true;
 
             let (index, affinity) = if preedit_range.start >= self.text_box.text_inner().len() {
@@ -762,17 +762,17 @@ impl<'a> TextEditMut<'a> {
             return;
         }
 
-        if let Some(op) = self.inner.history.undo(self.text_box.text_mut()) {
+        if let Some(op) = self.inner.history.undo(self.text_box.text_mut().to_mut()) {
 
             if ! op.text_to_restore.is_empty() {
                 clear_placeholder_partial_borrows!(self);
             }
 
             self
-                .text_box.text_mut()
+                .text_box.text_mut().to_mut()
                 .replace_range(op.range_to_clear.clone(), "");
             self
-                .text_box.text_mut()
+                .text_box.text_mut().to_mut()
                 .insert_str(op.range_to_clear.start, op.text_to_restore);
 
             let prev_selection = op.prev_selection;
@@ -791,7 +791,7 @@ impl<'a> TextEditMut<'a> {
 
         if let Some(op) = self.inner.history.redo() {
             self
-                .text_box.text_mut()
+                .text_box.text_mut().to_mut()
                 .replace_range(op.range_to_clear.clone(), "");
 
             if ! op.text_to_restore.is_empty() {
@@ -799,7 +799,7 @@ impl<'a> TextEditMut<'a> {
             }
 
             self
-                .text_box.text_mut()
+                .text_box.text_mut().to_mut()
                 .insert_str(op.range_to_clear.start, op.text_to_restore);
 
             let end = op.range_to_clear.start + op.text_to_restore.len();
@@ -817,13 +817,13 @@ impl<'a> TextEditMut<'a> {
         let range = self.text_box.selection().text_range();
         let start = range.start;
         if self.text_box.selection().is_collapsed() {
-            self.text_box.text_mut().insert_str(start, s);
+            self.text_box.text_mut().to_mut().insert_str(start, s);
             
             if self.inner.single_line {
                 self.remove_newlines();
             }
         } else {
-            self.text_box.text_mut().replace_range(range, s);
+            self.text_box.text_mut().to_mut().replace_range(range, s);
         
         if self.inner.single_line {
             self.remove_newlines();
@@ -1245,7 +1245,7 @@ impl_for_textedit_and_texteditmut! {
     }
     
     pub fn pos(&self) -> (f64, f64) {
-        self.text_box.pos()
+        self.text_box.position()
     }
     
     pub fn hidden(&self) -> bool {
@@ -1265,7 +1265,7 @@ impl_for_textedit_and_texteditmut! {
     }
     
     pub fn auto_clip(&self) -> bool {
-        self.text_box.auto_clip()
+        self.text_box.inner.auto_clip
     }
     
     pub fn scroll_offset(&self) -> (f32, f32) {
@@ -1313,7 +1313,7 @@ impl<'a> TextEditMut<'a> {
     }
 
     pub fn raw_text_mut(&mut self) -> &mut String {
-        self.text_box.text_mut()
+        self.text_box.text_mut().to_mut()
     }
 
     pub fn set_pos(&mut self, pos: (f64, f64)) {
@@ -1437,16 +1437,6 @@ impl<'a> TextEditMut<'a> {
         self.refresh_layout();
         Some(self.text_box.selection().focus().geometry(&self.text_box.inner.layout, size))
     }
-    
-    pub fn selection_geometry(&mut self) -> Vec<(Rect, usize)> {
-        self.refresh_layout();
-        self.text_box.selection_geometry()
-    }
-    
-    pub fn selection_geometry_with(&mut self, f: impl FnMut(Rect, usize)) {
-        self.refresh_layout();
-        self.text_box.selection_geometry_with(f)
-    }
 
     pub fn refresh_layout(&mut self) {
         let color_override = if self.inner.disabled {
@@ -1468,8 +1458,8 @@ impl<'a> TextEditMut<'a> {
     /// Programmatically set the text content of this text edit.
     /// This will replace all text and move the cursor to the end.
     pub fn set_text(&mut self, new_text: String) {
-        self.text_box.text_mut().clear();
-        self.text_box.text_mut().push_str(&new_text);
+        self.text_box.text_mut().to_mut().clear();
+        self.text_box.text_mut().to_mut().push_str(&new_text);
         self.text_box.inner.needs_relayout = true;
         self.text_box.move_to_text_end();
         // Clear any composition state
@@ -1484,8 +1474,8 @@ impl<'a> TextEditMut<'a> {
         let placeholder_cow = placeholder.into();
         self.inner.placeholder_text = Some(placeholder_cow.clone());
         if self.text_box.text_inner().is_empty() || self.inner.showing_placeholder {
-            self.text_box.text_mut().clear();
-            self.text_box.text_mut().push_str(&placeholder_cow);
+            self.text_box.text_mut().to_mut().clear();
+            self.text_box.text_mut().to_mut().push_str(&placeholder_cow);
             self.text_box.inner.needs_relayout = true;
             self.inner.showing_placeholder = true;
             self.text_box.reset_selection();
@@ -1495,7 +1485,7 @@ impl<'a> TextEditMut<'a> {
 
     // todo: we could also pass a range to check only the newly inserted part.
     fn remove_newlines(&mut self) {
-        let removed = remove_newlines_inplace(self.text_box.text_mut());
+        let removed = remove_newlines_inplace(self.text_box.text_mut().to_mut());
         if removed {
             self.text_box.inner.needs_relayout = true;
             self.text_box.shared.text_changed = true;
