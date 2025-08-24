@@ -124,7 +124,7 @@ pub(crate) struct TextEditInner {
 }
 
 #[derive(Debug, Clone)]
-pub struct ScrollAnimation {
+pub(crate) struct ScrollAnimation {
     pub start_offset: f32,
     pub target_offset: f32,
     pub start_time: Instant,
@@ -134,7 +134,7 @@ pub struct ScrollAnimation {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ScrollDirection {
+pub(crate) enum ScrollDirection {
     Horizontal,
     Vertical,
 }

@@ -231,7 +231,7 @@ pub enum AnyBox {
     TextBox(DefaultKey),
 }
 
-pub trait IntoAnyBox {
+pub(crate) trait IntoAnyBox {
     fn get_anybox(&self) -> AnyBox;
 }
 impl IntoAnyBox for TextBoxHandle {
