@@ -1193,6 +1193,11 @@ impl_for_textedit_and_texteditmut! {
 }
 
 impl_for_textedit_and_texteditmut! {
+    /// Returns a reference to the text edit style of the text edit box.
+    pub fn text_edit_style(&self) -> &TextEditStyle {
+        &self.text_box.shared.styles[self.text_box.inner.style.key].text_edit_style
+    }
+
     /// Returns `true` if the text edit is currently composing IME text.
     pub fn is_composing(&self) -> bool {
         self.inner.compose.is_some()
@@ -1305,10 +1310,6 @@ pub struct TextEdit<'a> {
 }
 
 impl<'a> TextEditMut<'a> {
-    pub fn text_edit_style(&self) -> &TextEditStyle {
-        &self.text_box.shared.styles[self.text_box.inner.style.key].text_edit_style
-    }
-
     pub(crate) fn style_version(&self) -> u64 {
         self.text_box.shared.styles[self.text_box.inner.style.key].version
     }
