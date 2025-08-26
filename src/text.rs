@@ -73,6 +73,7 @@ pub struct Shared {
     pub(crate) focused: Option<AnyBox>,
 
     pub(crate) windows: Vec<WindowInfo>,
+    pub(crate) text_context: TextContext,
 
     #[cfg(feature = "accessibility")]
     pub(crate) accesskit_tree_update: TreeUpdate,
@@ -330,6 +331,7 @@ impl Text {
                 scrolled: true,
                 event_consumed: true,
                 focused: None,
+                text_context: TextContext::new(),
                 #[cfg(feature = "accessibility")]
                 accesskit_focus_tracker: FocusChange::new(),
                 current_event_number: 1,

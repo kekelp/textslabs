@@ -118,14 +118,6 @@ impl TextContext {
     }
 }
 
-thread_local! {
-    static TEXT_CX: RefCell<TextContext> = RefCell::new(TextContext::new());
-}
-
-pub(crate) fn with_text_cx<R>(f: impl FnOnce(&mut LayoutContext<ColorBrush>, &mut FontContext) -> R) -> R {
-    let res = TEXT_CX.with_borrow_mut(|text_cx| f(&mut text_cx.layout_cx, &mut text_cx.font_cx));
-    res
-}
 
 thread_local! {
     static CLIPBOARD: RefCell<Clipboard> = RefCell::new(Clipboard::new().unwrap());
@@ -743,38 +735,42 @@ impl<'a> TextBoxMut<'a> {
         color_override: Option<ColorBrush>,
         single_line: bool,
     ) {
-        with_text_cx(|layout_cx, font_cx| {
-            let scale_factor = self.get_scale_factor();
-            let mut builder = layout_cx.tree_builder(font_cx, scale_factor as f32, true, self.style());
+        let scale_factor = self.get_scale_factor();
+        
+        // partial_borrows
+        let style = &mut &self.shared.styles[self.inner.style.key].text_style;
+        
+        let layout_cx = &mut self.shared.text_context.layout_cx;
+        let font_cx = &mut self.shared.text_context.font_cx;
+        
+        let mut builder = layout_cx.tree_builder(font_cx, scale_factor as f32, true, style);
 
-            if let Some(color_override) = color_override {
-                builder.push_style_modification_span(&[
-                    StyleProperty::Brush(color_override)
-                ]);
-            }
+        if let Some(color_override) = color_override {
+            builder.push_style_modification_span(&[
+                StyleProperty::Brush(color_override)
+            ]);
+        }
 
-            builder.push_text(&self.inner.text);
+        builder.push_text(&self.inner.text);
 
-            let (mut layout, _) = builder.build();
+        let (mut layout, _) = builder.build();
 
-            if ! single_line {
-                layout.break_all_lines(Some(self.inner.max_advance));
-                layout.align(
-                    Some(self.inner.max_advance),
-                    self.inner.alignment,
-                    AlignmentOptions::default(),
-                );
-            } else {
-                layout.break_all_lines(None);
-            }
+        if ! single_line {
+            layout.break_all_lines(Some(self.inner.max_advance));
+            layout.align(
+                Some(self.inner.max_advance),
+                self.inner.alignment,
+                AlignmentOptions::default(),
+            );
+        } else {
+            layout.break_all_lines(None);
+        }
 
-            self.inner.layout = layout;
-            self.inner.needs_relayout = false;
-            
-            // todo: does this do anything?
-            self.inner.selection.selection = self.inner.selection.selection.refresh(&self.inner.layout);
-
-        });
+        self.inner.layout = layout;
+        self.inner.needs_relayout = false;
+        
+        // todo: does this do anything?
+        self.inner.selection.selection = self.inner.selection.selection.refresh(&self.inner.layout);
     }
 
 
