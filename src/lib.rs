@@ -25,11 +25,11 @@
 //! // In winit's window_event callback, pass the event to Text:
 //! text.handle_event(&event, &window);
 //! 
-//! // To show the text on the screen, call Text::prepare:
+//! // Do shaping, layout, rasterization, etc. to prepare the text to be rendered:
 //! text.prepare_all(&mut text_renderer);
-//! // Then load the data on the gpu
+//! // Load the data on the gpu:
 //! text_renderer.load_to_gpu(&device, &queue);
-//! // Then render the text as part of a wgpu render pass:
+//! // Render the text as part of a wgpu render pass:
 //! self.text_renderer.render(&mut render_pass);
 //! ```
 //! 

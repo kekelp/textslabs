@@ -55,8 +55,6 @@ pub struct Text {
     pub(crate) cursor_currently_blinked_out: bool,
     
     pub(crate) cursor_blink_timer: Option<CursorBlinkWaker>,
-    
-    pub(crate) slot_for_text_box_mut: Option<TextBoxMut<'static>>,
 
     #[cfg(feature = "accessibility")]
     pub(crate) accesskit_id_to_text_handle_map: HashMap<NodeId, AnyBox>,
@@ -223,7 +221,9 @@ impl MouseState {
 ///[`TextBoxHandle`] and [`TextEditHandle`] can be converted into `AnyBox`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AnyBox {
+    /// Text edit box
     TextEdit(DefaultKey),
+    /// Text box
     TextBox(DefaultKey),
 }
 
@@ -317,9 +317,6 @@ impl Text {
             cursor_blink_start: None,
             cursor_currently_blinked_out: false,
             cursor_blink_timer,
-
-            slot_for_text_box_mut: None,
-
             
             #[cfg(feature = "accessibility")]
             accesskit_id_to_text_handle_map: HashMap::with_capacity(50),
@@ -440,14 +437,14 @@ impl Text {
         TextEdit { inner: text_edit_inner, text_box }
     }
 
-    /// Tries to get a text edit by handle, returning `None` if the text edit has been removed.
+    /// Returns a text edit if it exists, or `None` if it has been removed.
     pub fn try_get_text_edit(&mut self, handle: &ClonedTextEditHandle) -> Option<TextEdit> {
         let (text_edit_inner, text_box_inner) = self.text_edits.get_mut(handle.key)?;
         let text_box = TextBox { inner: text_box_inner, shared: &mut self.shared };
         Some(TextEdit { inner: text_edit_inner, text_box })
     }
 
-    /// Tries to get a mutable text edit by handle, returning `None` if the text edit has been removed.
+    /// Returns a mutable text edit if it exists, or `None` if it has been removed.
     pub fn try_get_text_edit_mut(&mut self, handle: &ClonedTextEditHandle) -> Option<TextEditMut> {
         let (text_edit_inner, text_box_inner) = self.text_edits.get_mut(handle.key)?;
         let text_box = TextBoxMut { inner: text_box_inner, shared: &mut self.shared, key: handle.key };
@@ -1256,13 +1253,13 @@ impl Text {
         TextBox { inner: text_box_inner, shared: &self.shared }
     }
 
-    /// Tries to get a text box with a cloned handle, returning `None` if the text box has been removed.
+    /// Returns a text box if it exists, or `None` if it has been removed.
     pub fn try_get_text_box(&self, handle: &ClonedTextBoxHandle) -> Option<TextBox> {
         let text_box_inner = self.text_boxes.get(handle.key)?;
         Some(TextBox { inner: text_box_inner, shared: &self.shared })
     }
 
-    /// Tries to get a mutable text box with a cloned handle, returning `None` if the text box has been removed.
+    /// Returns a mutable text box if it exists, or `None` if it has been removed.
     pub fn try_get_text_box_mut(&mut self, handle: &ClonedTextBoxHandle) -> Option<TextBoxMut> {
         let text_box_inner = self.text_boxes.get_mut(handle.key)?;
         Some(TextBoxMut { inner: text_box_inner, shared: &mut self.shared, key: handle.key })
