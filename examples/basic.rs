@@ -1,4 +1,4 @@
-use parley::TextStyle;
+use parley::{TextStyle, FontStack};
 use textslabs::*;
 use std::sync::Arc;
 use wgpu::*;
@@ -62,6 +62,14 @@ impl State {
             ..Default::default()
         }, None);
 
+        let monospace_style_handle = text.add_style(TextStyle {
+            font_size: 22.0,
+            font_stack: FontStack::Source("monospace".into()),
+            brush: ColorBrush([30, 60, 255, 255]),
+            overflow_wrap: OverflowWrap::Anywhere,
+            ..Default::default()
+        }, None);
+
         // Create text boxes and get handles. Normally, the handle would be owned by a higher level struct representing a node in a GUI tree or something similar.
         let single_line_input = text.add_text_edit("".to_string(), (10.0, 15.0), (200.0, 35.0), 0.0);
         let editable_text_with_unicode = text.add_text_edit("Editable text ⚡⚡ 無限での座を含む全ての سلام دنیا، این یک متن قابل ویرایش است Editable text 無限での座を含む全ての سلام دنیا، این یک متن قابل ویرایش است".to_string(), (300.0, 200.0), (400.0, 200.0), 0.0);
@@ -79,6 +87,7 @@ impl State {
         text.get_text_edit_mut(&single_line_input).set_placeholder("Single line input".to_string());
         text.get_text_edit_mut(&editable_text_with_unicode).set_style(&big_text_style_handle);
         text.get_text_edit_mut(&shift_enter_text_edit).set_newline_mode(NewlineMode::ShiftEnter);
+        text.get_text_edit_mut(&_help_text_edit).set_style(&monospace_style_handle);
         
         text.get_text_box_mut(&clipped_text_box).set_style(&big_text_style_handle);
         text.get_text_box_mut(&clipped_text_box).text_mut();
