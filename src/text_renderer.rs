@@ -12,7 +12,6 @@ fn pack_flags(content_type: u32, fade_enabled: bool) -> u32 {
     content_type | if fade_enabled { 1 << FADE_ENABLED_BIT } else { 0 }
 }
 
-
 /// A struct for rendering text and text edit boxes on the GPU.
 /// 
 /// Uses traditional CPU-size rasterizing and a dynamic glyph atlas on the GPU.
@@ -23,6 +22,7 @@ pub struct TextRenderer {
     pub(crate) scale_cx: ScaleContext,
 }
 
+// This split is needed because of partial borrows
 pub(crate) struct ContextlessTextRenderer {
     pub frame: u64,
     pub tmp_image: Image,
@@ -299,6 +299,7 @@ pub(crate) struct Params {
 }
 
 impl TextRenderer {
+    /// Create a new TextRenderer with custom parameters.
     pub fn new_with_params(
         device: &Device,
         _queue: &Queue,
@@ -312,6 +313,7 @@ impl TextRenderer {
         }
     }
 
+    /// Create a new TextRenderer with default parameters.
     pub fn new(device: &Device, queue: &Queue, format: TextureFormat) -> Self {
         Self::new_with_params(device, queue, format, None, TextRendererParams::default())
     }
@@ -320,23 +322,24 @@ impl TextRenderer {
         self.text_renderer.update_resolution(width, height);
     }
 
+    /// Clear all render data for text and decorations from the renderer.
     pub fn clear(&mut self) {
         self.text_renderer.clear();
         self.text_renderer.clear_decorations();
     }
 
+    /// Clear only the render data for decorations, leaving text intact.
     pub fn clear_decorations_only(&mut self) {
         self.text_renderer.clear_decorations();
     }
 
-    /// Prepare an individual `parley` layout.
-    /// 
-    /// When preparing individual layouts, [`Text::prepare_all`] should still be called once per frame before rendering, to update the screen resolution and for other bookkeeping.
+    /// Prepare an individual parley layout for rendering at the specified position.
     pub fn prepare_layout(&mut self, layout: &Layout<ColorBrush>, left: f32, top: f32, clip_rect: Option<parley::Rect>, fade: bool, depth: f32) {
         self.text_renderer.prepare_layout(layout, &mut self.scale_cx, left, top, clip_rect, fade, depth);
         self.text_renderer.needs_gpu_sync = true;
     }
 
+    /// Prepare a text box layout for rendering with scrolling and clipping support.
     pub fn prepare_text_box_layout(&mut self, text_box: &mut TextBoxMut) {
         if text_box.hidden() {
             return;
@@ -362,6 +365,7 @@ impl TextRenderer {
         self.capture_quad_ranges_after(&mut text_box.inner.quad_storage, scroll_offset);
     }
 
+    /// Prepare a text edit layout for rendering with scrolling and clipping support.
     pub fn prepare_text_edit_layout(&mut self, text_edit: &mut TextEditMut) {
         if text_edit.hidden() {
             return;
@@ -388,6 +392,7 @@ impl TextRenderer {
         self.capture_quad_ranges_after(&mut text_edit.text_box.inner.quad_storage, scroll_offset);
     }
 
+    /// Prepare decorations (selection and cursor) for a text box.
     pub fn prepare_text_box_decorations(&mut self, text_box: &TextBoxMut, show_cursor: bool) {
         let (left, top) = text_box.position();
         let (left, top) = (left as f32, top as f32);
@@ -412,52 +417,13 @@ impl TextRenderer {
         self.text_renderer.needs_gpu_sync = true;
     }
 
+    /// Load the render data to the GPU.
     pub fn load_to_gpu(&mut self, device: &Device, queue: &Queue) {
         self.text_renderer.load_to_gpu(device, queue);
     }
 
+    /// Render all prepared text using the provided render pass.
     pub fn render(&self, pass: &mut RenderPass<'_>) {
-        self.text_renderer.render(pass);
-    }
-
-    pub fn load_to_gpu_atlas_debug(&mut self, device: &Device, queue: &Queue) {
-        let atlas_size = self.text_renderer.atlas_size;
-        
-        for (i, page) in self.text_renderer.mask_atlas_pages.iter_mut().enumerate() {
-            let x_offset = i as i32 * (atlas_size as i32 + 10);
-
-            page.quads = vec![Quad {
-                pos: [x_offset, 0],
-                dim: [atlas_size as u16, atlas_size as u16],
-                uv_origin: [0, 0],
-                color: 0xff0000ff,
-                depth: 0.0,
-                flags: pack_flags(CONTENT_TYPE_MASK, false),
-                clip_rect: [0, 0, 32767, 32767]
-            }];
-        }
-    
-        for (i, page) in self.text_renderer.color_atlas_pages.iter_mut().enumerate() {
-            let x_offset = i as i32 * (atlas_size as i32 + 10);
-            
-            page.quads = vec![Quad {
-                pos: [x_offset, atlas_size as i32 + 10],
-                dim: [atlas_size as u16, atlas_size as u16],
-                uv_origin: [0, 0],
-                color: 0xffffffff,
-                depth: 0.0,
-                flags: pack_flags(CONTENT_TYPE_COLOR, false),
-                clip_rect: [0, 0, 32767, 32767]
-            }];
-        }
-        
-        // Update shared vertex buffer with debug quads
-        self.text_renderer.load_to_gpu(device, queue);
-    }
-    
-    pub fn render_atlas_debug(&self, pass: &mut RenderPass<'_>) {
-        if self.text_renderer.mask_atlas_pages[0].quads.is_empty() { return }
-        
         self.text_renderer.render(pass);
     }
     
