@@ -10,6 +10,7 @@ use std::time::{Duration, Instant};
 use winit::{event::{Modifiers, MouseButton, WindowEvent}, window::Window};
 use std::sync::{Arc, Weak};
 use winit::window::WindowId;
+use parley::{FontContext, LayoutContext};
 
 const MULTICLICK_DELAY: f64 = 0.4;
 const MULTICLICK_TOLERANCE_SQUARED: f64 = 26.0;
@@ -28,6 +29,7 @@ pub(crate) struct StyleInner {
     pub(crate) text_edit_style: TextEditStyle,
     pub(crate) version: u64,
 }
+
 
 /// Centralized struct that holds collections of [`TextBox`]es, [`TextEdit`]s, [`TextStyle2`]s.
 /// 
@@ -73,7 +75,8 @@ pub struct Shared {
     pub(crate) focused: Option<AnyBox>,
 
     pub(crate) windows: Vec<WindowInfo>,
-    pub(crate) text_context: TextContext,
+    pub(crate) layout_cx: LayoutContext<ColorBrush>,
+    pub(crate) font_cx: FontContext,
 
     #[cfg(feature = "accessibility")]
     pub(crate) accesskit_tree_update: TreeUpdate,
@@ -331,7 +334,8 @@ impl Text {
                 scrolled: true,
                 event_consumed: true,
                 focused: None,
-                text_context: TextContext::new(),
+                layout_cx: LayoutContext::new(),
+                font_cx: FontContext::new(),
                 #[cfg(feature = "accessibility")]
                 accesskit_focus_tracker: FocusChange::new(),
                 current_event_number: 1,
@@ -1557,6 +1561,16 @@ impl Text {
     /// Returns the currently focused text widget, if any.
     pub fn focus(&self) -> Option<AnyBox> {
         self.shared.focused
+    }
+
+    /// Returns a mutable reference to the FontContext.
+    pub fn font_context(&mut self) -> &mut FontContext {
+        &mut self.shared.font_cx
+    }
+
+    /// Returns a mutable reference to the LayoutContext.
+    pub fn layout_context(&mut self) -> &mut LayoutContext<ColorBrush> {
+        &mut self.shared.layout_cx
     }
 
     

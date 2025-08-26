@@ -105,19 +105,6 @@ pub(crate) struct QuadStorage {
     pub last_offset: (f32, f32),
 }
 
-pub(crate) struct TextContext {
-    layout_cx: LayoutContext<ColorBrush>,
-    font_cx: FontContext,
-}
-impl TextContext {
-    pub(crate) fn new() -> Self {
-        Self {
-            layout_cx: LayoutContext::new(),
-            font_cx: FontContext::new(),
-        }
-    }
-}
-
 
 thread_local! {
     static CLIPBOARD: RefCell<Clipboard> = RefCell::new(Clipboard::new().unwrap());
@@ -740,8 +727,8 @@ impl<'a> TextBoxMut<'a> {
         // partial_borrows
         let style = &mut &self.shared.styles[self.inner.style.key].text_style;
         
-        let layout_cx = &mut self.shared.text_context.layout_cx;
-        let font_cx = &mut self.shared.text_context.font_cx;
+        let layout_cx = &mut self.shared.layout_cx;
+        let font_cx = &mut self.shared.font_cx;
         
         let mut builder = layout_cx.tree_builder(font_cx, scale_factor as f32, true, style);
 
