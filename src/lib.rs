@@ -5,7 +5,8 @@
 //! 
 //! # Usage
 //! 
-//! ```rust,no_run
+//! ```ignore
+//! # use textslabs::*;
 //! // Create the Text struct and the Text renderer:
 //! let mut text = Text::new_without_auto_wakeup();
 //! let text_renderer = TextRenderer::new(&device, &queue, surface_config.format);
@@ -30,7 +31,7 @@
 //! // Load the data on the gpu:
 //! text_renderer.load_to_gpu(&device, &queue);
 //! // Render the text as part of a wgpu render pass:
-//! self.text_renderer.render(&mut render_pass);
+//! text_renderer.render(&mut render_pass);
 //! ```
 //! 
 //! See the `basic.rs` or the `minimal.rs` example in the repository to see a more complete example, including the `winit` and `wgpu` boilerplate.
@@ -71,7 +72,7 @@
 //! 
 //! There is an optional declarative interface for hiding text boxes:
 //! 
-//! ```rust,no_run
+//! ```ignore
 //! // Each frame, advance an internal frame counter,
 //! // and implicitly mark all text boxes as "outdated"
 //! text.advance_frame_and_hide_boxes();

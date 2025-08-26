@@ -1573,6 +1573,31 @@ impl Text {
         &mut self.shared.layout_cx
     }
 
+    /// Helper method to load a font from font data and return the family name which can be used in to refer to it in a text style.
+    /// 
+    /// Returns `None` if the font data is invalid or contains no fonts.
+    /// 
+    /// For more advanced use cases, use [`Text::font_context()`] to get a mutable reference to the parley `FontContext`. The `collection` field of the `FontContext` is an instance of a `fontique` `Collection`, which offers lower level control.
+    /// 
+    /// # Example
+    /// ```ignore
+    /// # let text = Text::new_without_auto_wakeup();
+    /// let family_name = text.load_font(include_bytes!("../MyFont.ttf"))
+    ///     .expect("Failed to load font");
+    /// let style = text.add_style(TextStyle {
+    ///     font_stack: FontStack::Single(FontFamily::Named(family_name.into())),
+    ///     ..Default::default()
+    /// }, None);
+    /// 
+    /// text.get_text_edit_mut(&_text_edit).set_style(&custom_style);
+    /// ```
+    pub fn load_font(&mut self, font_data: &[u8]) -> Option<String> {
+        let families = self.shared.font_cx.collection.register_fonts(font_data.to_vec().into(), None);
+        let family_id = families.first()?.0;
+        let family = self.shared.font_cx.collection.family(family_id)?;
+        Some(family.name().to_string())
+    }
+
     
     #[cfg(feature = "accessibility")]
     /// Returns the accessibility node ID of the currently focused text element.
