@@ -108,12 +108,11 @@ pub struct TextEditHandle {
     pub(crate) key: DefaultKey,
 }
 
-/// Cloneable handle for a text edit.
+/// Cloneable handle for a text edit box.
 /// 
-/// Unlike [`TextEditHandle`], this can be cloned multiple times but has fallible access methods
-/// since the text edit it refers to might have been removed.
+/// Use with [`Text::try_get_text_edit()`] to get an optional reference to the corresponding [`TextBox`].
 /// 
-/// Use with [`Text::try_get_text_edit()`] to get an optional reference to the corresponding [`TextEdit`].
+/// Because this handle is not unique, the text box that it refers to can be removed while the handle is still live. This is why [`Text::try_get_text_edit()`] returns an `Option`.
 #[derive(Debug, Clone, Copy)]
 pub struct ClonedTextEditHandle {
     pub(crate) key: DefaultKey,
@@ -131,28 +130,23 @@ pub struct TextBoxHandle {
 
 /// Cloneable handle for a text box.
 /// 
-/// Unlike [`TextBoxHandle`], this can be cloned multiple times but has fallible access methods
-/// since the text box it refers to might have been removed.
-/// 
 /// Use with [`Text::try_get_text_box()`] to get an optional reference to the corresponding [`TextBox`].
+/// 
+/// Because this handle is not unique, the text box that it refers to can be removed while the handle is still live. This is why [`Text::try_get_text_box()`] returns an `Option`.
 #[derive(Debug, Clone, Copy)]
 pub struct ClonedTextBoxHandle {
     pub(crate) key: DefaultKey,
 }
 
 impl TextBoxHandle {
-    /// Convert this owned handle to a cloneable handle.
-    /// 
-    /// The returned handle can be cloned multiple times but requires fallible access methods.
-    pub fn to_cloned(self) -> ClonedTextBoxHandle {
+    /// Get a non-unique handle cloned handle from this handle.
+    pub fn to_cloned(&self) -> ClonedTextBoxHandle {
         ClonedTextBoxHandle { key: self.key }
     }
 }
 
 impl TextEditHandle {
-    /// Convert this owned handle to a cloneable handle.
-    /// 
-    /// The returned handle can be cloned multiple times but requires fallible access methods.
+    /// Get a non-unique handle cloned handle from this handle.
     pub fn to_cloned(self) -> ClonedTextEditHandle {
         ClonedTextEditHandle { key: self.key }
     }
@@ -446,13 +440,21 @@ impl Text {
         TextEdit { inner: text_edit_inner, text_box }
     }
 
-    /// Try to get a text edit by handle, returning `None` if the text edit has been removed.
+    /// Tries to get a text edit by handle, returning `None` if the text edit has been removed.
     pub fn try_get_text_edit(&mut self, handle: &ClonedTextEditHandle) -> Option<TextEdit> {
         let (text_edit_inner, text_box_inner) = self.text_edits.get_mut(handle.key)?;
         let text_box = TextBox { inner: text_box_inner, shared: &mut self.shared };
         Some(TextEdit { inner: text_edit_inner, text_box })
     }
 
+    /// Tries to get a mutable text edit by handle, returning `None` if the text edit has been removed.
+    pub fn try_get_text_edit_mut(&mut self, handle: &ClonedTextEditHandle) -> Option<TextEditMut> {
+        let (text_edit_inner, text_box_inner) = self.text_edits.get_mut(handle.key)?;
+        let text_box = TextBoxMut { inner: text_box_inner, shared: &mut self.shared, key: handle.key };
+        Some(TextEditMut { inner: text_edit_inner, text_box })
+    }
+
+    /// Adds a new text style and returns a handle to it.
     #[must_use]
     pub fn add_style(&mut self, text_style: TextStyle2, text_edit_style: Option<TextEditStyle>) -> StyleHandle {
         let text_edit_style = text_edit_style.unwrap_or_default();
@@ -465,46 +467,55 @@ impl Text {
         StyleHandle { key }
     }
 
+    /// Returns a reference to the text style.
     pub fn get_text_style(&self, handle: &StyleHandle) -> &TextStyle2 {
         &self.shared.styles[handle.key].text_style
     }
 
+    /// Returns a mutable reference to the text style.
     pub fn get_text_style_mut(&mut self, handle: &StyleHandle) -> &mut TextStyle2 {
         self.shared.styles[handle.key].version = self.new_style_version();
         self.shared.text_changed = true;
         &mut self.shared.styles[handle.key].text_style
     }
 
+    /// Returns a reference to the text edit style.
     pub fn get_text_edit_style(&self, handle: &StyleHandle) -> &TextEditStyle {
         &self.shared.styles[handle.key].text_edit_style
     }
 
+    /// Returns a mutable reference to the text edit style.
     pub fn get_text_edit_style_mut(&mut self, handle: &StyleHandle) -> &mut TextEditStyle {
         self.shared.styles[handle.key].version = self.new_style_version();
         self.shared.text_changed = true;
         &mut self.shared.styles[handle.key].text_edit_style
     }
 
+    /// Returns a reference to the default text style.
     pub fn get_default_text_style(&self) -> &TextStyle2 {
         &self.shared.styles[self.shared.default_style_key].text_style
     }
 
+    /// Returns a mutable reference to the default text style.
     pub fn get_default_text_style_mut(&mut self) -> &mut TextStyle2 {
         self.shared.styles[self.shared.default_style_key].version = self.new_style_version();
         self.shared.text_changed = true;
         &mut self.shared.styles[self.shared.default_style_key].text_style
     }
 
+    /// Returns a reference to the default text edit style.
     pub fn get_default_text_edit_style(&self) -> &TextEditStyle {
         &self.shared.styles[self.shared.default_style_key].text_edit_style
     }
 
+    /// Returns a mutable reference to the default text edit style.
     pub fn get_default_text_edit_style_mut(&mut self) -> &mut TextEditStyle {
         self.shared.styles[self.shared.default_style_key].version = self.new_style_version();
         self.shared.text_changed = true;
         &mut self.shared.styles[self.shared.default_style_key].text_edit_style
     }
 
+    /// Returns the original default text style.
     pub fn original_default_style(&self) -> TextStyle2 {
         original_default_style()
     }
@@ -1198,23 +1209,27 @@ impl Text {
 
     }
 
-    /// Returns whether any text was changed in the last frame.
-    pub fn get_text_changed(&self) -> bool {
+    /// Returns `true` if any text was changed in the last frame.
+    pub fn any_text_changed(&self) -> bool {
         self.shared.text_changed
     }
 
+    /// Returns `true` if text decorations changed in the last frame.
     pub fn decorations_changed(&self) -> bool {
         self.shared.decorations_changed
     }
 
+    /// Returns `true` if scrolling occurred in the last frame.
     pub fn scrolled(&self) -> bool {
         self.shared.scrolled
     }
 
-    pub fn event_consumed(&self) -> bool {
-        self.shared.event_consumed
-    }
 
+    /// Returns `true` if the text content needs to be redrawn.
+    /// 
+    /// This function is useful to decide whether to call `winit`'s `Window::request_redraw()` after processing a `winit` event.
+    /// 
+    /// Games and applications that rerender continuously can call `Window::request_redraw()` unconditionally after every `RedrawRequested` event, without checking this method.
     pub fn need_rerender(&mut self) -> bool {
         let (_, blink_changed) = self.cursor_blinked_out(true);
         self.shared.text_changed || self.shared.decorations_changed || self.shared.scrolled || blink_changed || !self.scrolled_moved_indices.is_empty()
@@ -1230,39 +1245,6 @@ impl Text {
         TextBoxMut { inner: text_box_inner, shared: &mut self.shared, key: handle.key }
     }
 
-    /// If we did it this way, we could return a real reference to the fake struct, instead of the fake struct. It would be a much better interface. We could get rid of the TextBox/TextBoxMut split and use normal mutability of reference, just like if we were returning a real reference to a real inner struct.
-    /// 
-    /// you could do this without unsafe if there was a `self lifetime, but it would still be a bit weird.
-    ///
-    /// For the non-mut version of this, you'd need a way to have an unbounded number of these fake structs, either in a slab or something or on the heap or on a temporary allocator. That would be crazy though. 
-    /// 
-    /// I guess the real solution would be TextBox having some sort of reference semantics, where you can make &TextBox and &mut TextBox work like the current TextBox and TextBoxMut. And there would be no such thing as a owned TextBox, it would automatically own the two references, just like a reference automatically owns its pointer. 
-    /// 
-    /// The other solution is to have a real unsafe pointer to Shared inside every TextBox. That's probably the best one, even with the memory waste and the unsafeness.
-    #[allow(dead_code)]
-    pub(crate) fn get_text_box_mut_but_epic<'a>(&'a mut self, handle: &TextBoxHandle) -> &'a mut TextBoxMut<'a> {
-        // SAFETY: since this function borrows the whole Text struct, there's no way to call any functions that would invalidate the references.
-        unsafe {
-            let text_box_inner = &mut self.text_boxes[handle.key];
-
-            // Fill the slot with pointers to fields in `self.
-            self.slot_for_text_box_mut = Some(TextBoxMut {
-                inner: std::mem::transmute(text_box_inner),
-                shared: std::mem::transmute(&mut self.shared),
-                key: handle.key,
-            });
-
-            // Transmute the TextBoxMut in the slot, which is 'static, to have the lifetime of 'self.
-            // It really does have the lifetime of 'self. We just don't have a way to express it.
-            if let Some(slot) = &mut self.slot_for_text_box_mut {
-                let result: &'a mut TextBoxMut<'a> = std::mem::transmute(slot);
-                return result;
-            } else {
-                unreachable!()
-            }
-        }
-
-    }
 
     /// Get a mutable reference to a text box wrapped with its style.
     /// 
@@ -1274,17 +1256,13 @@ impl Text {
         TextBox { inner: text_box_inner, shared: &self.shared }
     }
 
-    /// Try to get a text box by handle, returning `None` if the text box has been removed.
-    /// 
-    /// This is a fast lookup operation that does not require any hashing.
+    /// Tries to get a text box with a cloned handle, returning `None` if the text box has been removed.
     pub fn try_get_text_box(&self, handle: &ClonedTextBoxHandle) -> Option<TextBox> {
         let text_box_inner = self.text_boxes.get(handle.key)?;
         Some(TextBox { inner: text_box_inner, shared: &self.shared })
     }
 
-    /// Try to get a mutable text box by handle, returning `None` if the text box has been removed.
-    /// 
-    /// This is a fast lookup operation that does not require any hashing.
+    /// Tries to get a mutable text box with a cloned handle, returning `None` if the text box has been removed.
     pub fn try_get_text_box_mut(&mut self, handle: &ClonedTextBoxHandle) -> Option<TextBoxMut> {
         let text_box_inner = self.text_boxes.get_mut(handle.key)?;
         Some(TextBoxMut { inner: text_box_inner, shared: &mut self.shared, key: handle.key })
@@ -1515,25 +1493,27 @@ impl Text {
     }
 
     // todo: would be a lot nicer to have these as methods on TextBoxMut and TextEditMut, but is it worth carrying the key around just for this?
+    /// Sets focus to the specified text box.
     pub fn set_focus_to_text_box(&mut self, handle: &TextBoxHandle) {
         let handle: AnyBox = (*handle).get_anybox();
         self.refocus(Some(handle));
     }
+    /// Sets focus to the specified text edit.
     pub fn set_focus_to_text_edit(&mut self, handle: &TextEditHandle) {
         let handle: AnyBox = (*handle).get_anybox();
         self.refocus(Some(handle));
     }
 
-    /// Update the AccessKit node ID mapping for a text box
     #[cfg(feature = "accessibility")]
+    /// Sets the accessibility ID for a text box.
     pub fn set_text_box_accesskit_id(&mut self, handle: &TextBoxHandle, accesskit_id: NodeId) {
         let any_box = handle.keynto_anybox();
         self.accesskit_id_to_text_handle_map.insert(accesskit_id, any_box);
         self.get_text_box_mut(handle).set_accesskit_id(accesskit_id);
     }
     
-    /// Update the AccessKit node ID mapping for a text edit
     #[cfg(feature = "accessibility")]
+    /// Sets the accessibility ID for a text edit.
     pub fn set_text_edit_accesskit_id(&mut self, handle: &TextEditHandle, accesskit_id: NodeId) {
         let any_box = handle.keynto_anybox();
         self.accesskit_id_to_text_handle_map.insert(accesskit_id, any_box);
@@ -1547,6 +1527,7 @@ impl Text {
     }
 
     #[cfg(feature = "accessibility")]
+    /// Sets focus by accessibility node ID.
     pub fn set_focus_by_accesskit_id(&mut self, focus: NodeId) {
         if let Some(focused_text_handle) = self.get_text_handle_by_accesskit_id(focus) {
             self.set_focus(&focused_text_handle);
@@ -1574,15 +1555,14 @@ impl Text {
         self.shared.node_id_generator = generator;
     }
 
+    /// Returns the currently focused text widget, if any.
     pub fn focus(&self) -> Option<AnyBox> {
         self.shared.focused
     }
 
     
-    /// Get the AccessKit node ID of the currently focused text element.
-    /// 
-    /// Returns `None` if no element is focused or if the focused element doesn't have an AccessKit ID.
     #[cfg(feature = "accessibility")]
+    /// Returns the accessibility node ID of the currently focused text element.
     pub fn focused_accesskit_id(&self) -> Option<NodeId> {
         if let Some(focused) = self.shared.focused {
             match focused {
