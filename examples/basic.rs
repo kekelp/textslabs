@@ -1,4 +1,4 @@
-use parley::{TextStyle, FontStack};
+use parley::{TextStyle, FontStack, FontFamily};
 use textslabs::*;
 use std::sync::Arc;
 use wgpu::*;
@@ -62,6 +62,18 @@ impl State {
             ..Default::default()
         }, None);
 
+        // Load a custom font using the `load_font` helper. For more advanced usage, you can access the `parley` FontContext directly via text.font_context().
+        let font_name = text.load_font(include_bytes!("PublicPixel.ttf")).expect("Failed to load font");
+        // font_name will be "Public Pixel".
+
+        let custom_font_style_handle = text.add_style(TextStyle {
+            font_size: 22.0,
+            brush: ColorBrush([0, 255, 150, 255]),
+            font_stack: FontStack::Single(FontFamily::Named(font_name.into())),
+            overflow_wrap: OverflowWrap::Anywhere,
+            ..Default::default()
+        }, None);
+
         let monospace_style_handle = text.add_style(TextStyle {
             font_size: 22.0,
             font_stack: FontStack::Source("monospace".into()),
@@ -80,7 +92,7 @@ impl State {
         let clipped_text_box = text.add_text_box("Clipped text".to_string(), (10.0, 340.0), (300.0, 50.0), 0.0);
         
         // Using a &'static str here for this non-editable text box.
-        let justified_static_text = text.add_text_box("Long static words, Long static words, Long static words, Long static words, ... (justified btw) ", (200.0, 400.0), (400.0, 150.0), 0.0);
+        let justified_static_text = text.add_text_box("Long static words, Long static words, Long static words, Long static words, ... (justified btw) ", (150.0, 440.0), (600.0, 150.0), 0.0);
         
         // Use the handles to access and edit text boxes. Accessing a box through a handle is a very fast operation, basically just an array access. There is no hashing involved.
         text.get_text_edit_mut(&single_line_input).set_single_line(true);
@@ -101,7 +113,7 @@ impl State {
 
         text.get_text_style_mut(&big_text_style_handle).font_size = 32.0;
 
-        text.get_text_box_mut(&justified_static_text).set_style(&big_text_style_handle);
+        text.get_text_box_mut(&justified_static_text).set_style(&custom_font_style_handle);
         text.get_text_box_mut(&justified_static_text).set_alignment(Alignment::Justify);
 
         let text_renderer = TextRenderer::new(&device, &queue, surface_config.format);
