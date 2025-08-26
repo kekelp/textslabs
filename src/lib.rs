@@ -6,10 +6,13 @@
 //! 
 //! # Usage
 //! 
-//! ```ignore
+//! ```no_run
 //! # use textslabs::*;
 //! // Create the Text struct and the Text renderer:
 //! let mut text = Text::new_without_auto_wakeup();
+//! # let device: wgpu::Device = unimplemented!();
+//! # let queue: wgpu::Queue = unimplemented!();
+//! # let surface_config: wgpu::SurfaceConfiguration = unimplemented!();
 //! let text_renderer = TextRenderer::new(&device, &queue, surface_config.format);
 //! // Text manages collections of text boxes and styles.
 //! // TextRenderer holds the state needed to render the text on the gpu.
@@ -19,12 +22,14 @@
 //! let edit_handle = text.add_text_edit("Type here".to_string(), (10.0, 70.0), (200.0, 30.0), 0.0);
 //! 
 //! // Use handles to access and modify the boxes:
-//! text.get_text_box_mut(&handle).text_mut().push_str("... World");
+//! text.get_text_edit_mut(&edit_handle).raw_text_mut().push_str("... World");
 //! 
 //! // Manually remove text boxes when needed:
 //! text.remove_text_box(handle);
 //! 
 //! // In winit's window_event callback, pass the event to Text:
+//! # let event: winit::event::WindowEvent = unimplemented!();
+//! # let window: winit::window::Window = unimplemented!();
 //! text.handle_event(&event, &window);
 //! 
 //! // Do shaping, layout, rasterization, etc. to prepare the text to be rendered:
@@ -32,6 +37,7 @@
 //! // Load the data on the gpu:
 //! text_renderer.load_to_gpu(&device, &queue);
 //! // Render the text as part of a wgpu render pass:
+//! # let render_pass: wgpu::RenderPass<'_> = unimplemented!();
 //! text_renderer.render(&mut render_pass);
 //! ```
 //! 
@@ -39,11 +45,13 @@
 //! 
 //! # Handles
 //! 
-//! As shown above, the library is imperative with a handle-based system.
+//! The library is imperative with a handle-based system.
+//! 
+//! Creating a text box returns a handle that can be used to access it afterwards.
+//! 
+//! Handles can't be `Clone`d or constructed manually, and removing a text box with [`Text::remove_text_box()`] consumes the handle. So a handle is a unique reference that can never be "dangling".
 //! 
 //! This interface is ideal for retained-mode GUI libraries, but declarative GUI libraries that diff their node trees can still use the imperative interface, calling the `Text::remove_*` functions when the nodes holding the handles are removed.
-//! 
-//! Handles can't be `Clone`d or constructed manually, so they are unique references that can never be "dangling".
 //! 
 //! [`Text`] uses slotmaps internally, so `get_text_box_mut()` and all similar functions are basically as fast as an array lookup. There is no hashing involved.
 //! 
@@ -51,7 +59,7 @@
 //! 
 //! ## Accessibility
 //! 
-//! This library supports accessibility, but integrating it requires a bit more coordination with `winit` and with the GUI code outside of the scope of this library. In particular, this library doesn't have any concept of a tree. See the `accesibility.rs` example in the repository for a basic example.
+//! This library supports accessibility, but integrating it requires a bit more coordination with `winit` and with the GUI code outside of this library. In particular, `textslabs` doesn't have any concept of a tree. See the `accesibility.rs` example in the repository for a basic example.
 //! 
 //! ## Interaction
 //! 
@@ -73,11 +81,15 @@
 //! 
 //! There is an optional declarative interface for hiding text boxes:
 //! 
-//! ```ignore
+//! ```no_run
+//! # use textslabs::*;
+//! # let mut text = Text::new_without_auto_wakeup();
 //! // Each frame, advance an internal frame counter,
 //! // and implicitly mark all text boxes as "outdated"
 //! text.advance_frame_and_hide_boxes();
 //! 
+//! # struct Node { text_box_handle: TextBoxHandle }
+//! # let current_nodes: Vec<Node> = Vec::new();
 //! // "Refresh" only the nodes that should remain visible
 //! for node in current_nodes {
 //!     text.refresh_text_box(&node.text_box_handle);

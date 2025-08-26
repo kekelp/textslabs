@@ -298,7 +298,7 @@ pub(crate) struct Params {
     pub _pad: u32,
 }
 
-impl TextRenderer {
+impl TextRenderer {    
     /// Create a new TextRenderer with custom parameters.
     pub fn new_with_params(
         device: &Device,

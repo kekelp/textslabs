@@ -1580,7 +1580,9 @@ impl Text {
     /// For more advanced use cases, use [`Text::font_context()`] to get a mutable reference to the parley `FontContext`. The `collection` field of the `FontContext` is an instance of a `fontique` `Collection`, which offers lower level control.
     /// 
     /// # Example
-    /// ```ignore
+    /// ```ignored
+    /// # use textslabs::*;
+    /// # use parley::FontFamily;
     /// # let text = Text::new_without_auto_wakeup();
     /// let family_name = text.load_font(include_bytes!("../MyFont.ttf"))
     ///     .expect("Failed to load font");
@@ -1589,7 +1591,8 @@ impl Text {
     ///     ..Default::default()
     /// }, None);
     /// 
-    /// text.get_text_edit_mut(&_text_edit).set_style(&custom_style);
+    /// # let text_box: TextBoxHandle = unimplemented!();
+    /// text.get_text_box_mut(&text_box).set_style(&style);
     /// ```
     pub fn load_font(&mut self, font_data: &[u8]) -> Option<String> {
         let families = self.shared.font_cx.collection.register_fonts(font_data.to_vec().into(), None);
