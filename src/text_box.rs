@@ -110,7 +110,7 @@ thread_local! {
     static CLIPBOARD: RefCell<Clipboard> = RefCell::new(Clipboard::new().unwrap());
 }
 
-/// Runs the given closure with mutable access to the thread-local [`Clipboard`].
+/// Runs the given closure with mutable access to the thread-local `Clipboard`.
 pub fn with_clipboard<R>(f: impl FnOnce(&mut Clipboard) -> R) -> R {
     let res = CLIPBOARD.with_borrow_mut(|clipboard| f(clipboard));
     res

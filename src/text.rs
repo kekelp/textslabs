@@ -65,7 +65,7 @@ pub struct Text {
 /// Data that TextBoxMut and similar things need to have a reference to. Kept all together so that TextBoxMut and similar things can hold a single pointer to all of it.
 /// 
 // A cooler way to do this would be to make the TextBoxMut be TextBoxMut { i: u32, text: &mut Text }. So you have access to the whole Text struct unconditionally, and you don't have to separate things this way. And to get the actual text box, you do self.text.text_boxes[i] every time. But we're trying this way this time
-pub struct Shared {    
+pub(crate) struct Shared {    
     pub(crate) styles: SlotMap<DefaultKey, StyleInner>,
     pub(crate) default_style_key: DefaultKey,
     pub(crate) text_changed: bool,
@@ -528,8 +528,6 @@ impl Text {
     /// You can then use [`Text::refresh_text_box()`] to "refresh" only the text boxes that should stay visible.
     /// 
     /// This allows to control the visibility of text boxes in a more "declarative" way.
-    /// 
-    /// Additionally, you can also use [`TextBoxMut::set_can_hide()`] to decide if boxes should stay hidden in the background, or if they should marked as "to delete". You can the call [`Text::remove_old_nodes()`] to remove all the outdated text boxes that were marked as "to delete". 
     pub fn advance_frame_and_hide_boxes(&mut self) {
         self.current_visibility_frame += 1;
         self.using_frame_based_visibility = true;
@@ -555,52 +553,52 @@ impl Text {
     }
 
 
-    /// Remove all text boxes that were made outdated by [`Text::advance_frame_and_hide_boxes()`], were not refreshed with [`Text::refresh_text_box()`], and were not set to remain as hidden with [`TextBoxMut::set_can_hide()`].
-    /// 
-    /// Because [`Text::remove_old_nodes()`] mass-removes text boxes without consuming their handles, the handles become "dangling" and should not be reused. Using them in functions like [`Text::get_text_box()`] or [`Text::remove_text_box()`] will cause panics or incorrect results.
-    /// 
-    /// Only use this function if the structs holding the handles are managed in a way where you can be confident that the handles won't be kept around and reused.
-    /// 
-    /// On the other hand, it's fine to use the declarative system for *hiding* text boxes, but sticking to imperative [`Text::remove_text_box()`] calls to remove them.
-    /// 
-    /// [`Text::remove_old_nodes()`] is the only function that breaks the "no dangling handles" promise. If you use imperative [`Text::remove_text_box()`] calls and avoid `remove_old_nodes()`, then there is no way for the handle system to break.
-    /// 
+    // /// Remove all text boxes that were made outdated by [`Text::advance_frame_and_hide_boxes()`], were not refreshed with [`Text::refresh_text_box()`], and were not set to remain as hidden with [`TextBoxMut::set_can_hide()`].
+    // /// 
+    // /// Because [`Text::remove_old_nodes()`] mass-removes text boxes without consuming their handles, the handles become "dangling" and should not be reused. Using them in functions like [`Text::get_text_box()`] or [`Text::remove_text_box()`] will cause panics or incorrect results.
+    // /// 
+    // /// Only use this function if the structs holding the handles are managed in a way where you can be confident that the handles won't be kept around and reused.
+    // /// 
+    // /// On the other hand, it's fine to use the declarative system for *hiding* text boxes, but sticking to imperative [`Text::remove_text_box()`] calls to remove them.
+    // /// 
+    // /// [`Text::remove_old_nodes()`] is the only function that breaks the "no dangling handles" promise. If you use imperative [`Text::remove_text_box()`] calls and avoid `remove_old_nodes()`, then there is no way for the handle system to break.
+    // /// 
 
-    pub fn remove_old_nodes(&mut self) {
-        // Clear focus if the focused text box will be removed
-        if let Some(focused) = self.shared.focused {
-            let should_clear_focus = match focused {
-                AnyBox::TextBox(i) => {
-                    if let Some(text_box) = self.text_boxes.get(i) {
-                        text_box.last_frame_touched != self.current_visibility_frame && !text_box.can_hide
-                    } else {
-                        true // Text box doesn't exist
-                    }
-                }
-                AnyBox::TextEdit(i) => {
-                    if let Some((_text_edit, text_box)) = self.text_edits.get(i) {
-                        text_box.last_frame_touched != self.current_visibility_frame && !text_box.can_hide
-                    } else {
-                        true // Text edit doesn't exist
-                    }
-                }
-            };
+    // pub fn remove_old_nodes(&mut self) {
+    //     // Clear focus if the focused text box will be removed
+    //     if let Some(focused) = self.shared.focused {
+    //         let should_clear_focus = match focused {
+    //             AnyBox::TextBox(i) => {
+    //                 if let Some(text_box) = self.text_boxes.get(i) {
+    //                     text_box.last_frame_touched != self.current_visibility_frame && !text_box.can_hide
+    //                 } else {
+    //                     true // Text box doesn't exist
+    //                 }
+    //             }
+    //             AnyBox::TextEdit(i) => {
+    //                 if let Some((_text_edit, text_box)) = self.text_edits.get(i) {
+    //                     text_box.last_frame_touched != self.current_visibility_frame && !text_box.can_hide
+    //                 } else {
+    //                     true // Text edit doesn't exist
+    //                 }
+    //             }
+    //         };
             
-            if should_clear_focus {
-                self.shared.focused = None;
-            }
-        }
+    //         if should_clear_focus {
+    //             self.shared.focused = None;
+    //         }
+    //     }
 
-        // Remove text boxes that are outdated and allowed to be removed
-        self.text_boxes.retain(|_, text_box| {
-            text_box.last_frame_touched == self.current_visibility_frame || text_box.can_hide
-        });
+    //     // Remove text boxes that are outdated and allowed to be removed
+    //     self.text_boxes.retain(|_, text_box| {
+    //         text_box.last_frame_touched == self.current_visibility_frame || text_box.can_hide
+    //     });
 
 
-        self.text_edits.retain(|_, (_text_edit, text_box)| {
-            text_box.last_frame_touched == self.current_visibility_frame || text_box.can_hide
-        });
-    }
+    //     self.text_edits.retain(|_, (_text_edit, text_box)| {
+    //         text_box.last_frame_touched == self.current_visibility_frame || text_box.can_hide
+    //     });
+    // }
 
     /// Remove a text box.
     /// 
@@ -670,7 +668,16 @@ impl Text {
     /// 
     /// This function is for single-window applications only. For multi-window, use [`Text::prepare_all_for_window`].
     pub fn prepare_all(&mut self, text_renderer: &mut TextRenderer) {
-        let (window_id, window_size) = self.shared.windows.first().map(|w| (w.window_id, w.dimensions)).expect("Text::prepare_all didn't register any windows, are you calling Text::handle_events?");
+        let res = self.shared.windows.first().map(|w| (w.window_id, w.dimensions));
+
+        // This is what we would want to do:
+        // let (window_id, window_size) = res.expect("Text::prepare_all didn't register any windows, are you calling Text::handle_events?");
+        // However, it seems that winit continues to give us RedrawRequested events even after the CloseRequested event, even if we calling event_loop.exit()?
+        // But we unregister windows on CloseRequested.
+        // For this reason, it seems that we have to accept that prepare_all might be called when no windows are around and silently do nothing.
+        let Some((window_id, window_size)) = res else {
+            return;
+        };
 
         self.prepare_all_impl(text_renderer, window_id, window_size);
     }
