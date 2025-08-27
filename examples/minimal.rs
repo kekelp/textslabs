@@ -1,7 +1,7 @@
-use textslabs::*;
 use std::sync::Arc;
+use winit::{event::WindowEvent, event_loop::EventLoop, window::Window};
 use wgpu::*;
-use winit::{dpi::LogicalSize, event::WindowEvent, event_loop::EventLoop, window::Window};
+use textslabs::*;
 
 fn main() {
     let event_loop = EventLoop::new().unwrap();
@@ -9,53 +9,29 @@ fn main() {
 }
 
 struct State {
+    window: Arc<Window>,
     device: Device,
     queue: Queue,
     surface: Surface<'static>,
     surface_config: SurfaceConfiguration,
-    window: Arc<Window>,
     text: Text,
     text_renderer: TextRenderer,
 }
 
 impl State {
     fn new(window: Arc<Window>) -> Self {
-        let size = window.inner_size();
         let instance = Instance::new(InstanceDescriptor::default());
         let adapter = pollster::block_on(instance.request_adapter(&RequestAdapterOptions::default())).unwrap();
         let (device, queue) = pollster::block_on(adapter.request_device(&DeviceDescriptor::default(), None)).unwrap();
         let surface = instance.create_surface(window.clone()).unwrap();
-        let surface_config = surface.get_default_config(&adapter, size.width, size.height).unwrap();
+        let surface_config = surface.get_default_config(&adapter, window.inner_size().width, window.inner_size().height).unwrap();
         surface.configure(&device, &surface_config);
 
         let text_renderer = TextRenderer::new(&device, &queue, surface_config.format);
         let mut text = Text::new_without_auto_wakeup();
-        let _text_edit_handle = text.add_text_edit("Type here...".to_string(), (50.0, 50.0), (400.0, 40.0), 0.0);
+        let _text_edit_handle = text.add_text_edit("Type here...".to_string(), (50.0, 50.0), (400.0, 200.0), 0.0);
 
         Self { device, queue, surface, surface_config, window, text, text_renderer }
-    }
-
-    fn render(&mut self) {
-        self.text.prepare_all(&mut self.text_renderer);
-        self.text_renderer.load_to_gpu(&self.device, &self.queue);
-
-        let surface_texture = self.surface.get_current_texture().unwrap();
-        let mut encoder = self.device.create_command_encoder(&CommandEncoderDescriptor::default());
-
-        {
-            let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
-                color_attachments: &[Some(RenderPassColorAttachment {
-                    view: &surface_texture.texture.create_view(&TextureViewDescriptor::default()),
-                    resolve_target: None,
-                    ops: Operations { load: LoadOp::Clear(Color::BLACK), store: StoreOp::Store },
-                })],
-                ..Default::default()
-            });
-            self.text_renderer.render(&mut pass);
-        }
-
-        self.queue.submit(std::iter::once(encoder.finish()));
-        surface_texture.present();
     }
 }
 
@@ -66,8 +42,6 @@ impl winit::application::ApplicationHandler for Application {
         if self.state.is_none() {
             let window = Arc::new(event_loop.create_window(
                 Window::default_attributes()
-                    .with_title("Minimal Text Edit Example")
-                    .with_inner_size(LogicalSize::new(500, 300))
             ).unwrap());
             self.state = Some(State::new(window));
         }
@@ -85,7 +59,26 @@ impl winit::application::ApplicationHandler for Application {
                 state.surface.configure(&state.device, &state.surface_config);
             }
             WindowEvent::RedrawRequested => {
-                state.render();
+                state.text.prepare_all(&mut state.text_renderer);
+                state.text_renderer.load_to_gpu(&state.device, &state.queue);
+        
+                let surface_texture = state.surface.get_current_texture().unwrap();
+                let mut encoder = state.device.create_command_encoder(&CommandEncoderDescriptor::default());
+                {
+                    let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+                        color_attachments: &[Some(RenderPassColorAttachment {
+                            view: &surface_texture.texture.create_view(&TextureViewDescriptor::default()),
+                            resolve_target: None,
+                            ops: Operations { load: LoadOp::Clear(Color::BLACK), store: StoreOp::Store },
+                        })],
+                        ..Default::default()
+                    });
+                    state.text_renderer.render(&mut pass);
+                }
+        
+                state.queue.submit(Some(encoder.finish()));
+                surface_texture.present();
+
                 state.window.request_redraw();
             },
             _ => {}
