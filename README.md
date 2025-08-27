@@ -7,12 +7,12 @@ This library is based on `parley`, which does most of the hard technical work. `
 
 It also includes an atlas GPU renderer to render the text on the screen.
 
-See the examples in the repository, starting with `basic.rs`, to see how the library can be used. The [documentation for the main branch](https://kekelp.github.io/textslabs/textslabs/index.html) has more information, including a high level overview of the library and how to use it.
+See the examples in the repository, starting with `minimal.rs` and `full.rs`, to see how the library can be used. The [documentation for the main branch](https://kekelp.github.io/textslabs/textslabs/index.html) has more information, including a high level overview of the library and how to use it.
 
 ## Screenshots
 
-Screenshot of the "basic" example:
-![Screenshot of the "basic" example](screenshots/basic.png)
+Screenshot of the "full" example:
+![Screenshot of the "full" example](screenshots/full.png)
 
 Windows Narrator narrating text in the "accessibility" example:
 

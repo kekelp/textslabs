@@ -43,7 +43,7 @@
 //! text_renderer.render(&mut render_pass);
 //! ```
 //! 
-//! See the `basic.rs` or the `minimal.rs` example in the repository to see a more complete example, including the `winit` and `wgpu` boilerplate.
+//! See the `minimal.rs` or `full.rs` examples in the repository to see a more complete example, including the `winit` and `wgpu` boilerplate.
 //! 
 //! # Handles
 //! 
@@ -61,7 +61,7 @@
 //! 
 //! ## Accessibility
 //! 
-//! This library supports accessibility, but integrating it requires a bit more coordination with `winit` and with the GUI code outside of this library. In particular, `textslabs` doesn't have any concept of a tree. See the `accesibility.rs` example in the repository for a basic example.
+//! This library supports accessibility, but integrating it requires a bit more coordination with `winit` and with the GUI code outside of this library. In particular, `textslabs` doesn't have any concept of a tree. See the `accessibility.rs` example in the repository for a basic example.
 //! 
 //! ## Interaction
 //! 

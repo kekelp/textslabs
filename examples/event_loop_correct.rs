@@ -2,7 +2,7 @@
 //
 // See `event_loop_easy.rs` for a simpler way to integrate it.
 //
-// If you're building an application that never pauses its winit event loop, like a game, you can disregard all the wakeup mechanisms entirely. See the `basic.rs` example.
+// If you're building an application that never pauses its winit event loop, like a game, you can disregard all the wakeup mechanisms entirely. See the `full.rs` example.
 
 use textslabs::*;
 use std::sync::Arc;
