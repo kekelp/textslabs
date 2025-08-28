@@ -11,7 +11,7 @@
 //! ```no_run
 //! # use textslabs::*;
 //! // Create the Text struct and the Text renderer:
-//! let mut text = Text::new_without_auto_wakeup();
+//! let mut text = Text::new();
 //! # let device: wgpu::Device = unimplemented!();
 //! # let queue: wgpu::Queue = unimplemented!();
 //! # let surface_config: wgpu::SurfaceConfiguration = unimplemented!();
@@ -85,7 +85,7 @@
 //! 
 //! ```no_run
 //! # use textslabs::*;
-//! # let mut text = Text::new_without_auto_wakeup();
+//! # let mut text = Text::new();
 //! // Each frame, advance an internal frame counter,
 //! // and implicitly mark all text boxes as "outdated"
 //! text.advance_frame_and_hide_boxes();

@@ -61,7 +61,7 @@ impl State {
         let surface_config = surface.get_default_config(&wgpu_adapter, window.inner_size().width, window.inner_size().height).unwrap();
         surface.configure(&device, &surface_config);
 
-        let mut text = Text::new_without_auto_wakeup();
+        let mut text = Text::new();
         let text_edit_handle = text.add_text_edit("".to_string(), (50.0, 100.0), (300.0, 35.0), 0.0);
         text.set_text_edit_accesskit_id(&text_edit_handle, TEXT_EDIT_ID);
         text.get_text_edit_mut(&text_edit_handle).set_single_line(true);

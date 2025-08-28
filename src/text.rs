@@ -280,32 +280,13 @@ impl TextInputState {
 
 impl Text {
     /// Create a new Text instance.
-    /// 
-    /// `window` is used to allow `Text` to wake up the `winit` event loop automatically when it needs to redraw a blinking cursor.
-    /// 
-    /// In applications that don't pause their event loops, like games, there is no need to use the wakeup system, so you can use [`Text::new_without_auto_wakeup`] instead.
-    /// 
-    /// You can also handle cursor wakeups manually in your winit event loop with winit's `ControlFlow::WaitUntil` and [`Text::time_until_next_cursor_blink`]. See the `event_loop_smart.rs` example.
-    pub fn new(window: Arc<Window>) -> Self {
-        Self::new_with_option(Some(window))
-    }
-
-    /// Create a new Text instance without cursor blink wakeup.
-    /// 
-    /// Use this function for applications that don't pause their event loops, like games, or when handling cursor wakeups manually with winit's `ControlFlow::WaitUntil` and [`Text::time_until_next_cursor_blink`]. See the `event_loop_smart.rs` example.
-    pub fn new_without_auto_wakeup() -> Self {
-        Self::new_with_option(None)
-    }
-
-    pub(crate) fn new_with_option(window: Option<Arc<Window>>) -> Self {
+    pub fn new() -> Self {
         let mut styles = SlotMap::with_capacity_and_key(10);
         let default_style_key = styles.insert(StyleInner {
             text_style: original_default_style(),
             text_edit_style: TextEditStyle::default(),
             version: 0,
         });
-
-        let cursor_blink_timer = window.map(|window| CursorBlinkWaker::new(Arc::downgrade(&window)));
 
         Self {
             text_boxes: SlotMap::with_capacity(10),
@@ -320,7 +301,7 @@ impl Text {
             using_frame_based_visibility: false,
             cursor_blink_start: None,
             cursor_currently_blinked_out: false,
-            cursor_blink_timer,
+            cursor_blink_timer: None,
             
             #[cfg(feature = "accessibility")]
             accesskit_id_to_text_handle_map: HashMap::with_capacity(50),
@@ -349,6 +330,17 @@ impl Text {
                 },
             },
         }
+    }
+
+    /// Setup automatic cursor blink wakeup for applications that pause their event loops.
+    /// 
+    /// `window` is used to wake up the `winit` event loop automatically when it needs to redraw a blinking cursor.
+    /// 
+    /// In applications that don't pause their event loops, like games, there is no need to call this method.
+    /// 
+    /// You can also handle cursor wakeups manually in your winit event loop with winit's `ControlFlow::WaitUntil` and [`Text::time_until_next_cursor_blink`]. See the `event_loop_smart.rs` example.
+    pub fn set_auto_wakeup(&mut self, window: Arc<Window>) {
+        self.cursor_blink_timer = Some(CursorBlinkWaker::new(Arc::downgrade(&window)));
     }
 
 
@@ -1590,7 +1582,7 @@ impl Text {
     /// ```ignored
     /// # use textslabs::*;
     /// # use parley::FontFamily;
-    /// # let text = Text::new_without_auto_wakeup();
+    /// # let text = Text::new();
     /// let family_name = text.load_font(include_bytes!("../MyFont.ttf"))
     ///     .expect("Failed to load font");
     /// let style = text.add_style(TextStyle {

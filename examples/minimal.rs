@@ -28,7 +28,7 @@ impl State {
         surface.configure(&device, &surface_config);
 
         let text_renderer = TextRenderer::new(&device, &queue, surface_config.format);
-        let mut text = Text::new_without_auto_wakeup();
+        let mut text = Text::new();
         let _text_edit_handle = text.add_text_edit("Type here...".to_string(), (50.0, 50.0), (400.0, 200.0), 0.0);
 
         Self { device, queue, surface, surface_config, window, text, text_renderer }

@@ -55,7 +55,7 @@ impl State {
             .unwrap();
         surface.configure(&device, &surface_config);
 
-        let mut text = Text::new_without_auto_wakeup();
+        let mut text = Text::new();
         
         // Create a text edit in the center of the screen (which will be in the occluded right half)
         let text_edit_handle = text.add_text_edit(

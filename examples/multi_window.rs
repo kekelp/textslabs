@@ -35,7 +35,7 @@ impl State {
         let adapter = pollster::block_on(instance.request_adapter(&RequestAdapterOptions::default())).unwrap();
         let (device, queue) = pollster::block_on(adapter.request_device(&DeviceDescriptor::default(), None)).unwrap();
         
-        let mut text = Text::new_without_auto_wakeup();
+        let mut text = Text::new();
         
         let mut window_states = Vec::new();
         for (i, window) in windows.into_iter().enumerate() {
