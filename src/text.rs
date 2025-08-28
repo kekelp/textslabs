@@ -47,7 +47,6 @@ pub struct Text {
     pub(crate) mouse_hit_stack: Vec<(AnyBox, f32)>,
     
     pub(crate) using_frame_based_visibility: bool,
-    pub(crate) decorations_changed: bool,
     
     pub(crate) scrolled_moved_indices: Vec<AnyBox>,
     pub(crate) scroll_animations: Vec<ScrollAnimation>,
@@ -294,7 +293,6 @@ impl Text {
             style_version_id_counter: 0,
             input_state: TextInputState::new(),
             mouse_hit_stack: Vec::with_capacity(6),
-            decorations_changed: true,
             scrolled_moved_indices: Vec::new(),
             scroll_animations: Vec::new(),
             current_visibility_frame: 1,
@@ -699,11 +697,11 @@ impl Text {
 
         if self.shared.text_changed {
             text_renderer.clear();
-        } else if self.decorations_changed || !self.scrolled_moved_indices.is_empty() {
+        } else if self.shared.decorations_changed || !self.scrolled_moved_indices.is_empty() {
             text_renderer.clear_decorations_only();
         }
 
-        if self.decorations_changed || self.shared.text_changed  || !self.scrolled_moved_indices.is_empty() {
+        if self.shared.decorations_changed || self.shared.text_changed  || !self.scrolled_moved_indices.is_empty() {
             if let Some(focused) = self.shared.focused {
                 // For multi-window, only prepare decorations if the focused element belongs to this window
                 let focused_belongs_to_window = match focused {
@@ -1092,7 +1090,7 @@ impl Text {
         
         if focus_changed {
             // todo: could skip some rerenders here if the old focus wasn't editable and had collapsed selection.
-            self.decorations_changed = true;
+            self.shared.decorations_changed = true;
             self.reset_cursor_blink();
         }
     }
@@ -1150,7 +1148,7 @@ impl Text {
                     let handle = TextEditHandle { key: i };
                     let did_scroll = self.handle_text_edit_scroll_event(&handle, event, window);
                     if did_scroll {
-                        self.decorations_changed = true;
+                        self.shared.decorations_changed = true;
                         self.scrolled_moved_indices.push(AnyBox::TextEdit(i));
                         self.shared.scrolled = true;
                     }
@@ -1174,7 +1172,7 @@ impl Text {
                     self.reset_cursor_blink();
                 }
                 if self.shared.decorations_changed {
-                    self.decorations_changed = true;
+                    self.shared.decorations_changed = true;
                     self.reset_cursor_blink();
                 }
                 if !self.shared.text_changed && self.shared.scrolled {
@@ -1187,7 +1185,7 @@ impl Text {
 
                 text_box.handle_event(event, window, &self.input_state);
                 if self.shared.decorations_changed {
-                    self.decorations_changed = true;
+                    self.shared.decorations_changed = true;
                 }
                 if !self.shared.text_changed && self.shared.scrolled {
                     self.scrolled_moved_indices.push(AnyBox::TextBox(i));
@@ -1235,7 +1233,8 @@ impl Text {
     /// 
     /// Games and applications that rerender continuously can call `Window::request_redraw()` unconditionally after every `RedrawRequested` event, without checking this method.
     pub fn needs_rerender(&mut self) -> bool {
-        self.shared.text_changed || self.shared.decorations_changed || self.shared.scrolled || !self.scrolled_moved_indices.is_empty()
+        self.cursor_blinked_out(false);
+        return self.shared.text_changed || self.shared.decorations_changed || self.shared.scrolled || !self.scrolled_moved_indices.is_empty();
     }
 
     /// Get a mutable reference to a text box wrapped with its style.
@@ -1439,8 +1438,6 @@ impl Text {
         did_scroll
     }
 
-    // result: (currently blinked, changed).
-    // todo: changed should be useless now.
     pub(crate) fn cursor_blinked_out(&mut self, update: bool) -> bool {
         if let Some(start_time) = self.cursor_blink_start {
             let elapsed = Instant::now().duration_since(start_time);
@@ -1448,7 +1445,7 @@ impl Text {
             let blinked_out = (elapsed.as_millis() / blink_period.as_millis()) % 2 == 0;
             let changed = blinked_out != self.cursor_currently_blinked_out;
             if changed {
-                self.decorations_changed = true;
+                self.shared.decorations_changed = true;
             }
             if update {
                 self.cursor_currently_blinked_out = blinked_out;
@@ -1482,7 +1479,7 @@ impl Text {
             if text_edit.text_box.selection().is_collapsed() {
                 
                 self.cursor_blink_start = Some(Instant::now());
-                self.decorations_changed = true;
+                self.shared.decorations_changed = true;
                 
                 if let Some(timer) = &self.cursor_blink_timer {
                     timer.start_waker();
