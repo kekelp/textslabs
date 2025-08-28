@@ -659,6 +659,8 @@ impl Text {
     /// Layout and rasterize all text, prepare the render data, and pass it to `TextRenderer`.
     /// 
     /// This function is for single-window applications only. For multi-window, use [`Text::prepare_all_for_window`].
+    /// 
+    /// [`Text`] keeps track of all changes to text boxes internally. So this function can be called multiple times in same frame without issues, if needed. 
     pub fn prepare_all(&mut self, text_renderer: &mut TextRenderer) {
         let res = self.shared.windows.first().map(|w| (w.window_id, w.dimensions));
 
