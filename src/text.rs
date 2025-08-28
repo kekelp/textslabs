@@ -693,15 +693,15 @@ impl Text {
             }
         }
         
-        let (show_cursor, blink_changed) = self.cursor_blinked_out(true);
+        let show_cursor = self.cursor_blinked_out(true);
 
         if self.shared.text_changed {
             text_renderer.clear();
-        } else if self.decorations_changed || !self.scrolled_moved_indices.is_empty() || blink_changed {
+        } else if self.decorations_changed || !self.scrolled_moved_indices.is_empty() {
             text_renderer.clear_decorations_only();
         }
 
-        if self.decorations_changed || self.shared.text_changed  || !self.scrolled_moved_indices.is_empty() || blink_changed {
+        if self.decorations_changed || self.shared.text_changed  || !self.scrolled_moved_indices.is_empty() {
             if let Some(focused) = self.shared.focused {
                 // For multi-window, only prepare decorations if the focused element belongs to this window
                 let focused_belongs_to_window = match focused {
@@ -1232,9 +1232,8 @@ impl Text {
     /// This function is useful to decide whether to call `winit`'s `Window::request_redraw()` after processing a `winit` event.
     /// 
     /// Games and applications that rerender continuously can call `Window::request_redraw()` unconditionally after every `RedrawRequested` event, without checking this method.
-    pub fn need_rerender(&mut self) -> bool {
-        let (_, blink_changed) = self.cursor_blinked_out(true);
-        self.shared.text_changed || self.shared.decorations_changed || self.shared.scrolled || blink_changed || !self.scrolled_moved_indices.is_empty()
+    pub fn needs_rerender(&mut self) -> bool {
+        self.shared.text_changed || self.shared.decorations_changed || self.shared.scrolled || !self.scrolled_moved_indices.is_empty()
     }
 
     /// Get a mutable reference to a text box wrapped with its style.
@@ -1439,18 +1438,22 @@ impl Text {
     }
 
     // result: (currently blinked, changed).
-    pub(crate) fn cursor_blinked_out(&mut self, update: bool) -> (bool, bool) {
+    // todo: changed should be useless now.
+    pub(crate) fn cursor_blinked_out(&mut self, update: bool) -> bool {
         if let Some(start_time) = self.cursor_blink_start {
             let elapsed = Instant::now().duration_since(start_time);
             let blink_period = Duration::from_millis(CURSOR_BLINK_TIME_MILLIS);
             let blinked_out = (elapsed.as_millis() / blink_period.as_millis()) % 2 == 0;
             let changed = blinked_out != self.cursor_currently_blinked_out;
+            if changed {
+                self.decorations_changed = true;
+            }
             if update {
                 self.cursor_currently_blinked_out = blinked_out;
             }
-            return (blinked_out, changed);
+            return blinked_out;
         } else {
-            (false, false)
+            false
         }
     }
 

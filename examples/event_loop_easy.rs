@@ -198,7 +198,7 @@ impl winit::application::ApplicationHandler<()> for Application {
             _ => {}
         }
 
-        if state.text.need_rerender() {
+        if state.text.needs_rerender() {
             state.window.request_redraw();
         }
     }
