@@ -24,18 +24,11 @@ struct State {
     queue: Queue,
     surface: Surface<'static>,
     window: Arc<Window>,
-
     text_renderer: TextRenderer,
     text: Text,
-    
     custom_pipeline: RenderPipeline,
     custom_vertex_buffer: Buffer,
     custom_element_z: f32,
-    
-    background_vertex_buffer: Buffer,
-    background_element_z: f32,
-    
-    depth_view: TextureView,
 }
 
 #[repr(C)]
@@ -63,38 +56,12 @@ impl State {
         let surface_config = surface.get_default_config(&adapter, physical_size.width, physical_size.height).unwrap();
         surface.configure(&device, &surface_config);
 
-        // Create depth texture
-        let depth_format = TextureFormat::Depth32Float;
-        let depth_texture = device.create_texture(&TextureDescriptor {
-            label: Some("depth texture"),
-            size: Extent3d {
-                width: physical_size.width,
-                height: physical_size.height,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: TextureDimension::D2,
-            format: depth_format,
-            usage: TextureUsages::RENDER_ATTACHMENT,
-            view_formats: &[],
-        });
-        let depth_view = depth_texture.create_view(&TextureViewDescriptor::default());
-
-        let text_depth_stencil_state = DepthStencilState {
-            format: depth_format,
-            depth_write_enabled: false,
-            depth_compare: CompareFunction::Less,
-            stencil: StencilState::default(),
-            bias: DepthBiasState::default(),
-        };
-
         // Create text renderer with z-range filtering enabled
         let text_renderer = TextRenderer::new_with_params(
             &device, 
             &queue, 
             surface_config.format,
-            Some(text_depth_stencil_state),
+            None,
             TextRendererParams {
                 enable_z_range_filtering: true,
                 ..Default::default()
@@ -170,13 +137,7 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
                 topology: PrimitiveTopology::TriangleStrip,
                 ..Default::default()
             },
-            depth_stencil: Some(DepthStencilState {
-                format: depth_format,
-                depth_write_enabled: true,
-                depth_compare: CompareFunction::Less,
-                stencil: StencilState::default(),
-                bias: DepthBiasState::default(),
-            }),
+            depth_stencil: None,
             multisample: MultisampleState::default(),
             multiview: None,
             cache: None,
@@ -196,19 +157,6 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
             usage: BufferUsages::VERTEX,
         });
 
-        // Dark blue opaque (back layer)
-        let background_vertices = [
-            Vertex { position: [-0.9, -0.9, 0.95], color: [0.2, 0.2, 0.3, 1.0] },
-            Vertex { position: [ 0.9, -0.9, 0.95], color: [0.2, 0.2, 0.3, 1.0] }, 
-            Vertex { position: [-0.9,  0.9, 0.95], color: [0.2, 0.2, 0.3, 1.0] },
-            Vertex { position: [ 0.9,  0.9, 0.95], color: [0.2, 0.2, 0.3, 1.0] },
-        ];
-
-        let background_vertex_buffer = device.create_buffer_init(&util::BufferInitDescriptor {
-            label: Some("background vertex buffer"),
-            contents: bytemuck::cast_slice(&background_vertices),
-            usage: BufferUsages::VERTEX,
-        });
 
         Self {
             device,
@@ -220,9 +168,6 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
             custom_pipeline,
             custom_vertex_buffer,
             custom_element_z: 0.4,
-            background_vertex_buffer,
-            background_element_z: 0.8,
-            depth_view,
         }
     }
 
@@ -248,34 +193,18 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
                         store: StoreOp::Store,
                     },
                 })],
-                depth_stencil_attachment: Some(RenderPassDepthStencilAttachment {
-                    view: &self.depth_view,
-                    depth_ops: Some(Operations {
-                        load: LoadOp::Clear(1.0),
-                        store: StoreOp::Store,
-                    }),
-                    stencil_ops: None,
-                }),
+                depth_stencil_attachment: None,
                 timestamp_writes: None,
                 occlusion_query_set: None,
             });
 
             // Use render_z_range to draw the custom elements and the text inbetween them in-order.
-            // We can't rely on the depth buffer when elements are semitransparent and blend in the background.
-            // And unfortunately text glyphs are semitransparent.
+            // We can't really rely on the depth buffer when elements are semitransparent and blend in the background, such as text glyphs.
             
-            // First, draw background text (z=0.9 to background_element_z=0.8)
-            self.text_renderer.render_z_range(&mut render_pass, [1.0, self.background_element_z]);
+            // First, draw background text (z=1.0 to custom_element_z=0.4)
+            self.text_renderer.render_z_range(&mut render_pass, [1.0, self.custom_element_z]);
             
-            // Then draw the background rectangle (z=0.8)
-            render_pass.set_pipeline(&self.custom_pipeline);
-            render_pass.set_vertex_buffer(0, self.background_vertex_buffer.slice(..));
-            render_pass.draw(0..4, 0..1);
-            
-            // Then draw middle text layer (z=0.8 to custom_element_z=0.4)  
-            self.text_renderer.render_z_range(&mut render_pass, [self.background_element_z, self.custom_element_z]);
-            
-            // Then draw the foreground colored rectangle (z=0.4)
+            // Then draw the colored rectangle (z=0.4)
             render_pass.set_pipeline(&self.custom_pipeline);
             render_pass.set_vertex_buffer(0, self.custom_vertex_buffer.slice(..));
             render_pass.draw(0..4, 0..1);
