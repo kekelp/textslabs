@@ -4,10 +4,9 @@ use wgpu::*;
 use wgpu::util::DeviceExt;
 use winit::{
     dpi::LogicalSize,
-    event::{WindowEvent, KeyEvent, ElementState},
+    event::WindowEvent,
     event_loop::EventLoop,
     window::Window,
-    keyboard::{KeyCode, PhysicalKey},
 };
 
 fn main() {
@@ -35,8 +34,6 @@ struct State {
     
     background_vertex_buffer: Buffer,
     background_element_z: f32,
-    
-    show_layered_rendering: bool,
     
     depth_view: TextureView,
 }
@@ -199,8 +196,9 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
             usage: BufferUsages::VERTEX,
         });
 
+        // Dark blue opaque (back layer)
         let background_vertices = [
-            Vertex { position: [-0.9, -0.9, 0.95], color: [0.2, 0.2, 0.3, 1.0] }, // Dark blue opaque (back layer)
+            Vertex { position: [-0.9, -0.9, 0.95], color: [0.2, 0.2, 0.3, 1.0] },
             Vertex { position: [ 0.9, -0.9, 0.95], color: [0.2, 0.2, 0.3, 1.0] }, 
             Vertex { position: [-0.9,  0.9, 0.95], color: [0.2, 0.2, 0.3, 1.0] },
             Vertex { position: [ 0.9,  0.9, 0.95], color: [0.2, 0.2, 0.3, 1.0] },
@@ -224,7 +222,6 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
             custom_element_z: 0.4,
             background_vertex_buffer,
             background_element_z: 0.8,
-            show_layered_rendering: true,
             depth_view,
         }
     }
@@ -263,39 +260,28 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
                 occlusion_query_set: None,
             });
 
-            if self.show_layered_rendering {
-                // Layered rendering for correct blending with two custom rectangles:
-                
-                // First, draw background text (z=0.9 to background_element_z=0.8)
-                self.text_renderer.render_z_range(&mut render_pass, [1.0, self.background_element_z]);
-                
-                // Then draw the background rectangle (z=0.8)
-                render_pass.set_pipeline(&self.custom_pipeline);
-                render_pass.set_vertex_buffer(0, self.background_vertex_buffer.slice(..));
-                render_pass.draw(0..4, 0..1);
-                
-                // Then draw middle text layer (z=0.8 to custom_element_z=0.4)  
-                self.text_renderer.render_z_range(&mut render_pass, [self.background_element_z, self.custom_element_z]);
-                
-                // Then draw the foreground colored rectangle (z=0.4)
-                render_pass.set_pipeline(&self.custom_pipeline);
-                render_pass.set_vertex_buffer(0, self.custom_vertex_buffer.slice(..));
-                render_pass.draw(0..4, 0..1);
-                
-                // Finally draw the foreground text (z=0.4 to 0.0)
-                self.text_renderer.render_z_range(&mut render_pass, [self.custom_element_z, 0.0]);
-            } else {
-                // Incorrect rendering: draw background rect first, then all text in one go, then foreground rect
-                render_pass.set_pipeline(&self.custom_pipeline);
-                render_pass.set_vertex_buffer(0, self.background_vertex_buffer.slice(..));
-                render_pass.draw(0..4, 0..1);
-                
-                self.text_renderer.render(&mut render_pass);
-                
-                render_pass.set_pipeline(&self.custom_pipeline);
-                render_pass.set_vertex_buffer(0, self.custom_vertex_buffer.slice(..));
-                render_pass.draw(0..4, 0..1);
-            }
+            // Use render_z_range to draw the custom elements and the text inbetween them in-order.
+            // We can't rely on the depth buffer when elements are semitransparent and blend in the background.
+            // And unfortunately text glyphs are semitransparent.
+            
+            // First, draw background text (z=0.9 to background_element_z=0.8)
+            self.text_renderer.render_z_range(&mut render_pass, [1.0, self.background_element_z]);
+            
+            // Then draw the background rectangle (z=0.8)
+            render_pass.set_pipeline(&self.custom_pipeline);
+            render_pass.set_vertex_buffer(0, self.background_vertex_buffer.slice(..));
+            render_pass.draw(0..4, 0..1);
+            
+            // Then draw middle text layer (z=0.8 to custom_element_z=0.4)  
+            self.text_renderer.render_z_range(&mut render_pass, [self.background_element_z, self.custom_element_z]);
+            
+            // Then draw the foreground colored rectangle (z=0.4)
+            render_pass.set_pipeline(&self.custom_pipeline);
+            render_pass.set_vertex_buffer(0, self.custom_vertex_buffer.slice(..));
+            render_pass.draw(0..4, 0..1);
+            
+            // Finally draw the foreground text (z=0.4 to 0.0)
+            self.text_renderer.render_z_range(&mut render_pass, [self.custom_element_z, 0.0]);
         }
 
         self.queue.submit(Some(encoder.finish()));
@@ -307,18 +293,6 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
         self.text.handle_event(&event, &self.window);
 
         match event {
-            WindowEvent::KeyboardInput {
-                event: KeyEvent {
-                    physical_key: PhysicalKey::Code(KeyCode::Space),
-                    state: ElementState::Pressed,
-                    ..
-                },
-                ..
-            } => {
-                self.show_layered_rendering = !self.show_layered_rendering;
-                let mode = if self.show_layered_rendering { "Layered (correct blending)" } else { "Normal (incorrect blending)" };
-                println!("Switched to: {}", mode);
-            }
             WindowEvent::RedrawRequested => {
                 let r = self.render();
                 if let Err(e) = r {
