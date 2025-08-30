@@ -107,7 +107,12 @@
 //! 
 //! There are two main open issues in the design of the library:
 //! 
-//! - All text boxes are rendered in a single draw call. The `TextRenderer` supports using a depth buffer, but that's not enough to get correct results when many semitransparent elements overlap. The only way to solve this problem fully is to draw elements in order. Doing this while keeping the integration simple enough is probably quite hard.
+//! - Normally, all text boxes are rendered in a single draw call. The `TextRenderer` supports using a depth buffer, but that's not enough to get correct results when many semitransparent elements overlap.
+//! 
+//!     A possible solution is [`TextRenderer::render_z_range()`], an experimental function that only renders the text boxes in a given range of depth values. This uses push constants and a filter in the shader to draw different ranges of text boxes in-order without having to rearrange or reupload the data in the buffers. See the `z_range.rs` example in the repository to see how this works. 
+//!  
+//!     Note that push constants are a native-only feature that may not be available in some `wgpu` backends. See the `wgpu` documentation for more information.
+//! 
 //! 
 //! - the math for scrolling and smooth scrolling animations in overflowing text edit boxes is hardcoded in the library. This means that a GUI library using Textslabs might have inconsistent scrolling behavior between the Textslabs text edit boxes and the GUI library's generic scrollable containers.
 

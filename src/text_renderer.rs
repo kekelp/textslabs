@@ -430,9 +430,13 @@ impl TextRenderer {
 
     /// Render the prepared text within the specified z-range.
     /// 
+    /// This function uses `wgpu`'s push constants, and can only be used if the `TextRenderer` was created with the `enable_z_range_filtering = true` option in [`TextRendererParams`].
+    /// 
+    /// Note that push constants are a native-only feature that may not be available in some `wgpu` backends. See the `wgpu` documentation for more information.
+    /// 
     /// # Panics
     /// 
-    /// Panics if the TextRenderer was not created with `enable_z_range_filtering = true`.
+    /// Panics if the `TextRenderer` was not created with `enable_z_range_filtering = true`.
     pub fn render_z_range(&self, pass: &mut RenderPass<'_>, z_range: [f32; 2]) {
         self.text_renderer.render_z_range(pass, z_range);
     }

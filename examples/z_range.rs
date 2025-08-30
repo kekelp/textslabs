@@ -24,7 +24,6 @@ struct State {
     device: Device,
     queue: Queue,
     surface: Surface<'static>,
-    surface_config: SurfaceConfiguration,
     window: Arc<Window>,
 
     text_renderer: TextRenderer,
@@ -37,6 +36,8 @@ struct State {
     background_vertex_buffer: Buffer,
     
     show_layered_rendering: bool,
+    
+    depth_view: TextureView,
 }
 
 #[repr(C)]
@@ -64,12 +65,38 @@ impl State {
         let surface_config = surface.get_default_config(&adapter, physical_size.width, physical_size.height).unwrap();
         surface.configure(&device, &surface_config);
 
+        // Create depth texture
+        let depth_format = TextureFormat::Depth32Float;
+        let depth_texture = device.create_texture(&TextureDescriptor {
+            label: Some("depth texture"),
+            size: Extent3d {
+                width: physical_size.width,
+                height: physical_size.height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format: depth_format,
+            usage: TextureUsages::RENDER_ATTACHMENT,
+            view_formats: &[],
+        });
+        let depth_view = depth_texture.create_view(&TextureViewDescriptor::default());
+
+        let text_depth_stencil_state = DepthStencilState {
+            format: depth_format,
+            depth_write_enabled: true,
+            depth_compare: CompareFunction::Less,
+            stencil: StencilState::default(),
+            bias: DepthBiasState::default(),
+        };
+
         // Create text renderer with z-range filtering enabled
         let text_renderer = TextRenderer::new_with_params(
             &device, 
             &queue, 
             surface_config.format,
-            None, // No depth testing
+            Some(text_depth_stencil_state),
             TextRendererParams {
                 enable_z_range_filtering: true,
                 ..Default::default()
@@ -105,10 +132,6 @@ impl State {
             (50.0, 350.0), (800.0, 200.0), 0.1
         );
 
-        // Create custom element (semitransparent rectangle at z=0.6)
-        let custom_element_z = 0.6;
-        
-        // Custom element shader for a semitransparent colored rectangle
         let custom_shader_source = r#"
 struct VertexInput {
     @location(0) position: vec3<f32>,
@@ -166,18 +189,24 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
                 topology: PrimitiveTopology::TriangleStrip,
                 ..Default::default()
             },
-            depth_stencil: None, // No depth testing
+            depth_stencil: Some(DepthStencilState {
+                format: depth_format,
+                depth_write_enabled: true,
+                depth_compare: CompareFunction::Less,
+                stencil: StencilState::default(),
+                bias: DepthBiasState::default(),
+            }),
             multisample: MultisampleState::default(),
             multiview: None,
             cache: None,
         });
 
-        // Create a bright semitransparent colored rectangle (simulating a color picker, canvas, etc.)
+        // Create a bright semitransparent colored rectangle
         let custom_vertices = [
-            Vertex { position: [-0.5, -0.5, custom_element_z], color: [1.0, 0.0, 1.0, 0.7] }, // Bright magenta
-            Vertex { position: [ 0.5, -0.5, custom_element_z], color: [0.0, 1.0, 1.0, 0.7] }, // Bright cyan  
-            Vertex { position: [-0.5,  0.5, custom_element_z], color: [1.0, 1.0, 0.0, 0.7] }, // Bright yellow
-            Vertex { position: [ 0.5,  0.5, custom_element_z], color: [1.0, 0.5, 0.0, 0.7] }, // Bright orange
+            Vertex { position: [-0.5, -0.5, 0.6], color: [1.0, 0.0, 1.0, 0.7] },
+            Vertex { position: [ 0.5, -0.5, 0.6], color: [0.0, 1.0, 1.0, 0.7] },
+            Vertex { position: [-0.5,  0.5, 0.6], color: [1.0, 1.0, 0.0, 0.7] },
+            Vertex { position: [ 0.5,  0.5, 0.6], color: [1.0, 0.5, 0.0, 0.7] },
         ];
 
         let custom_vertex_buffer = device.create_buffer_init(&util::BufferInitDescriptor {
@@ -186,12 +215,11 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
             usage: BufferUsages::VERTEX,
         });
 
-        // Create opaque background rectangle (behind everything)
         let background_vertices = [
-            Vertex { position: [-1.0, -1.0, 1.0], color: [0.2, 0.2, 0.3, 1.0] }, // Dark blue opaque
-            Vertex { position: [ 1.0, -1.0, 1.0], color: [0.2, 0.2, 0.3, 1.0] }, 
-            Vertex { position: [-1.0,  1.0, 1.0], color: [0.2, 0.2, 0.3, 1.0] },
-            Vertex { position: [ 1.0,  1.0, 1.0], color: [0.2, 0.2, 0.3, 1.0] },
+            Vertex { position: [-0.9, -0.9, 0.9], color: [0.2, 0.2, 0.3, 1.0] }, // Dark blue opaque
+            Vertex { position: [ 0.9, -0.9, 0.9], color: [0.2, 0.2, 0.3, 1.0] }, 
+            Vertex { position: [-0.9,  0.9, 0.9], color: [0.2, 0.2, 0.3, 1.0] },
+            Vertex { position: [ 0.9,  0.9, 0.9], color: [0.2, 0.2, 0.3, 1.0] },
         ];
 
         let background_vertex_buffer = device.create_buffer_init(&util::BufferInitDescriptor {
@@ -204,23 +232,15 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
             device,
             queue,
             surface,
-            surface_config,
             window,
             text_renderer,
             text,
             custom_pipeline,
             custom_vertex_buffer,
-            custom_element_z,
+            custom_element_z: 0.6,
             background_vertex_buffer,
             show_layered_rendering: true,
-        }
-    }
-
-    fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
-        if new_size.width > 0 && new_size.height > 0 {
-            self.surface_config.width = new_size.width;
-            self.surface_config.height = new_size.height;
-            self.surface.configure(&self.device, &self.surface_config);
+            depth_view,
         }
     }
 
@@ -228,17 +248,12 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
         let frame = self.surface.get_current_texture()?;
         let view = frame.texture.create_view(&TextureViewDescriptor::default());
 
-        // Prepare text rendering
         self.text.prepare_all(&mut self.text_renderer);
         self.text_renderer.load_to_gpu(&self.device, &self.queue);
 
         let mut encoder = self.device.create_command_encoder(&CommandEncoderDescriptor {
             label: Some("render encoder"),
         });
-
-        // Update window title
-        let mode = if self.show_layered_rendering { "Layered (Correct)" } else { "Normal (Incorrect)" };
-        self.window.set_title(&format!("Z-Range Blending Demo - {} - Press SPACE to toggle", mode));
 
         {
             let mut render_pass = encoder.begin_render_pass(&RenderPassDescriptor {
@@ -251,34 +266,46 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
                         store: StoreOp::Store,
                     },
                 })],
-                depth_stencil_attachment: None, // No depth testing
+                depth_stencil_attachment: Some(RenderPassDepthStencilAttachment {
+                    view: &self.depth_view,
+                    depth_ops: Some(Operations {
+                        load: LoadOp::Clear(1.0),
+                        store: StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
                 timestamp_writes: None,
                 occlusion_query_set: None,
             });
 
-            // Always draw opaque background first (behind everything)
+            // Draw opaque background
             render_pass.set_pipeline(&self.custom_pipeline);
             render_pass.set_vertex_buffer(0, self.background_vertex_buffer.slice(..));
             render_pass.draw(0..4, 0..1);
 
             if self.show_layered_rendering {
-                // Layered rendering for correct blending:
+                // Layered rendering for correct blending: first, draw the background text.
                 self.text_renderer.render_z_range(&mut render_pass, [1.0, self.custom_element_z]);
                 
-                // Draw the semitransparent custom element
+                // Then draw the colored quad.
                 render_pass.set_pipeline(&self.custom_pipeline);
                 render_pass.set_vertex_buffer(0, self.custom_vertex_buffer.slice(..));
                 render_pass.draw(0..4, 0..1);
                 
+                // Then draw the foreground text.
                 self.text_renderer.render_z_range(&mut render_pass, [self.custom_element_z, 0.0]);
             } else {
-                // Incorrect rendering: all text in one go
-                // No matter what we do here with z-buffers, we'll never get correct results.
+                // Incorrect rendering: all text in one go.
+                // This example uses depth_write_enabled: true for the text pipeline, which gives the most comically incorrect results:
+                // the semitransparent pixels in the foreground text blend with the grey background, and immediately become fully opaque half-grey half-white, with the z of the text.
+                // When the colored quad is rendered, it has no way to draw itself "between" the text and the grey background.
+
+                // We could disable the z buffer completely to avoid the ugliest artifacts, but no matter what we do, we'll never get correct results with a single draw call for all text. We need to draw things in-order for real.
+                self.text_renderer.render(&mut render_pass);
+                
                 render_pass.set_pipeline(&self.custom_pipeline);
                 render_pass.set_vertex_buffer(0, self.custom_vertex_buffer.slice(..));
-                render_pass.draw(0..4, 0..1);                
-                
-                self.text_renderer.render(&mut render_pass);
+                render_pass.draw(0..4, 0..1);
             }
         }
 
@@ -303,15 +330,10 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
                 let mode = if self.show_layered_rendering { "Layered (correct blending)" } else { "Normal (incorrect blending)" };
                 println!("Switched to: {}", mode);
             }
-            WindowEvent::Resized(physical_size) => {
-                self.resize(physical_size);
-            }
             WindowEvent::RedrawRequested => {
-                match self.render() {
-                    Ok(_) => {}
-                    Err(SurfaceError::Lost) => self.resize(self.window.inner_size()),
-                    Err(SurfaceError::OutOfMemory) => panic!("Out of memory"),
-                    Err(e) => eprintln!("Render error: {:?}", e),
+                let r = self.render();
+                if let Err(e) = r {
+                    panic!("Render error: {:?}", e);
                 }
             }
             _ => {}
@@ -331,8 +353,8 @@ impl winit::application::ApplicationHandler for Application {
 
         let window_attributes = Window::default_attributes()
             .with_inner_size(LogicalSize::new(WINDOW_WIDTH as f64, WINDOW_HEIGHT as f64))
-            .with_title("Z-Range Blending Demo - Press SPACE to toggle")
-            .with_resizable(true);
+            .with_title("Z-Range example")
+            .with_resizable(false);
         let window = Arc::new(event_loop.create_window(window_attributes).unwrap());
 
         self.state = Some(State::new(window));
