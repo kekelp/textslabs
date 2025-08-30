@@ -34,6 +34,7 @@ struct State {
     custom_element_z: f32,
     
     background_vertex_buffer: Buffer,
+    background_element_z: f32,
     
     show_layered_rendering: bool,
     
@@ -85,7 +86,7 @@ impl State {
 
         let text_depth_stencil_state = DepthStencilState {
             format: depth_format,
-            depth_write_enabled: true,
+            depth_write_enabled: false,
             depth_compare: CompareFunction::Less,
             stencil: StencilState::default(),
             bias: DepthBiasState::default(),
@@ -105,31 +106,14 @@ impl State {
 
         let mut text = Text::new();
         
-        // Background UI elements (behind the custom element)
-        let _background_title = text.add_text_box(
-            "Background UI Elements (z=0.9)",
-            (50.0, 50.0), (800.0, 40.0), 0.9
+        let _ = text.add_text_box(
+            "This text is below the colorful rectangle. This text is below the colorful rectangle. This text is below the colorful rectangle. This text is below the colorful rectangle. ",
+            (70.0, 200.0), (380.0, 180.0), 0.8
         );
         
-        let _background_panel = text.add_text_box(
-            "• Background panel text\n• Menu items\n• Status indicators\n\nThis text is rendered BEHIND the custom element",
-            (50.0, 100.0), (350.0, 150.0), 0.9
-        );
-        
-        // Foreground UI elements (in front of the custom element)  
-        let _foreground_title = text.add_text_box(
-            "Foreground UI Elements (z=0.3)",
-            (500.0, 50.0), (350.0, 40.0), 0.3
-        );
-        
-        let _foreground_panel = text.add_text_box(
-            "• Tooltips\n• Modal dialogs\n• Popup menus\n\nThis text is rendered IN FRONT of the custom element",
-            (500.0, 100.0), (350.0, 150.0), 0.3
-        );
-        
-        let _instructions = text.add_text_box(
-            "Press SPACE to toggle between:\n• Layered rendering (proper blending)\n• Normal rendering (incorrect blending)\n\nLayered rendering uses render_z_range to split text\ninto layers around the custom element for correct\nsemitransparent blending.",
-            (50.0, 350.0), (800.0, 200.0), 0.1
+        let _ = text.add_text_box(
+            "This text is in front of the colorful rectangle. This text is in front of the colorful rectangle. This text is in front of the colorful rectangle. This text is in front of the colorful rectangle. ",
+            (460.0, 200.0), (380.0, 180.0), 0.1
         );
 
         let custom_shader_source = r#"
@@ -201,12 +185,12 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
             cache: None,
         });
 
-        // Create a bright semitransparent colored rectangle
+        // Create a bright semitransparent colored rectangle (front layer)
         let custom_vertices = [
-            Vertex { position: [-0.5, -0.5, 0.6], color: [1.0, 0.0, 1.0, 0.7] },
-            Vertex { position: [ 0.5, -0.5, 0.6], color: [0.0, 1.0, 1.0, 0.7] },
-            Vertex { position: [-0.5,  0.5, 0.6], color: [1.0, 1.0, 0.0, 0.7] },
-            Vertex { position: [ 0.5,  0.5, 0.6], color: [1.0, 0.5, 0.0, 0.7] },
+            Vertex { position: [-0.5, -0.5, 0.4], color: [1.0, 0.0, 1.0, 0.9] },
+            Vertex { position: [ 0.5, -0.5, 0.4], color: [0.0, 1.0, 1.0, 0.9] },
+            Vertex { position: [-0.5,  0.5, 0.4], color: [1.0, 1.0, 0.0, 0.9] },
+            Vertex { position: [ 0.5,  0.5, 0.4], color: [1.0, 0.5, 0.0, 0.9] },
         ];
 
         let custom_vertex_buffer = device.create_buffer_init(&util::BufferInitDescriptor {
@@ -216,10 +200,10 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
         });
 
         let background_vertices = [
-            Vertex { position: [-0.9, -0.9, 0.9], color: [0.2, 0.2, 0.3, 1.0] }, // Dark blue opaque
-            Vertex { position: [ 0.9, -0.9, 0.9], color: [0.2, 0.2, 0.3, 1.0] }, 
-            Vertex { position: [-0.9,  0.9, 0.9], color: [0.2, 0.2, 0.3, 1.0] },
-            Vertex { position: [ 0.9,  0.9, 0.9], color: [0.2, 0.2, 0.3, 1.0] },
+            Vertex { position: [-0.9, -0.9, 0.95], color: [0.2, 0.2, 0.3, 1.0] }, // Dark blue opaque (back layer)
+            Vertex { position: [ 0.9, -0.9, 0.95], color: [0.2, 0.2, 0.3, 1.0] }, 
+            Vertex { position: [-0.9,  0.9, 0.95], color: [0.2, 0.2, 0.3, 1.0] },
+            Vertex { position: [ 0.9,  0.9, 0.95], color: [0.2, 0.2, 0.3, 1.0] },
         ];
 
         let background_vertex_buffer = device.create_buffer_init(&util::BufferInitDescriptor {
@@ -237,8 +221,9 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
             text,
             custom_pipeline,
             custom_vertex_buffer,
-            custom_element_z: 0.6,
+            custom_element_z: 0.4,
             background_vertex_buffer,
+            background_element_z: 0.8,
             show_layered_rendering: true,
             depth_view,
         }
@@ -278,29 +263,33 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
                 occlusion_query_set: None,
             });
 
-            // Draw opaque background
-            render_pass.set_pipeline(&self.custom_pipeline);
-            render_pass.set_vertex_buffer(0, self.background_vertex_buffer.slice(..));
-            render_pass.draw(0..4, 0..1);
-
             if self.show_layered_rendering {
-                // Layered rendering for correct blending: first, draw the background text.
-                self.text_renderer.render_z_range(&mut render_pass, [1.0, self.custom_element_z]);
+                // Layered rendering for correct blending with two custom rectangles:
                 
-                // Then draw the colored quad.
+                // First, draw background text (z=0.9 to background_element_z=0.8)
+                self.text_renderer.render_z_range(&mut render_pass, [1.0, self.background_element_z]);
+                
+                // Then draw the background rectangle (z=0.8)
+                render_pass.set_pipeline(&self.custom_pipeline);
+                render_pass.set_vertex_buffer(0, self.background_vertex_buffer.slice(..));
+                render_pass.draw(0..4, 0..1);
+                
+                // Then draw middle text layer (z=0.8 to custom_element_z=0.4)  
+                self.text_renderer.render_z_range(&mut render_pass, [self.background_element_z, self.custom_element_z]);
+                
+                // Then draw the foreground colored rectangle (z=0.4)
                 render_pass.set_pipeline(&self.custom_pipeline);
                 render_pass.set_vertex_buffer(0, self.custom_vertex_buffer.slice(..));
                 render_pass.draw(0..4, 0..1);
                 
-                // Then draw the foreground text.
+                // Finally draw the foreground text (z=0.4 to 0.0)
                 self.text_renderer.render_z_range(&mut render_pass, [self.custom_element_z, 0.0]);
             } else {
-                // Incorrect rendering: all text in one go.
-                // This example uses depth_write_enabled: true for the text pipeline, which gives the most comically incorrect results:
-                // the semitransparent pixels in the foreground text blend with the grey background, and immediately become fully opaque half-grey half-white, with the z of the text.
-                // When the colored quad is rendered, it has no way to draw itself "between" the text and the grey background.
-
-                // We could disable the z buffer completely to avoid the ugliest artifacts, but no matter what we do, we'll never get correct results with a single draw call for all text. We need to draw things in-order for real.
+                // Incorrect rendering: draw background rect first, then all text in one go, then foreground rect
+                render_pass.set_pipeline(&self.custom_pipeline);
+                render_pass.set_vertex_buffer(0, self.background_vertex_buffer.slice(..));
+                render_pass.draw(0..4, 0..1);
+                
                 self.text_renderer.render(&mut render_pass);
                 
                 render_pass.set_pipeline(&self.custom_pipeline);
