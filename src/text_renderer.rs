@@ -43,6 +43,7 @@ pub(crate) struct ContextlessTextRenderer {
 
     pub pipeline: RenderPipeline,
     pub atlas_size: u32,
+    pub z_range_filtering_enabled: bool,
     
     // pub(crate) cached_scaler: Option<CachedScaler>,
     
@@ -426,6 +427,15 @@ impl TextRenderer {
     pub fn render(&self, pass: &mut RenderPass<'_>) {
         self.text_renderer.render(pass);
     }
+
+    /// Render the prepared text within the specified z-range.
+    /// 
+    /// # Panics
+    /// 
+    /// Panics if the TextRenderer was not created with `enable_z_range_filtering = true`.
+    pub fn render_z_range(&self, pass: &mut RenderPass<'_>, z_range: [f32; 2]) {
+        self.text_renderer.render_z_range(pass, z_range);
+    }
     
     /// Capture quad counts before text rendering
     fn capture_quad_ranges_before(&mut self) {
@@ -489,6 +499,45 @@ impl ContextlessTextRenderer {
     pub fn render(&self, pass: &mut RenderPass<'_>) {
         pass.set_pipeline(&self.pipeline);
         pass.set_bind_group(1, &self.params_bind_group, &[]);
+        pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+
+        if self.z_range_filtering_enabled {
+            pass.set_push_constants(wgpu::ShaderStages::VERTEX, 0, bytemuck::bytes_of(&[f32::MAX, f32::MIN]));
+        }
+
+        let mut instance_offset = 0u32;
+
+        for page in &self.mask_atlas_pages {
+            if !page.quads.is_empty() {
+                pass.set_bind_group(0, &page.gpu.as_ref().unwrap().bind_group, &[]);
+                pass.draw(0..4, instance_offset..(instance_offset + page.quads.len() as u32));
+                instance_offset += page.quads.len() as u32;
+            }
+        }
+
+        for page in &self.color_atlas_pages {
+            if !page.quads.is_empty() {
+                pass.set_bind_group(0, &page.gpu.as_ref().unwrap().bind_group, &[]);
+                pass.draw(0..4, instance_offset..(instance_offset + page.quads.len() as u32));
+                instance_offset += page.quads.len() as u32;
+            }
+        }
+
+        // Draw decorations (they use the mask atlas bind group - first page)
+        if !self.decorations.is_empty() {
+            pass.set_bind_group(0, &self.mask_atlas_pages[0].gpu.as_ref().unwrap().bind_group, &[]);
+            pass.draw(0..4, instance_offset..(instance_offset + self.decorations.len() as u32));
+        }
+    }
+
+    pub fn render_z_range(&self, pass: &mut RenderPass<'_>, z_range: [f32; 2]) {
+        if !self.z_range_filtering_enabled {
+            panic!("Z-range filtering was not enabled when creating this TextRenderer. Set TextRendererParams::enable_z_range_filtering = true");
+        }
+
+        pass.set_pipeline(&self.pipeline);
+        pass.set_bind_group(1, &self.params_bind_group, &[]);
+        pass.set_push_constants(wgpu::ShaderStages::VERTEX, 0, bytemuck::bytes_of(&z_range));
         pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
 
         let mut instance_offset = 0u32;
