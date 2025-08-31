@@ -701,6 +701,39 @@ impl Text {
             text_renderer.clear_decorations_only();
         }
 
+        // Prepare text layout for all text boxes/edits
+        if !self.shared.text_changed {
+            if !self.scrolled_moved_indices.is_empty() {
+                self.handle_scroll_fast_path(text_renderer);
+            }
+        } else {
+            let current_frame = self.current_visibility_frame;
+            if self.shared.text_changed {
+                for (key, text_edit) in self.text_edits.iter_mut() {
+                    let mut text_edit = get_full_text_edit_partial_borrows_but_for_iterating((&mut text_edit.0, &mut text_edit.1), &mut self.shared, key);
+                    if !text_edit.hidden() && text_edit.text_box.inner.last_frame_touched == current_frame {
+                        // For multi-window, only render if this text edit belongs to this window (or has no window restriction)
+                        let should_render = text_edit.text_box.inner.window_id.is_none() || text_edit.text_box.inner.window_id == Some(window_id);
+                        if should_render {
+                            text_renderer.prepare_text_edit_layout(&mut text_edit);
+                        }
+                    }
+                }
+
+                for (key, text_box) in self.text_boxes.iter_mut() {
+                    let mut text_box = get_full_text_box_partial_borrows_but_for_iterating(text_box, &mut self.shared, key);
+                    if !text_box.hidden() && text_box.inner.last_frame_touched == current_frame {
+                        // For multi-window: Only render if this text box belongs to this window (or has no window restriction)
+                        let should_render = text_box.inner.window_id.is_none() || text_box.inner.window_id == Some(window_id);
+                        if should_render {
+                            text_renderer.prepare_text_box_layout(&mut text_box);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Decorations are prepared after the text. This matters for the quad ranges for the scroll fast path.
         if self.shared.decorations_changed || self.shared.text_changed  || !self.scrolled_moved_indices.is_empty() {
             if let Some(focused) = self.shared.focused {
                 // For multi-window, only prepare decorations if the focused element belongs to this window
@@ -733,38 +766,6 @@ impl Text {
                             let text_box = self.get_full_text_box(&handle);
                             text_renderer.prepare_text_box_decorations(&text_box, false);
                         },
-                    }
-                }
-            }
-        }
-
-        // Prepare text layout for all text boxes/edits
-        if !self.shared.text_changed {
-            if !self.scrolled_moved_indices.is_empty() {
-                self.handle_scroll_fast_path(text_renderer);
-            }
-        } else {
-            let current_frame = self.current_visibility_frame;
-            if self.shared.text_changed {
-                for (key, text_edit) in self.text_edits.iter_mut() {
-                    let mut text_edit = get_full_text_edit_partial_borrows_but_for_iterating((&mut text_edit.0, &mut text_edit.1), &mut self.shared, key);
-                    if !text_edit.hidden() && text_edit.text_box.inner.last_frame_touched == current_frame {
-                        // For multi-window, only render if this text edit belongs to this window (or has no window restriction)
-                        let should_render = text_edit.text_box.inner.window_id.is_none() || text_edit.text_box.inner.window_id == Some(window_id);
-                        if should_render {
-                            text_renderer.prepare_text_edit_layout(&mut text_edit);
-                        }
-                    }
-                }
-
-                for (key, text_box) in self.text_boxes.iter_mut() {
-                    let mut text_box = get_full_text_box_partial_borrows_but_for_iterating(text_box, &mut self.shared, key);
-                    if !text_box.hidden() && text_box.inner.last_frame_touched == current_frame {
-                        // For multi-window: Only render if this text box belongs to this window (or has no window restriction)
-                        let should_render = text_box.inner.window_id.is_none() || text_box.inner.window_id == Some(window_id);
-                        if should_render {
-                            text_renderer.prepare_text_box_layout(&mut text_box);
-                        }
                     }
                 }
             }
@@ -1742,7 +1743,6 @@ pub(crate) fn get_full_text_box_partial_borrows_but_for_iterating<'a>(
     TextBoxMut { inner: text_box_inner, shared, key }
 }
 
-/// Move quads in atlas pages to reflect new scroll position
 fn move_quads_for_scroll(text_renderer: &mut TextRenderer, quad_storage: &mut QuadStorage, current_offset: (f32, f32)) {
     let delta_x = current_offset.0 - quad_storage.last_offset.0;
     let delta_y = current_offset.1 - quad_storage.last_offset.1;
@@ -1751,33 +1751,13 @@ fn move_quads_for_scroll(text_renderer: &mut TextRenderer, quad_storage: &mut Qu
     let delta_x_rounded = delta_x.round();
     let delta_y_rounded = delta_y.round();
 
-    // Move quads across all atlas pages
-    for page_range in &quad_storage.pages {
-        match page_range.page_type {
-            AtlasPageType::Mask => {
-                if let Some(page) = text_renderer.text_renderer.mask_atlas_pages.get_mut(page_range.page_index as usize) {
-                    for quad_index in page_range.quad_start..page_range.quad_end {
-                        if let Some(quad) = page.quads.get_mut(quad_index as usize) {
-                            quad.pos[0] = quad.pos[0] - delta_x_rounded as i32;
-                            quad.pos[1] = quad.pos[1] - delta_y_rounded as i32;
-                        }
-                    }
-                }
-            },
-            AtlasPageType::Color => {
-                if let Some(page) = text_renderer.text_renderer.color_atlas_pages.get_mut(page_range.page_index as usize) {
-                    for quad_index in page_range.quad_start..page_range.quad_end {
-                        if let Some(quad) = page.quads.get_mut(quad_index as usize) {
-                            quad.pos[0] = quad.pos[0] - delta_x_rounded as i32;
-                            quad.pos[1] = quad.pos[1] - delta_y_rounded as i32;
-                        }
-                    }
-                }
-            },
+    if let Some((start, end)) = quad_storage.quad_range {
+        for quad in &mut text_renderer.text_renderer.quads[start..end] {
+            quad.pos[0] -= delta_x_rounded as i32;
+            quad.pos[1] -= delta_y_rounded as i32;
         }
     }
 
-    // Update stored offset
     quad_storage.last_offset.0 += delta_x_rounded;
     quad_storage.last_offset.1 += delta_y_rounded;
 }

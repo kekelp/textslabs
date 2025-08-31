@@ -7,16 +7,27 @@ const ATLAS_BIND_GROUP_LAYOUT: BindGroupLayoutDescriptor = wgpu::BindGroupLayout
     entries: &[
         BindGroupLayoutEntry {
             binding: 0,
+            // This is visible in vertex to get the size. Could be avoided, but I don't know if it's a big deal.
             visibility: ShaderStages::VERTEX.union(ShaderStages::FRAGMENT),
             ty: BindingType::Texture {
                 multisampled: false,
-                view_dimension: TextureViewDimension::D2,
+                view_dimension: TextureViewDimension::D2Array,
                 sample_type: TextureSampleType::Float { filterable: true },
             },
             count: None,
         },
         BindGroupLayoutEntry {
             binding: 1,
+            visibility: ShaderStages::FRAGMENT,
+            ty: BindingType::Texture {
+                multisampled: false,
+                view_dimension: TextureViewDimension::D2Array,
+                sample_type: TextureSampleType::Float { filterable: true },
+            },
+            count: None,
+        },
+        BindGroupLayoutEntry {
+            binding: 2,
             visibility: ShaderStages::FRAGMENT,
             ty: BindingType::Sampler(SamplerBindingType::Filtering),
             count: None,
@@ -113,22 +124,6 @@ impl ContextlessTextRenderer {
         
         let atlas_size = params.atlas_page_size.size(device);
 
-        let mask_texture = device.create_texture(&TextureDescriptor {
-            label: Some("atlas"),
-            size: Extent3d {
-                width: atlas_size,
-                height: atlas_size,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: TextureDimension::D2,
-            format: TextureFormat::R8Unorm,
-            usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
-            view_formats: &[],
-        });
-        let mask_texture_view = mask_texture.create_view(&TextureViewDescriptor::default());
-
 
         let sampler = device.create_sampler(&SamplerDescriptor {
             label: Some("sampler"),
@@ -157,6 +152,7 @@ impl ContextlessTextRenderer {
                 4 => Float32,
                 5 => Uint32,
                 6 => Sint16x4,
+                7 => Uint32,
             ],
         };
 
@@ -198,75 +194,17 @@ impl ContextlessTextRenderer {
         });
 
         let atlas_bind_group_layout = device.create_bind_group_layout(&ATLAS_BIND_GROUP_LAYOUT);
-        let mask_bind_group = device.create_bind_group(&BindGroupDescriptor {
-            layout: &atlas_bind_group_layout,
-            entries: &[
-                BindGroupEntry {
-                    binding: 0,
-                    resource: BindingResource::TextureView(&mask_texture_view),
-                },
-                BindGroupEntry {
-                    binding: 1,
-                    resource: BindingResource::Sampler(&sampler),
-                },
-            ],
-            label: Some("atlas bind group"),
-        });
 
         let glyph_cache = LruCache::unbounded_with_hasher(BuildHasherDefault::<FxHasher>::default());
 
-        let mask_atlas_pages = vec![AtlasPage::<GrayImage> {
+        let mask_atlas_pages = vec![AtlasPage {
             image: GrayImage::from_pixel(atlas_size, atlas_size, Luma([0])),
             packer: BucketedAtlasAllocator::new(size2(atlas_size as i32, atlas_size as i32)),
-            quads: Vec::<Quad>::with_capacity(300),
-            gpu: Some(GpuAtlasPage {
-                texture: mask_texture,
-                bind_group: mask_bind_group,
-            }),
-            quad_count_before_render: 0,
         }];
-
-        let color_texture = device.create_texture(&TextureDescriptor {
-            label: Some("atlas"),
-            size: Extent3d {
-                width: atlas_size,
-                height: atlas_size,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: TextureDimension::D2,
-            format: TextureFormat::Rgba8Unorm,
-            usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
-            view_formats: &[],
-        });
-        let color_texture_view = color_texture.create_view(&TextureViewDescriptor::default());
-
-
-        let color_bind_group = device.create_bind_group(&BindGroupDescriptor {
-            layout: &atlas_bind_group_layout,
-            entries: &[
-                BindGroupEntry {
-                    binding: 0,
-                    resource: BindingResource::TextureView(&color_texture_view),
-                },
-                BindGroupEntry {
-                    binding: 1,
-                    resource: BindingResource::Sampler(&sampler),
-                },
-            ],
-            label: Some("atlas bind group"),
-        });
-
-        let color_atlas_pages = vec![AtlasPage::<RgbaImage> {
+        
+        let color_atlas_pages = vec![AtlasPage {
             image: RgbaImage::from_pixel(atlas_size, atlas_size, Rgba([0, 0, 0, 0])),
             packer: BucketedAtlasAllocator::new(size2(atlas_size as i32, atlas_size as i32)),
-            quads: Vec::<Quad>::with_capacity(300),
-            gpu: Some(GpuAtlasPage {
-                texture: color_texture,
-                bind_group: color_bind_group,
-            }),
-            quad_count_before_render: 0,
         }];
 
         let push_constant_ranges = if params.enable_z_range_filtering {
@@ -324,7 +262,10 @@ impl ContextlessTextRenderer {
             tmp_image,
             mask_atlas_pages,
             color_atlas_pages,
-            decorations: Vec::with_capacity(50),
+            quads: Vec::with_capacity(1000),
+            mask_texture_array: None,
+            color_texture_array: None,
+            atlas_bind_group: None,
             pipeline,
             atlas_bind_group_layout,
             sampler,
@@ -337,25 +278,31 @@ impl ContextlessTextRenderer {
             // cached_scaler: None,
             vertex_buffer,
             needs_gpu_sync: true,
+            needs_texture_array_rebuild: true,
         }
     }
 }
 
 impl ContextlessTextRenderer {
     pub fn load_to_gpu(&mut self, device: &Device, queue: &Queue) {
-        if !self.needs_gpu_sync {
+        if !self.needs_gpu_sync && !self.needs_texture_array_rebuild {
             return;
         }
 
+        // Update uniform buffer
         let bytes: &[u8] = bytemuck::cast_slice(std::slice::from_ref(&self.params));
         queue.write_buffer(&self.params_buffer, 0, bytes);
 
-        // Calculate total number of quads across all pages plus decorations
-        let total_quads = self.mask_atlas_pages.iter().map(|p| p.quads.len()).sum::<usize>()
-                        + self.color_atlas_pages.iter().map(|p| p.quads.len()).sum::<usize>()
-                        + self.decorations.len();
-        
-        let required_size = (total_quads * std::mem::size_of::<Quad>()) as u64;
+        // Rebuild texture arrays if needed
+        if self.needs_texture_array_rebuild || self.mask_texture_array.is_none() || self.color_texture_array.is_none() {
+            self.rebuild_texture_arrays(device, queue);
+        } else {
+            // Just update existing texture arrays
+            self.update_texture_arrays(queue);
+        }
+
+        // Calculate total number of quads
+        let required_size = (self.quads.len() * std::mem::size_of::<Quad>()) as u64;
         
         // Grow shared vertex buffer if needed
         if self.vertex_buffer.size() < required_size {
@@ -367,151 +314,226 @@ impl ContextlessTextRenderer {
             self.vertex_buffer = create_vertex_buffer(device, new_size);
         }
 
-        let mut buffer_offset = 0u64;
-        
-        for page in &self.mask_atlas_pages {
-            if !page.quads.is_empty() {
-                let bytes: &[u8] = bytemuck::cast_slice(&page.quads);
-                queue.write_buffer(&self.vertex_buffer, buffer_offset, bytes);
-                buffer_offset += bytes.len() as u64;
-            }
-        }
-        
-        for page in &self.color_atlas_pages {
-            if !page.quads.is_empty() {
-                let bytes: &[u8] = bytemuck::cast_slice(&page.quads);
-                queue.write_buffer(&self.vertex_buffer, buffer_offset, bytes);
-                buffer_offset += bytes.len() as u64;
-            }
-        }
-        
-        if !self.decorations.is_empty() {
-            let bytes: &[u8] = bytemuck::cast_slice(&self.decorations);
-            queue.write_buffer(&self.vertex_buffer, buffer_offset, bytes);
-        }
-
-        // Handle mask atlas pages
-        for page in &mut self.mask_atlas_pages {
-            if page.gpu.is_none() {
-                let texture = device.create_texture(&TextureDescriptor {
-                    label: Some("atlas"),
-                    size: Extent3d {
-                        width: self.atlas_size,
-                        height: self.atlas_size,
-                        depth_or_array_layers: 1,
-                    },
-                    mip_level_count: 1,
-                    sample_count: 1,
-                    dimension: TextureDimension::D2,
-                    format: TextureFormat::R8Unorm,
-                    usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
-                    view_formats: &[],
-                });
-                let texture_view = texture.create_view(&TextureViewDescriptor::default());
-
-                let bind_group = device.create_bind_group(&BindGroupDescriptor {
-                    layout: &self.atlas_bind_group_layout,
-                    entries: &[
-                        BindGroupEntry {
-                            binding: 0,
-                            resource: BindingResource::TextureView(&texture_view),
-                        },
-                        BindGroupEntry {
-                            binding: 1,
-                            resource: BindingResource::Sampler(&self.sampler),
-                        },
-                    ],
-                    label: Some("atlas bind group"),
-                });
-        
-                page.gpu = Some(GpuAtlasPage {
-                    texture,
-                    bind_group,
-                })
-            }
-
-            queue.write_texture(
-                ImageCopyTexture {
-                    texture: &page.gpu.as_ref().unwrap().texture,
-                    mip_level: 0,
-                    origin: Origin3d { x: 0, y: 0, z: 0 },
-                    aspect: TextureAspect::All,
-                },
-                &page.image.as_raw(),
-                ImageDataLayout {
-                    offset: 0,
-                    bytes_per_row: Some(page.image.width()),
-                    rows_per_image: None,
-                },
-                Extent3d {
-                    width: page.image.width(),
-                    height: page.image.height(),
-                    depth_or_array_layers: 1,
-                },
-            );
-        }
-
-        // Handle color atlas pages
-        for page in &mut self.color_atlas_pages {
-            if page.gpu.is_none() {
-                let texture = device.create_texture(&TextureDescriptor {
-                    label: Some("atlas"),
-                    size: Extent3d {
-                        width: self.atlas_size,
-                        height: self.atlas_size,
-                        depth_or_array_layers: 1,
-                    },
-                    mip_level_count: 1,
-                    sample_count: 1,
-                    dimension: TextureDimension::D2,
-                    format: TextureFormat::Rgba8Unorm,
-                    usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
-                    view_formats: &[],
-                });
-                let texture_view = texture.create_view(&TextureViewDescriptor::default());
-
-                let bind_group = device.create_bind_group(&BindGroupDescriptor {
-                    layout: &self.atlas_bind_group_layout,
-                    entries: &[
-                        BindGroupEntry {
-                            binding: 0,
-                            resource: BindingResource::TextureView(&texture_view),
-                        },
-                        BindGroupEntry {
-                            binding: 1,
-                            resource: BindingResource::Sampler(&self.sampler),
-                        },
-                    ],
-                    label: Some("atlas bind group"),
-                });
-        
-                page.gpu = Some(GpuAtlasPage {
-                    texture,
-                    bind_group,
-                })
-            }
-    
-            queue.write_texture(
-                ImageCopyTexture {
-                    texture: &page.gpu.as_ref().unwrap().texture,
-                    mip_level: 0,
-                    origin: Origin3d { x: 0, y: 0, z: 0 },
-                    aspect: TextureAspect::All,
-                },
-                &page.image.as_raw(),
-                ImageDataLayout {
-                    offset: 0,
-                    bytes_per_row: Some(page.image.width() * 4),
-                    rows_per_image: None,
-                },
-                Extent3d {
-                    width: page.image.width(),
-                    height: page.image.height(),
-                    depth_or_array_layers: 1,
-                },
-            );
+        // Write all quads to vertex buffer
+        if !self.quads.is_empty() {
+            let bytes: &[u8] = bytemuck::cast_slice(&self.quads);
+            queue.write_buffer(&self.vertex_buffer, 0, bytes);
         }
 
         self.needs_gpu_sync = false;
+        self.needs_texture_array_rebuild = false;
+    }
+
+    fn rebuild_texture_arrays(&mut self, device: &Device, queue: &Queue) {
+        // Create mask texture array
+        if !self.mask_atlas_pages.is_empty() {
+            let mask_texture_array = device.create_texture(&TextureDescriptor {
+                label: Some("mask atlas array"),
+                size: Extent3d {
+                    width: self.atlas_size,
+                    height: self.atlas_size,
+                    depth_or_array_layers: self.mask_atlas_pages.len() as u32,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: TextureDimension::D2,
+                format: TextureFormat::R8Unorm,
+                usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
+                view_formats: &[],
+            });
+
+            // Copy mask image data to texture array
+            for (i, page) in self.mask_atlas_pages.iter().enumerate() {
+                queue.write_texture(
+                    ImageCopyTexture {
+                        texture: &mask_texture_array,
+                        mip_level: 0,
+                        origin: Origin3d { x: 0, y: 0, z: i as u32 },
+                        aspect: TextureAspect::All,
+                    },
+                    &page.image.as_raw(),
+                    ImageDataLayout {
+                        offset: 0,
+                        bytes_per_row: Some(page.image.width()),
+                        rows_per_image: None,
+                    },
+                    Extent3d {
+                        width: page.image.width(),
+                        height: page.image.height(),
+                        depth_or_array_layers: 1,
+                    },
+                );
+            }
+
+            self.mask_texture_array = Some(mask_texture_array);
+        }
+
+        // Create color texture array
+        if !self.color_atlas_pages.is_empty() {
+            let color_texture_array = device.create_texture(&TextureDescriptor {
+                label: Some("color atlas array"),
+                size: Extent3d {
+                    width: self.atlas_size,
+                    height: self.atlas_size,
+                    depth_or_array_layers: self.color_atlas_pages.len() as u32,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: TextureDimension::D2,
+                format: TextureFormat::Rgba8Unorm,
+                usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
+                view_formats: &[],
+            });
+
+            // Copy color image data to texture array
+            for (i, page) in self.color_atlas_pages.iter().enumerate() {
+                queue.write_texture(
+                    ImageCopyTexture {
+                        texture: &color_texture_array,
+                        mip_level: 0,
+                        origin: Origin3d { x: 0, y: 0, z: i as u32 },
+                        aspect: TextureAspect::All,
+                    },
+                    &page.image.as_raw(),
+                    ImageDataLayout {
+                        offset: 0,
+                        bytes_per_row: Some(page.image.width() * 4),
+                        rows_per_image: None,
+                    },
+                    Extent3d {
+                        width: page.image.width(),
+                        height: page.image.height(),
+                        depth_or_array_layers: 1,
+                    },
+                );
+            }
+
+            self.color_texture_array = Some(color_texture_array);
+        }
+
+        // Create bind group with texture arrays
+        self.create_atlas_bind_group(device);
+    }
+
+    fn update_texture_arrays(&mut self, queue: &Queue) {
+        // Update mask texture array
+        if let Some(mask_texture_array) = &self.mask_texture_array {
+            for (i, page) in self.mask_atlas_pages.iter().enumerate() {
+                queue.write_texture(
+                    ImageCopyTexture {
+                        texture: mask_texture_array,
+                        mip_level: 0,
+                        origin: Origin3d { x: 0, y: 0, z: i as u32 },
+                        aspect: TextureAspect::All,
+                    },
+                    &page.image.as_raw(),
+                    ImageDataLayout {
+                        offset: 0,
+                        bytes_per_row: Some(page.image.width()),
+                        rows_per_image: None,
+                    },
+                    Extent3d {
+                        width: page.image.width(),
+                        height: page.image.height(),
+                        depth_or_array_layers: 1,
+                    },
+                );
+            }
+        }
+
+        // Update color texture array
+        if let Some(color_texture_array) = &self.color_texture_array {
+            for (i, page) in self.color_atlas_pages.iter().enumerate() {
+                queue.write_texture(
+                    ImageCopyTexture {
+                        texture: color_texture_array,
+                        mip_level: 0,
+                        origin: Origin3d { x: 0, y: 0, z: i as u32 },
+                        aspect: TextureAspect::All,
+                    },
+                    &page.image.as_raw(),
+                    ImageDataLayout {
+                        offset: 0,
+                        bytes_per_row: Some(page.image.width() * 4),
+                        rows_per_image: None,
+                    },
+                    Extent3d {
+                        width: page.image.width(),
+                        height: page.image.height(),
+                        depth_or_array_layers: 1,
+                    },
+                );
+            }
+        }
+    }
+
+    fn create_atlas_bind_group(&mut self, device: &Device) {
+        // Create texture views
+        let mask_view = if let Some(mask_texture_array) = &self.mask_texture_array {
+            mask_texture_array.create_view(&TextureViewDescriptor {
+                dimension: Some(TextureViewDimension::D2Array),
+                ..Default::default()
+            })
+        } else {
+            // Create a dummy texture if no mask pages exist
+            let dummy_texture = device.create_texture(&TextureDescriptor {
+                label: Some("dummy mask texture"),
+                size: Extent3d { width: 1, height: 1, depth_or_array_layers: 1 },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: TextureDimension::D2,
+                format: TextureFormat::R8Unorm,
+                usage: TextureUsages::TEXTURE_BINDING,
+                view_formats: &[],
+            });
+            dummy_texture.create_view(&TextureViewDescriptor {
+                dimension: Some(TextureViewDimension::D2Array),
+                ..Default::default()
+            })
+        };
+
+        let color_view = if let Some(color_texture_array) = &self.color_texture_array {
+            color_texture_array.create_view(&TextureViewDescriptor {
+                dimension: Some(TextureViewDimension::D2Array),
+                ..Default::default()
+            })
+        } else {
+            // Create a dummy texture if no color pages exist
+            let dummy_texture = device.create_texture(&TextureDescriptor {
+                label: Some("dummy color texture"),
+                size: Extent3d { width: 1, height: 1, depth_or_array_layers: 1 },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: TextureDimension::D2,
+                format: TextureFormat::Rgba8Unorm,
+                usage: TextureUsages::TEXTURE_BINDING,
+                view_formats: &[],
+            });
+            dummy_texture.create_view(&TextureViewDescriptor {
+                dimension: Some(TextureViewDimension::D2Array),
+                ..Default::default()
+            })
+        };
+
+        let entries = [
+            BindGroupEntry {
+                binding: 0,
+                resource: BindingResource::TextureView(&mask_view),
+            },
+            BindGroupEntry {
+                binding: 1,
+                resource: BindingResource::TextureView(&color_view),
+            },
+            BindGroupEntry {
+                binding: 2,
+                resource: BindingResource::Sampler(&self.sampler),
+            },
+        ];
+
+        self.atlas_bind_group = Some(device.create_bind_group(&BindGroupDescriptor {
+            layout: &self.atlas_bind_group_layout,
+            entries: &entries,
+            label: Some("atlas texture array bind group"),
+        }));
     }
 }

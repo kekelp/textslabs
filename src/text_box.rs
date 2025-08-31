@@ -12,7 +12,6 @@ use arboard::Clipboard;
 use parley::{Affinity, Alignment, Selection};
 
 use crate::*;
-use smallvec::SmallVec;
 use slotmap::DefaultKey;
 
 const X_TOLERANCE: f64 = 35.0;
@@ -80,27 +79,11 @@ pub struct TextBox<'a> {
 }
 
 
-/// Atlas page type discriminator
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum AtlasPageType {
-    Mask = 0,
-    Color = 1,
-}
-
-/// Represents a range of quads within a specific atlas page
-#[derive(Debug, Clone)]
-pub(crate) struct QuadPageRange {
-    pub page_type: AtlasPageType,
-    pub page_index: u16,
-    pub quad_start: u32,
-    pub quad_end: u32,
-}
-
-/// Tracks the location of quads for a text element to enable fast movement
+/// Remembers the location of the glyph quads corresponding to the text in this text box, in order to allow fast scrolling without relayouting.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct QuadStorage {
-    /// Atlas page ranges - inline storage for 1-2 ranges (covers most cases)
-    pub pages: SmallVec<[QuadPageRange; 2]>,
+    /// Range into the text renderer quads
+    pub quad_range: Option<(usize, usize)>,
     /// The scroll offset used when this quad data was generated
     pub last_offset: (f32, f32),
 }

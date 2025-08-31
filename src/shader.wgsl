@@ -7,6 +7,7 @@ struct VertexInput {
     @location(4) depth: f32,
     @location(5) flags: u32,
     @location(6) clip_rect: vec4<i32>,
+    @location(7) page_index: u32,
 }
 
 struct VertexOutput {
@@ -18,6 +19,7 @@ struct VertexOutput {
     @location(4) @interpolate(flat) quad_size: vec2<f32>,
     @location(5) @interpolate(flat) clip_rect: vec4<f32>,
     @location(6) screen_pos: vec2<f32>,
+    @location(7) @interpolate(flat) page_index: u32,
 };
 
 struct Params {
@@ -27,9 +29,12 @@ struct Params {
 };
 
 @group(0) @binding(0)
-var mask_atlas_texture: texture_2d<f32>;
+var mask_atlas_texture: texture_2d_array<f32>;
 
 @group(0) @binding(1)
+var color_atlas_texture: texture_2d_array<f32>;
+
+@group(0) @binding(2)
 var atlas_sampler: sampler;
 
 @group(1) @binding(0)
@@ -97,7 +102,7 @@ fn vs_main(input: VertexInput) -> VertexOutput {
     // Adjust UV coordinates for clipped area
     let uv_origin = split(input.uv_origin);
     let adjusted_uv_origin = uv_origin + vec2f(left_clip, top_clip);
-    let atlas_size = vec2f(textureDimensions(mask_atlas_texture));
+    let atlas_size = vec2f(textureDimensions(mask_atlas_texture, 0).xy);
     vert_output.uv = (adjusted_uv_origin + clipped_dim * coords) / atlas_size;
 
     // Use clipped position and dimensions
@@ -122,6 +127,7 @@ fn vs_main(input: VertexInput) -> VertexOutput {
     vert_output.quad_size = clipped_dim;
     vert_output.clip_rect = clip_rect;
     vert_output.screen_pos = clipped_pos;
+    vert_output.page_index = input.page_index;
 
     return vert_output;
 }
@@ -151,7 +157,7 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     }
     
     if content_type == 1 {
-        var color = textureSampleLevel(mask_atlas_texture, atlas_sampler, input.uv, 0.0);
+        var color = textureSampleLevel(color_atlas_texture, atlas_sampler, input.uv, input.page_index, 0.0);
         if params.srgb == 0u {
             // Surface is linear, convert color from sRGB to linear
             color = vec4<f32>(
@@ -166,7 +172,7 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
         return result;
     
     } else if content_type == 0 {
-        var glyph_alpha = textureSampleLevel(mask_atlas_texture, atlas_sampler, input.uv, 0.0).r;
+        var glyph_alpha = textureSampleLevel(mask_atlas_texture, atlas_sampler, input.uv, input.page_index, 0.0).r;
         var text_color = input.color.rgb;
         if params.srgb == 0u {
             // Surface is linear, convert text color from sRGB to linear

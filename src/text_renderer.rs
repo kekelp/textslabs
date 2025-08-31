@@ -12,6 +12,10 @@ fn pack_flags(content_type: u32, fade_enabled: bool) -> u32 {
     content_type | if fade_enabled { 1 << FADE_ENABLED_BIT } else { 0 }
 }
 
+fn get_content_type(flags: u32) -> u32 {
+    flags & 0x0F
+}
+
 /// A struct for rendering text and text edit boxes on the GPU.
 /// 
 /// Uses traditional CPU-size rasterizing and a dynamic glyph atlas on the GPU.
@@ -28,13 +32,18 @@ pub(crate) struct ContextlessTextRenderer {
     pub tmp_image: Image,
 
     pub(crate) glyph_cache: LruCache<GlyphKey, Option<StoredGlyph>, BuildHasherDefault<FxHasher>>,
-    pub(crate) mask_atlas_pages: Vec<AtlasPage<GrayImage>>,
     pub(crate) last_frame_evicted: u64,
     
+    pub(crate) mask_atlas_pages: Vec<AtlasPage<GrayImage>>,
     pub(crate) color_atlas_pages: Vec<AtlasPage<RgbaImage>>,
-    pub(crate) decorations: Vec<Quad>,
+
+    pub(crate) quads: Vec<Quad>,
     
+    // Combined texture arrays and single bind group
+    pub(crate) mask_texture_array: Option<Texture>,
+    pub(crate) color_texture_array: Option<Texture>,
     pub atlas_bind_group_layout: BindGroupLayout,
+    pub(crate) atlas_bind_group: Option<BindGroup>,
     
     pub params: Params,
     pub sampler: Sampler,
@@ -49,6 +58,7 @@ pub(crate) struct ContextlessTextRenderer {
     
     pub(crate) vertex_buffer: Buffer,
     pub(crate) needs_gpu_sync: bool,
+    pub(crate) needs_texture_array_rebuild: bool,
 }
 
 // pub(crate) struct CachedScaler {
@@ -58,18 +68,10 @@ pub(crate) struct ContextlessTextRenderer {
 // }
 
 pub(crate) struct AtlasPage<ImageType> {
-    pub quads: Vec<Quad>,
     pub(crate) packer: BucketedAtlasAllocator,
     pub(crate) image: ImageType,
-    pub gpu: Option<GpuAtlasPage>,
-    /// Quad count before the current render operation (for tracking ranges)
-    pub(crate) quad_count_before_render: u32,
 }
 
-pub(crate) struct GpuAtlasPage {
-    pub texture: Texture, // the format here has to match the image type...
-    pub bind_group: BindGroup,
-}
 
 
 impl ContextlessTextRenderer {
@@ -136,8 +138,9 @@ impl ContextlessTextRenderer {
             depth: 0.0,
             flags: pack_flags(CONTENT_TYPE_DECORATION, false),
             clip_rect: [0, 0, 32767, 32767], // No clipping for decorations
+            page_index: 0, // Decorations use the first mask page
         };
-        self.decorations.push(quad);
+        self.quads.push(quad);
     }
 }
 
@@ -196,6 +199,7 @@ pub(crate) struct Quad {
     pub depth: f32,
     pub flags: u32,
     pub clip_rect: [i16; 4], // x, y, width, height in pixels
+    pub page_index: u32, // Which texture array layer to sample from
 }
 
 fn make_quad(glyph: &GlyphWithContext, stored_glyph: &StoredGlyph, depth: f32) -> Quad {
@@ -218,6 +222,7 @@ fn make_quad(glyph: &GlyphWithContext, stored_glyph: &StoredGlyph, depth: f32) -
         flags: pack_flags(flags, false), // No fade by default
         depth,
         clip_rect: [0, 0, 32767, 32767], // No clipping (will be set later)
+        page_index: stored_glyph.page as u32,
     };
 }
 
@@ -355,15 +360,14 @@ impl TextRenderer {
         let content_left = left - text_box.scroll_offset().0;
         let content_top = top - text_box.scroll_offset().1;
 
-        // Capture quad counts before rendering
-        self.capture_quad_ranges_before();
+        let start_index = self.text_renderer.quads.len();
 
         self.text_renderer.prepare_layout(&text_box.inner.layout, &mut self.scale_cx, content_left, content_top, clip_rect, fade, text_box.inner.depth);
         self.text_renderer.needs_gpu_sync = true;
         
         // Update quad storage with new ranges
         let scroll_offset = text_box.scroll_offset();
-        self.capture_quad_ranges_after(&mut text_box.inner.quad_storage, scroll_offset);
+        self.capture_quad_ranges_after(&mut text_box.inner.quad_storage, scroll_offset, start_index);
     }
 
     /// Prepare a text edit layout for rendering with scrolling and clipping support.
@@ -382,15 +386,14 @@ impl TextRenderer {
         let content_left = left - text_edit.scroll_offset().0;
         let content_top = top - text_edit.scroll_offset().1;
 
-        // Capture quad counts before rendering
-        self.capture_quad_ranges_before();
+        let start_index = self.text_renderer.quads.len();
 
         self.text_renderer.prepare_layout(&text_edit.text_box.inner.layout, &mut self.scale_cx, content_left, content_top, clip_rect, fade, text_edit.text_box.inner.depth);
         self.text_renderer.needs_gpu_sync = true;
         
         // Update quad storage with new ranges
         let scroll_offset = text_edit.scroll_offset();
-        self.capture_quad_ranges_after(&mut text_edit.text_box.inner.quad_storage, scroll_offset);
+        self.capture_quad_ranges_after(&mut text_edit.text_box.inner.quad_storage, scroll_offset, start_index);
     }
 
     /// Prepare decorations (selection and cursor) for a text box.
@@ -441,55 +444,17 @@ impl TextRenderer {
         self.text_renderer.render_z_range(pass, z_range);
     }
     
-    /// Capture quad counts before text rendering
-    fn capture_quad_ranges_before(&mut self) {
-        // Store current quad counts in each atlas page
-        for page in &mut self.text_renderer.mask_atlas_pages {
-            page.quad_count_before_render = page.quads.len() as u32;
-        }
-        
-        for page in &mut self.text_renderer.color_atlas_pages {
-            page.quad_count_before_render = page.quads.len() as u32;
-        }
-    }
-    
     /// Capture quad ranges after text rendering and populate QuadStorage
-    fn capture_quad_ranges_after(&mut self, quad_storage: &mut QuadStorage, current_offset: (f32, f32)) {
-        // Clear existing ranges and update offset
-        quad_storage.pages.clear();
+    fn capture_quad_ranges_after(&mut self, quad_storage: &mut QuadStorage, current_offset: (f32, f32), start_index: usize) {
+        let end_index = self.text_renderer.quads.len();
+        // Store the range if any quads were added
+        quad_storage.quad_range = if end_index > start_index {
+            Some((start_index, end_index))
+        } else {
+            None
+        };
+        
         quad_storage.last_offset = current_offset;
-        
-        // Process mask pages
-        for (page_idx, page) in self.text_renderer.mask_atlas_pages.iter().enumerate() {
-            let start_count = page.quad_count_before_render;
-            let end_count = page.quads.len() as u32;
-            
-            if end_count > start_count {
-                // New quads were added to this page
-                quad_storage.pages.push(QuadPageRange {
-                    page_type: AtlasPageType::Mask,
-                    page_index: page_idx as u16,
-                    quad_start: start_count,
-                    quad_end: end_count,
-                });
-            }
-        }
-        
-        // Process color pages  
-        for (page_idx, page) in self.text_renderer.color_atlas_pages.iter().enumerate() {
-            let start_count = page.quad_count_before_render;
-            let end_count = page.quads.len() as u32;
-            
-            if end_count > start_count {
-                // New quads were added to this page
-                quad_storage.pages.push(QuadPageRange {
-                    page_type: AtlasPageType::Color,
-                    page_index: page_idx as u16,
-                    quad_start: start_count,
-                    quad_end: end_count,
-                });
-            }
-        }
     }
 }
 
@@ -501,36 +466,23 @@ const SOURCES: &[Source; 3] = &[
 
 impl ContextlessTextRenderer {
     pub fn render(&self, pass: &mut RenderPass<'_>) {
-        pass.set_pipeline(&self.pipeline);
-        pass.set_bind_group(1, &self.params_bind_group, &[]);
-        pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+        if let Some(atlas_bind_group) = &self.atlas_bind_group {
+            pass.set_pipeline(&self.pipeline);
+            pass.set_bind_group(0, atlas_bind_group, &[]);
+            pass.set_bind_group(1, &self.params_bind_group, &[]);
+            pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
 
-        if self.z_range_filtering_enabled {
-            pass.set_push_constants(wgpu::ShaderStages::VERTEX, 0, bytemuck::bytes_of(&[f32::MAX, f32::MIN]));
-        }
-
-        let mut instance_offset = 0u32;
-
-        for page in &self.mask_atlas_pages {
-            if !page.quads.is_empty() {
-                pass.set_bind_group(0, &page.gpu.as_ref().unwrap().bind_group, &[]);
-                pass.draw(0..4, instance_offset..(instance_offset + page.quads.len() as u32));
-                instance_offset += page.quads.len() as u32;
+            if self.z_range_filtering_enabled {
+                pass.set_push_constants(wgpu::ShaderStages::VERTEX, 0, bytemuck::bytes_of(&[f32::MAX, f32::MIN]));
             }
-        }
 
-        for page in &self.color_atlas_pages {
-            if !page.quads.is_empty() {
-                pass.set_bind_group(0, &page.gpu.as_ref().unwrap().bind_group, &[]);
-                pass.draw(0..4, instance_offset..(instance_offset + page.quads.len() as u32));
-                instance_offset += page.quads.len() as u32;
+            // Calculate total instance count
+            let total_instances = self.quads.len();
+
+            if total_instances > 0 {
+                // Single draw call for all instances
+                pass.draw(0..4, 0..(total_instances as u32));
             }
-        }
-
-        // Draw decorations (they use the mask atlas bind group - first page)
-        if !self.decorations.is_empty() {
-            pass.set_bind_group(0, &self.mask_atlas_pages[0].gpu.as_ref().unwrap().bind_group, &[]);
-            pass.draw(0..4, instance_offset..(instance_offset + self.decorations.len() as u32));
         }
     }
 
@@ -539,33 +491,20 @@ impl ContextlessTextRenderer {
             panic!("Z-range filtering was not enabled when creating this TextRenderer. Set TextRendererParams::enable_z_range_filtering = true");
         }
 
-        pass.set_pipeline(&self.pipeline);
-        pass.set_bind_group(1, &self.params_bind_group, &[]);
-        pass.set_push_constants(wgpu::ShaderStages::VERTEX, 0, bytemuck::bytes_of(&z_range));
-        pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+        if let Some(atlas_bind_group) = &self.atlas_bind_group {
+            pass.set_pipeline(&self.pipeline);
+            pass.set_bind_group(0, atlas_bind_group, &[]);
+            pass.set_bind_group(1, &self.params_bind_group, &[]);
+            pass.set_push_constants(wgpu::ShaderStages::VERTEX, 0, bytemuck::bytes_of(&z_range));
+            pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
 
-        let mut instance_offset = 0u32;
+            // Calculate total instance count
+            let total_instances = self.quads.len();
 
-        for page in &self.mask_atlas_pages {
-            if !page.quads.is_empty() {
-                pass.set_bind_group(0, &page.gpu.as_ref().unwrap().bind_group, &[]);
-                pass.draw(0..4, instance_offset..(instance_offset + page.quads.len() as u32));
-                instance_offset += page.quads.len() as u32;
+            if total_instances > 0 {
+                // Single draw call for all instances
+                pass.draw(0..4, 0..(total_instances as u32));
             }
-        }
-
-        for page in &self.color_atlas_pages {
-            if !page.quads.is_empty() {
-                pass.set_bind_group(0, &page.gpu.as_ref().unwrap().bind_group, &[]);
-                pass.draw(0..4, instance_offset..(instance_offset + page.quads.len() as u32));
-                instance_offset += page.quads.len() as u32;
-            }
-        }
-
-        // Draw decorations (they use the mask atlas bind group - first page)
-        if !self.decorations.is_empty() {
-            pass.set_bind_group(0, &self.mask_atlas_pages[0].gpu.as_ref().unwrap().bind_group, &[]);
-            pass.draw(0..4, instance_offset..(instance_offset + self.decorations.len() as u32));
         }
     }
 
@@ -576,19 +515,16 @@ impl ContextlessTextRenderer {
 
     pub fn clear(&mut self) {
         self.frame += 1;
-
-        for page in &mut self.mask_atlas_pages {
-            page.quads.clear();
-        }
-        for page in &mut self.color_atlas_pages {
-            page.quads.clear();
-        }
-        self.decorations.clear();
+        self.quads.clear();
         self.needs_gpu_sync = true;
     }
 
     pub fn clear_decorations(&mut self) {
-        self.decorations.clear();
+        // Since decorations are now mixed with regular quads, 
+        // we need to filter them out by content type
+        self.quads.retain(|quad| {
+            get_content_type(quad.flags) != CONTENT_TYPE_DECORATION
+        });
         self.needs_gpu_sync = true;
     }
 
@@ -665,25 +601,13 @@ impl ContextlessTextRenderer {
                 if let Some(stored_glyph) = stored_glyph {
                     let quad = make_quad(&glyph_ctx, stored_glyph, depth);
                     if let Some(clipped_quad) = clip_quad(quad, left, top, clip_rect, fade) {
-                        let page = stored_glyph.page as usize;
-
-                        match stored_glyph.content_type {
-                            Content::Mask => self.mask_atlas_pages[page].quads.push(clipped_quad),
-                            Content::Color => self.color_atlas_pages[page].quads.push(clipped_quad),
-                            Content::SubpixelMask => unreachable!()
-                        };
+                        self.quads.push(clipped_quad);
                     }
                 }
             } else {
-                if let Some((quad, stored_glyph)) = self.prepare_glyph(&glyph_ctx, &mut scaler, depth) {
+                if let Some((quad, _stored_glyph)) = self.prepare_glyph(&glyph_ctx, &mut scaler, depth) {
                     if let Some(clipped_quad) = clip_quad(quad, left, top, clip_rect, fade) {
-                        let page = stored_glyph.page as usize;
-
-                        match stored_glyph.content_type {
-                            Content::Mask => self.mask_atlas_pages[page].quads.push(clipped_quad),
-                            Content::Color => self.color_atlas_pages[page].quads.push(clipped_quad),
-                            Content::SubpixelMask => unreachable!()
-                        };
+                        self.quads.push(clipped_quad);
                     }
                 }
             }
@@ -898,24 +822,19 @@ impl ContextlessTextRenderer {
 
         match content_type {
             Content::Mask => {
-                // todo, deduplicate these with the ones in Setup
-                self.mask_atlas_pages.push(AtlasPage::<GrayImage> {
+                self.mask_atlas_pages.push(AtlasPage {
                     image: GrayImage::from_pixel(atlas_size, atlas_size, Luma([0])),
                     packer: BucketedAtlasAllocator::new(size2(atlas_size as i32, atlas_size as i32)),
-                    quads: Vec::<Quad>::with_capacity(300),
-                    gpu: None, // will be created later
-                    quad_count_before_render: 0,
                 });
+                self.needs_texture_array_rebuild = true;
                 return self.mask_atlas_pages.len() - 1;
             },
             Content::Color => {
-                self.color_atlas_pages.push(AtlasPage::<RgbaImage> {
+                self.color_atlas_pages.push(AtlasPage {
                     image: RgbaImage::from_pixel(atlas_size, atlas_size, Rgba([0, 0, 0, 0])),
                     packer: BucketedAtlasAllocator::new(size2(atlas_size as i32, atlas_size as i32)),
-                    quads: Vec::<Quad>::with_capacity(300),
-                    gpu: None, // will be created later
-                    quad_count_before_render: 0,
                 });
+                self.needs_texture_array_rebuild = true;
                 return self.color_atlas_pages.len() - 1;
             },
             Content::SubpixelMask => unreachable!()
