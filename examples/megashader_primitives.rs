@@ -6,9 +6,9 @@ const ELLIPSE: u32 = 0;
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-struct Vertex {
-    shape: u32,
-    offset: u32,
+struct Quad {
+    shape_kind: u32,
+    shape_offset: u32,
 }
 
 #[repr(C)]
@@ -47,22 +47,13 @@ impl MegashaderRenderer {
 
         let adapter = pollster::block_on(instance
             .request_adapter(&wgpu::RequestAdapterOptions {
-                power_preference: wgpu::PowerPreference::default(),
                 compatible_surface: Some(&surface),
-                force_fallback_adapter: false,
+                ..Default::default()
             }))
             .unwrap();
 
         let (device, queue) = pollster::block_on(adapter
-            .request_device(
-                &wgpu::DeviceDescriptor {
-                    required_features: wgpu::Features::empty(),
-                    required_limits: wgpu::Limits::default(),
-                    label: None,
-                    memory_hints: wgpu::MemoryHints::default(),
-                },
-                None,
-            ))
+            .request_device(&Default::default(), None))
             .unwrap();
 
         let config = surface.get_default_config(&adapter, size.width, size.height).unwrap();
@@ -74,56 +65,45 @@ impl MegashaderRenderer {
         });
 
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: true },
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
                 },
-            ],
+                count: None,
+            }],
             label: Some("bind_group_layout"),
         });
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Render Pipeline Layout"),
             bind_group_layouts: &[&bind_group_layout],
-            push_constant_ranges: &[],
+            ..Default::default()
         });
 
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Render Pipeline"),
             layout: Some(&pipeline_layout),
-            cache: None,
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: Some("vs_main"),
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
+                compilation_options: Default::default(),
                 buffers: &[wgpu::VertexBufferLayout {
-                    array_stride: std::mem::size_of::<Vertex>() as wgpu::BufferAddress,
-                    step_mode: wgpu::VertexStepMode::Vertex,
+                    array_stride: std::mem::size_of::<Quad>() as wgpu::BufferAddress,
+                    step_mode: wgpu::VertexStepMode::Instance,
                     attributes: &[
-                        wgpu::VertexAttribute {
-                            offset: 0,
-                            shader_location: 0,
-                            format: wgpu::VertexFormat::Uint32,
-                        },
-                        wgpu::VertexAttribute {
-                            offset: 4,
-                            shader_location: 1,
-                            format: wgpu::VertexFormat::Uint32,
-                        },
+                        wgpu::VertexAttribute { offset: 0, shader_location: 0, format: wgpu::VertexFormat::Uint32 },
+                        wgpu::VertexAttribute { offset: 4, shader_location: 1, format: wgpu::VertexFormat::Uint32 },
                     ],
                 }],
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
                 entry_point: Some("fs_main"),
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
+                compilation_options: Default::default(),
                 targets: &[Some(wgpu::ColorTargetState {
                     format: config.format,
                     blend: Some(wgpu::BlendState::ALPHA_BLENDING),
@@ -146,14 +126,15 @@ impl MegashaderRenderer {
                 alpha_to_coverage_enabled: false,
             },
             multiview: None,
+            cache: None,
         });
 
         let shapes = [
-            Vertex { shape: ELLIPSE, offset: 0 }, // TL
-            Vertex { shape: ELLIPSE, offset: 1 }, // TR  
-            Vertex { shape: ELLIPSE, offset: 2 }, // BL
-            Vertex { shape: ELLIPSE, offset: 3 }, // BR
-            Vertex { shape: ELLIPSE, offset: 4 }, // BR
+            Quad { shape_kind: ELLIPSE, shape_offset: 0 }, // TL
+            Quad { shape_kind: ELLIPSE, shape_offset: 1 }, // TR  
+            Quad { shape_kind: ELLIPSE, shape_offset: 2 }, // BL
+            Quad { shape_kind: ELLIPSE, shape_offset: 3 }, // BR
+            Quad { shape_kind: ELLIPSE, shape_offset: 4 }, // BR
         ];
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Vertex Buffer"),
@@ -208,7 +189,7 @@ impl MegashaderRenderer {
         }
 
         let output = self.surface.get_current_texture()?;
-        let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let view = output.texture.create_view(&Default::default());
 
         let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("Render Encoder"),
@@ -221,25 +202,21 @@ impl MegashaderRenderer {
                     view: &view,
                     resolve_target: None,
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 0.1,
-                            g: 0.1,
-                            b: 0.1,
-                            a: 1.0,
-                        }),
+                        load: wgpu::LoadOp::Clear(wgpu::Color { r: 0.1, g: 0.1, b: 0.1, a: 1.0 }),
                         store: wgpu::StoreOp::Store,
                     },
                 })],
-                depth_stencil_attachment: None,
-                occlusion_query_set: None,
-                timestamp_writes: None,
+                ..Default::default()
             });
 
             if !self.ellipses.is_empty() {
+                // todo: should be the sum of all shapes
+                let n = self.ellipses.len() as u32;
+
                 render_pass.set_pipeline(&self.pipeline);
                 render_pass.set_bind_group(0, &self.bind_group, &[]);
                 render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-                render_pass.draw(0..4, 0..self.ellipses.len() as u32); // 4 vertices, N instances
+                render_pass.draw(0..4, 0..n);
             }
         }
 

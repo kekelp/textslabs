@@ -1,5 +1,5 @@
-// Primitive type constants
-const PRIMITIVE_ELLIPSE: u32 = 0u;
+// shape type constants
+const SHAPE_ELLIPSE: u32 = 0u;
 
 struct Uniforms {
     screen_size: vec2<f32>,
@@ -18,7 +18,7 @@ struct VertexOutput {
     @builtin(position) position: vec4<f32>,
     @location(0) color: vec4<f32>,
     @location(1) uv: vec2<f32>,
-    @location(2) @interpolate(flat) primitive_type: u32,
+    @location(2) @interpolate(flat) shape_kind: u32,
 }
 
 @group(0) @binding(0)
@@ -34,8 +34,8 @@ fn screen_to_clip(pos: vec2<f32>) -> vec2<f32> {
 @vertex
 fn vs_main(
     @builtin(vertex_index) vertex_index: u32,
-    @location(0) primitive_type: u32,
-    @location(1) primitive_i: u32,
+    @location(0) shape_kind: u32,
+    @location(1) shape_i: u32,
 ) -> VertexOutput {
     var output: VertexOutput;
     
@@ -49,8 +49,8 @@ fn vs_main(
     var color: vec4<f32>;
     var uv: vec2<f32>;
     
-    if (primitive_type == PRIMITIVE_ELLIPSE) {
-        let ellipse = ellipse_storage[primitive_i];
+    if (shape_kind == SHAPE_ELLIPSE) {
+        let ellipse = ellipse_storage[shape_i];
         color = ellipse.color;
         
         // Generate vertex position from corner coordinates
@@ -63,7 +63,7 @@ fn vs_main(
         
         position = screen_to_clip(local_pos);
     } else {
-        // Unknown primitive type, draw some random crap
+        // Unknown shape type, draw some random crap
         position = vec2<f32>(0.0, 0.0);
         color = vec4<f32>(1.0, 0.0, 1.0, 1.0);
         uv = vec2<f32>(0.0, 0.0);
@@ -72,7 +72,7 @@ fn vs_main(
     output.position = vec4<f32>(position, 0.0, 1.0);
     output.color = color;
     output.uv = uv;
-    output.primitive_type = primitive_type;
+    output.shape_kind = shape_kind;
     
     return output;
 }
@@ -81,7 +81,7 @@ fn vs_main(
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     var final_color = input.color;
     
-    if (input.primitive_type == PRIMITIVE_ELLIPSE) {
+    if (input.shape_kind == SHAPE_ELLIPSE) {
         // Calculate distance from center for ellipse shape
         let center = vec2<f32>(0.5, 0.5);
         let dist = length((input.uv - center) * 2.0); // Scale to [-1, 1] range
