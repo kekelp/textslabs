@@ -94,9 +94,9 @@ impl MegashaderRenderer {
                 buffers: &[wgpu::VertexBufferLayout {
                     array_stride: std::mem::size_of::<Shape>() as wgpu::BufferAddress,
                     step_mode: wgpu::VertexStepMode::Instance,
-                    attributes: &[
-                        wgpu::VertexAttribute { offset: 0, shader_location: 0, format: wgpu::VertexFormat::Uint32 },
-                        wgpu::VertexAttribute { offset: 4, shader_location: 1, format: wgpu::VertexFormat::Uint32 },
+                    attributes: &wgpu::vertex_attr_array![
+                        0 => Uint32,
+                        1 => Uint32,
                     ],
                 }],
             },
