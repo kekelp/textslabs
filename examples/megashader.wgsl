@@ -26,7 +26,6 @@ var<storage, read> ellipse_storage: array<Ellipse>;
 
 const SCREEN_SIZE: vec2f = vec2f(800, 600);
 
-// Convert screen coordinates to clip space
 fn screen_to_clip(pos: vec2<f32>) -> vec2<f32> {
     return (pos / SCREEN_SIZE) * 2.0 - 1.0;
 }
@@ -51,6 +50,7 @@ fn vs_main(
     
     if (shape_kind == SHAPE_ELLIPSE) {
         let ellipse = ellipse_storage[shape_i];
+
         color = ellipse.color;
         
         // Generate vertex position from corner coordinates

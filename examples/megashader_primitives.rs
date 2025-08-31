@@ -1,12 +1,11 @@
 use std::sync::Arc;
-use wgpu::util::DeviceExt;
 use winit::{dpi::PhysicalSize, event::WindowEvent, event_loop::EventLoop, window::Window};
 
 const ELLIPSE: u32 = 0;
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-struct Quad {
+struct Shape {
     shape_kind: u32,
     shape_offset: u32,
 }
@@ -32,6 +31,7 @@ struct MegashaderRenderer {
     bind_group: wgpu::BindGroup,
 
     ellipses: Vec<Ellipse>,
+    shapes: Vec<Shape>,
 }
 
 impl MegashaderRenderer {
@@ -92,7 +92,7 @@ impl MegashaderRenderer {
                 entry_point: Some("vs_main"),
                 compilation_options: Default::default(),
                 buffers: &[wgpu::VertexBufferLayout {
-                    array_stride: std::mem::size_of::<Quad>() as wgpu::BufferAddress,
+                    array_stride: std::mem::size_of::<Shape>() as wgpu::BufferAddress,
                     step_mode: wgpu::VertexStepMode::Instance,
                     attributes: &[
                         wgpu::VertexAttribute { offset: 0, shader_location: 0, format: wgpu::VertexFormat::Uint32 },
@@ -129,19 +129,12 @@ impl MegashaderRenderer {
             cache: None,
         });
 
-        let shapes = [
-            Quad { shape_kind: ELLIPSE, shape_offset: 0 }, // TL
-            Quad { shape_kind: ELLIPSE, shape_offset: 1 }, // TR  
-            Quad { shape_kind: ELLIPSE, shape_offset: 2 }, // BL
-            Quad { shape_kind: ELLIPSE, shape_offset: 3 }, // BR
-            Quad { shape_kind: ELLIPSE, shape_offset: 4 }, // BR
-        ];
-        let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        let vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Vertex Buffer"),
-            contents: bytemuck::cast_slice(&shapes),
-            usage: wgpu::BufferUsages::VERTEX,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            size: 1024,
+            mapped_at_creation: false,
         });
-
 
         let ellipse_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Storage Buffer"),
@@ -170,23 +163,30 @@ impl MegashaderRenderer {
             vertex_buffer,
             ellipse_buffer,
             bind_group,
+
             ellipses: Vec::new(),
+            shapes: Vec::new(),
         }
     }
 
     fn clear(&mut self) {
         self.ellipses.clear();
+        self.shapes.clear();
     }
 
     fn add_ellipse(&mut self, x: f32, y: f32, w: f32, h: f32, color: [f32; 4]) {
         let ellipse = Ellipse { x, y, w, h, color };
         self.ellipses.push(ellipse);
+        
+        let shape = Shape { shape_kind: ELLIPSE, shape_offset: self.shapes.len() as u32 };
+        self.shapes.push(shape);
     }
 
     fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
         if !self.ellipses.is_empty() {
             self.queue.write_buffer(&self.ellipse_buffer, 0, bytemuck::cast_slice(&self.ellipses));
         }
+        self.queue.write_buffer(&self.vertex_buffer, 0, bytemuck::cast_slice(&self.shapes));
 
         let output = self.surface.get_current_texture()?;
         let view = output.texture.create_view(&Default::default());
