@@ -40,10 +40,10 @@ pub(crate) struct ContextlessTextRenderer {
     pub(crate) quads: Vec<Quad>,
     
     // Combined texture arrays and single bind group
-    pub(crate) mask_texture_array: Option<Texture>,
-    pub(crate) color_texture_array: Option<Texture>,
+    pub(crate) mask_texture_array: Texture,
+    pub(crate) color_texture_array: Texture,
     pub atlas_bind_group_layout: BindGroupLayout,
-    pub(crate) atlas_bind_group: Option<BindGroup>,
+    pub(crate) atlas_bind_group: BindGroup,
     
     pub params: Params,
     pub sampler: Sampler,
@@ -189,6 +189,7 @@ fn quantize<const N: u8>(pos: f32) -> (i32, f32, SubpixelBin::<N>) {
     return (adjusted_trunc, fract, SubpixelBin::<N>(bin))
 }
 
+/// The struct corresponding to the gpu-side representation of a text glyph.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Zeroable, Pod)]
 pub struct Quad {
@@ -464,8 +465,8 @@ impl TextRenderer {
     }
 
     /// Get the atlas bind group for external rendering
-    pub fn atlas_bind_group(&self) -> Option<&BindGroup> {
-        self.text_renderer.atlas_bind_group.as_ref()
+    pub fn atlas_bind_group(&self) -> &BindGroup {
+        &self.text_renderer.atlas_bind_group
     }
 
     /// Get the params bind group for external rendering
@@ -484,13 +485,13 @@ impl TextRenderer {
     }
 
     /// Get mask texture array for external rendering
-    pub fn mask_texture_array(&self) -> Option<&Texture> {
-        self.text_renderer.mask_texture_array.as_ref()
+    pub fn mask_texture_array(&self) -> &Texture {
+        &self.text_renderer.mask_texture_array
     }
 
     /// Get color texture array for external rendering  
-    pub fn color_texture_array(&self) -> Option<&Texture> {
-        self.text_renderer.color_texture_array.as_ref()
+    pub fn color_texture_array(&self) -> &Texture {
+        &self.text_renderer.color_texture_array
     }
 
     /// Get the atlas sampler for external rendering
@@ -507,24 +508,61 @@ const SOURCES: &[Source; 3] = &[
 
 impl ContextlessTextRenderer {
     pub fn render(&self, pass: &mut RenderPass<'_>) {
-        if let Some(atlas_bind_group) = &self.atlas_bind_group {
-            pass.set_pipeline(&self.pipeline);
-            pass.set_bind_group(0, atlas_bind_group, &[]);
-            pass.set_bind_group(1, &self.params_bind_group, &[]);
-            pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+        pass.set_pipeline(&self.pipeline);
+        pass.set_bind_group(0, &self.atlas_bind_group, &[]);
+        pass.set_bind_group(1, &self.params_bind_group, &[]);
+        pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
 
-            if self.z_range_filtering_enabled {
-                pass.set_push_constants(wgpu::ShaderStages::VERTEX, 0, bytemuck::bytes_of(&[f32::MAX, f32::MIN]));
-            }
-
-            // Calculate total instance count
-            let total_instances = self.quads.len();
-
-            if total_instances > 0 {
-                // Single draw call for all instances
-                pass.draw(0..4, 0..(total_instances as u32));
-            }
+        if self.z_range_filtering_enabled {
+            pass.set_push_constants(wgpu::ShaderStages::VERTEX, 0, bytemuck::bytes_of(&[f32::MAX, f32::MIN]));
         }
+
+        // Calculate total instance count
+        let total_instances = self.quads.len();
+
+        if total_instances > 0 {
+            // Single draw call for all instances
+            pass.draw(0..4, 0..(total_instances as u32));
+        }
+    }
+
+    pub fn load_to_gpu(&mut self, device: &Device, queue: &Queue) {
+        if !self.needs_gpu_sync && !self.needs_texture_array_rebuild {
+            return;
+        }
+
+        // Update uniform buffer
+        let bytes: &[u8] = bytemuck::cast_slice(std::slice::from_ref(&self.params));
+        queue.write_buffer(&self.params_buffer, 0, bytes);
+
+        // Rebuild texture arrays if needed
+        if self.needs_texture_array_rebuild {
+            self.rebuild_texture_arrays(device, queue);
+            self.needs_texture_array_rebuild = false;
+        } else {
+            self.update_texture_arrays(queue);
+        }
+
+        // Calculate total number of quads
+        let required_size = (self.quads.len() * std::mem::size_of::<Quad>()) as u64;
+        
+        // Grow shared vertex buffer if needed
+        if self.vertex_buffer.size() < required_size {
+            let min_size = u64::max(required_size, INITIAL_BUFFER_SIZE);
+            let growth_size = min_size * 3 / 2;
+            let current_growth = self.vertex_buffer.size() * 3 / 2;
+            let new_size = u64::max(growth_size, current_growth);
+            
+            self.vertex_buffer = create_vertex_buffer(device, new_size);
+        }
+
+        // Write all quads to vertex buffer
+        if !self.quads.is_empty() {
+            let bytes: &[u8] = bytemuck::cast_slice(&self.quads);
+            queue.write_buffer(&self.vertex_buffer, 0, bytes);
+        }
+
+        self.needs_gpu_sync = false;
     }
 
     pub fn render_z_range(&self, pass: &mut RenderPass<'_>, z_range: [f32; 2]) {
@@ -532,20 +570,18 @@ impl ContextlessTextRenderer {
             panic!("Z-range filtering was not enabled when creating this TextRenderer. Set TextRendererParams::enable_z_range_filtering = true");
         }
 
-        if let Some(atlas_bind_group) = &self.atlas_bind_group {
-            pass.set_pipeline(&self.pipeline);
-            pass.set_bind_group(0, atlas_bind_group, &[]);
-            pass.set_bind_group(1, &self.params_bind_group, &[]);
-            pass.set_push_constants(wgpu::ShaderStages::VERTEX, 0, bytemuck::bytes_of(&z_range));
-            pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+        pass.set_pipeline(&self.pipeline);
+        pass.set_bind_group(0, &self.atlas_bind_group, &[]);
+        pass.set_bind_group(1, &self.params_bind_group, &[]);
+        pass.set_push_constants(wgpu::ShaderStages::VERTEX, 0, bytemuck::bytes_of(&z_range));
+        pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
 
-            // Calculate total instance count
-            let total_instances = self.quads.len();
+        // Calculate total instance count
+        let total_instances = self.quads.len();
 
-            if total_instances > 0 {
-                // Single draw call for all instances
-                pass.draw(0..4, 0..(total_instances as u32));
-            }
+        if total_instances > 0 {
+            // Single draw call for all instances
+            pass.draw(0..4, 0..(total_instances as u32));
         }
     }
 
