@@ -145,7 +145,7 @@ impl State {
         });
 
         let ellipse_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Storage Buffer"),
+            label: Some("Ellipse Buffer"),
             size: 64 * 1024,
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
