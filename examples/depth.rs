@@ -46,9 +46,9 @@ struct TriangleVertex {
 impl State {
     fn new(window: Arc<Window>) -> Self {
         let physical_size = window.inner_size();
-        let instance = Instance::new(InstanceDescriptor::default());
+        let instance = Instance::new(&InstanceDescriptor::default());
         let adapter = pollster::block_on(instance.request_adapter(&RequestAdapterOptions::default())).unwrap();
-        let (device, queue) = pollster::block_on(adapter.request_device(&DeviceDescriptor::default(), None)).unwrap();
+        let (device, queue) = pollster::block_on(adapter.request_device(&DeviceDescriptor::default())).unwrap();
         
         let surface = instance.create_surface(window.clone()).expect("Create surface");
         let surface_config = surface.get_default_config(&adapter, physical_size.width, physical_size.height).unwrap();
@@ -259,6 +259,7 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
                         }),
                         store: StoreOp::Store,
                     },
+                    depth_slice: None,
                 })],
                 depth_stencil_attachment: Some(RenderPassDepthStencilAttachment {
                     view: &self.depth_view,

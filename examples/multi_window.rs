@@ -31,9 +31,9 @@ struct State {
 
 impl State {
     fn new(windows: Vec<Arc<Window>>) -> Self {
-        let instance = Instance::new(InstanceDescriptor::default());
+        let instance = Instance::new(&InstanceDescriptor::default());
         let adapter = pollster::block_on(instance.request_adapter(&RequestAdapterOptions::default())).unwrap();
-        let (device, queue) = pollster::block_on(adapter.request_device(&DeviceDescriptor::default(), None)).unwrap();
+        let (device, queue) = pollster::block_on(adapter.request_device(&DeviceDescriptor::default())).unwrap();
         
         let mut text = Text::new();
         
@@ -118,6 +118,7 @@ impl winit::application::ApplicationHandler for Application {
                                     load: LoadOp::Clear(wgpu::Color::BLACK),
                                     store: wgpu::StoreOp::Store,
                                 },
+                                depth_slice: None,
                             })],
                             ..Default::default()
                         });

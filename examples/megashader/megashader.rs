@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use wgpu::DeviceDescriptor;
 use winit::{dpi::PhysicalSize, event::WindowEvent, event_loop::EventLoop, window::Window};
 use textslabs::*;
 
@@ -53,7 +54,7 @@ impl State {
     fn new(window: Arc<Window>) -> Self {
         let size = window.inner_size();
         
-        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
             backends: wgpu::Backends::all(),
             ..Default::default()
         });
@@ -67,9 +68,7 @@ impl State {
             }))
             .unwrap();
 
-        let (device, queue) = pollster::block_on(adapter
-            .request_device(&Default::default(), None))
-            .unwrap();
+        let (device, queue) = pollster::block_on(adapter.request_device(&DeviceDescriptor::default())).unwrap();
 
         let config = surface.get_default_config(&adapter, size.width, size.height).unwrap();
         surface.configure(&device, &config);
@@ -316,6 +315,7 @@ impl State {
                         load: wgpu::LoadOp::Clear(wgpu::Color { r: 0.1, g: 0.1, b: 0.1, a: 1.0 }),
                         store: wgpu::StoreOp::Store,
                     },
+                    depth_slice: None,
                 })],
                 depth_stencil_attachment: None,
                 occlusion_query_set: None,

@@ -41,12 +41,11 @@ struct State {
 impl State {
     fn new(window: Arc<Window>) -> Self {
         let physical_size = window.inner_size();
-        let instance = Instance::new(InstanceDescriptor::default());
+        let instance = Instance::new(&InstanceDescriptor::default());
         let adapter =
             pollster::block_on(instance.request_adapter(&RequestAdapterOptions::default()))
                 .unwrap();
-        let (device, queue) =
-            pollster::block_on(adapter.request_device(&DeviceDescriptor::default(), None)).unwrap();
+        let (device, queue) = pollster::block_on(adapter.request_device(&DeviceDescriptor::default())).unwrap();
         let surface = instance
             .create_surface(window.clone())
             .expect("Create surface");
@@ -120,6 +119,7 @@ impl State {
                                 }),
                                 store: wgpu::StoreOp::Store,
                             },
+                            depth_slice: None,
                         })],
                         ..Default::default()
                     });

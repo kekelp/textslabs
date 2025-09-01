@@ -332,14 +332,14 @@ impl ContextlessTextRenderer {
         // Update mask texture array
         for (i, page) in self.mask_atlas_pages.iter().enumerate() {
             queue.write_texture(
-                wgpu::ImageCopyTexture {
+                wgpu::TexelCopyTextureInfo {
                     texture: &self.mask_texture_array,
                     mip_level: 0,
                     origin: wgpu::Origin3d { x: 0, y: 0, z: i as u32 },
                     aspect: wgpu::TextureAspect::All,
                 },
                 &page.image.as_raw(),
-                wgpu::ImageDataLayout {
+                wgpu::TexelCopyBufferLayout {
                     offset: 0,
                     bytes_per_row: Some(page.image.width()),
                     rows_per_image: None,
@@ -355,14 +355,14 @@ impl ContextlessTextRenderer {
         // Update color texture array
         for (i, page) in self.color_atlas_pages.iter().enumerate() {
             queue.write_texture(
-                wgpu::ImageCopyTexture {
+                wgpu::TexelCopyTextureInfo {
                     texture: &self.color_texture_array,
                     mip_level: 0,
                     origin: wgpu::Origin3d { x: 0, y: 0, z: i as u32 },
                     aspect: wgpu::TextureAspect::All,
                 },
                 &page.image.as_raw(),
-                wgpu::ImageDataLayout {
+                wgpu::TexelCopyBufferLayout {
                     offset: 0,
                     bytes_per_row: Some(page.image.width() * 4),
                     rows_per_image: None,
@@ -462,14 +462,14 @@ fn rebuild_texture_arrays(
 
     for (i, page) in mask_atlas_pages.iter().enumerate() {
         queue.write_texture(
-            wgpu::ImageCopyTexture {
+            wgpu::TexelCopyTextureInfo {
                 texture: &mask_tex,
                 mip_level: 0,
                 origin: wgpu::Origin3d { x: 0, y: 0, z: i as u32 },
                 aspect: wgpu::TextureAspect::All,
             },
             &page.image.as_raw(),
-            wgpu::ImageDataLayout {
+            wgpu::TexelCopyBufferLayout {
                 offset: 0,
                 bytes_per_row: Some(page.image.width()),
                 rows_per_image: None,
@@ -500,14 +500,14 @@ fn rebuild_texture_arrays(
 
     for (i, page) in color_atlas_pages.iter().enumerate() {
         queue.write_texture(
-            wgpu::ImageCopyTexture {
+            wgpu::TexelCopyTextureInfo {
                 texture: &color_tex,
                 mip_level: 0,
                 origin: wgpu::Origin3d { x: 0, y: 0, z: i as u32 },
                 aspect: wgpu::TextureAspect::All,
             },
             &page.image.as_raw(),
-            wgpu::ImageDataLayout {
+            wgpu::TexelCopyBufferLayout {
                 offset: 0,
                 bytes_per_row: Some(page.image.width() * 4),
                 rows_per_image: None,

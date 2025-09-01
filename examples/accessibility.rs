@@ -54,7 +54,7 @@ impl State {
         let adapter = Adapter::with_event_loop_proxy(event_loop, &window, event_loop_proxy);
 
         // wgpu boilerplate
-        let instance = Instance::new(InstanceDescriptor::default());
+        let instance = Instance::new(&InstanceDescriptor::default());
         let wgpu_adapter = pollster::block_on(instance.request_adapter(&RequestAdapterOptions::default())).unwrap();
         let (device, queue) = pollster::block_on(wgpu_adapter.request_device(&DeviceDescriptor::default(), None)).unwrap();
         let surface = instance.create_surface(window.clone()).expect("Create surface");

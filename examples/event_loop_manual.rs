@@ -41,21 +41,12 @@ struct State {
 impl State {
     fn new(window: Arc<Window>) -> Self {
         let physical_size = window.inner_size();
-        let instance = Instance::new(InstanceDescriptor::default());
+        let instance = Instance::new(&InstanceDescriptor::default());
         let adapter =
             pollster::block_on(instance.request_adapter(&RequestAdapterOptions::default()))
                 .unwrap();
 
-        let (device, queue) = pollster::block_on(adapter.request_device(
-            &DeviceDescriptor {
-                required_features: Features::empty(),
-                required_limits: Limits::default(),
-                label: None,
-                memory_hints: MemoryHints::default(),
-            },
-            None,
-        ))
-        .unwrap();
+        let (device, queue) = pollster::block_on(adapter.request_device(&DeviceDescriptor::default())).unwrap();
 
         let surface = instance.create_surface(window.clone()).unwrap();
         let surface_caps = surface.get_capabilities(&adapter);
@@ -124,6 +115,7 @@ impl State {
                         load: LoadOp::Clear(Color::RED),
                         store: StoreOp::Store,
                     },
+                    depth_slice: None,
                 })],
                 ..Default::default()
             });

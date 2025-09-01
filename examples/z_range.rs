@@ -41,16 +41,9 @@ struct Vertex {
 impl State {
     fn new(window: Arc<Window>) -> Self {
         let physical_size = window.inner_size();
-        let instance = Instance::new(InstanceDescriptor::default());
+        let instance = Instance::new(&InstanceDescriptor::default());
         let adapter = pollster::block_on(instance.request_adapter(&RequestAdapterOptions::default())).unwrap();
-        let (device, queue) = pollster::block_on(adapter.request_device(&DeviceDescriptor {
-            required_features: Features::PUSH_CONSTANTS,
-            required_limits: Limits {
-                max_push_constant_size: 8,
-                ..Default::default()
-            },
-            ..Default::default()
-        }, None)).unwrap();
+        let (device, queue) = pollster::block_on(adapter.request_device(&DeviceDescriptor::default())).unwrap();
         
         let surface = instance.create_surface(window.clone()).expect("Create surface");
         let surface_config = surface.get_default_config(&adapter, physical_size.width, physical_size.height).unwrap();
@@ -192,6 +185,7 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
                         load: LoadOp::Clear(Color { r: 0.05, g: 0.05, b: 0.1, a: 1.0 }),
                         store: StoreOp::Store,
                     },
+                    depth_slice: None,
                 })],
                 depth_stencil_attachment: None,
                 timestamp_writes: None,

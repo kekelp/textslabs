@@ -17,7 +17,7 @@ opt-level = 3
 # parley = { git = "https://github.com/linebender/parley", rev = "93a2faa" }
 # parley = { path = "../../../clones/parley/parley" }
 parley = { git = "https://github.com/kekelp/parley", rev = "c4b6da8" }
-wgpu = { version = "23", default-features = true }
+wgpu = { version = "26", default-features = true }
 etagere = "0.2.10"
 lru = { version = "0.12.1", default-features = false }
 rustc-hash = "2.0"

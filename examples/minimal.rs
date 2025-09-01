@@ -20,9 +20,9 @@ struct State {
 
 impl State {
     fn new(window: Arc<Window>) -> Self {
-        let instance = Instance::new(InstanceDescriptor::default());
+        let instance = Instance::new(&InstanceDescriptor::default());
         let adapter = pollster::block_on(instance.request_adapter(&RequestAdapterOptions::default())).unwrap();
-        let (device, queue) = pollster::block_on(adapter.request_device(&DeviceDescriptor::default(), None)).unwrap();
+        let (device, queue) = pollster::block_on(adapter.request_device(&DeviceDescriptor::default())).unwrap();
         let surface = instance.create_surface(window.clone()).unwrap();
         let surface_config = surface.get_default_config(&adapter, window.inner_size().width, window.inner_size().height).unwrap();
         surface.configure(&device, &surface_config);
@@ -70,6 +70,7 @@ impl winit::application::ApplicationHandler for Application {
                             view: &surface_texture.texture.create_view(&TextureViewDescriptor::default()),
                             resolve_target: None,
                             ops: Operations { load: LoadOp::Clear(Color::BLACK), store: StoreOp::Store },
+                            depth_slice: None,
                         })],
                         ..Default::default()
                     });
