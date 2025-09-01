@@ -22,14 +22,18 @@ struct Ellipse {
     h: f32,
     color: [f32; 4],
 }
-
-
+impl Ellipse {
+    fn new(x: f32, y: f32, w: f32, h: f32, color: [f32; 4]) -> Ellipse {
+        Ellipse { x, y, w, h, color }
+    }
+}
 
 fn main() {
     let event_loop = EventLoop::new().unwrap();
     event_loop.run_app(&mut Application { state: None }).unwrap();
 }
 
+#[allow(dead_code)]
 struct State {
     window: Arc<Window>,
     device: wgpu::Device,
@@ -37,12 +41,16 @@ struct State {
     surface: wgpu::Surface<'static>,
     pipeline: wgpu::RenderPipeline,
 
-    vertex_buffer: wgpu::Buffer,
+    shape_buffer: wgpu::Buffer,
     ellipse_buffer: wgpu::Buffer,
 
     text_bind_group: wgpu::BindGroup,
     params_bind_group: wgpu::BindGroup,
     ellipse_bind_group: wgpu::BindGroup,
+
+    text_box_1: TextBoxHandle,
+    text_box_2: TextBoxHandle,
+    text_box_3: TextBoxHandle,
 
     ellipses: Vec<Ellipse>,
     shapes: Vec<Shape>,
@@ -79,7 +87,7 @@ impl State {
         let mut text_renderer = TextRenderer::new(&device, &queue, config.format);
         text_renderer.update_resolution(size.width as f32, size.height as f32);
         
-        let text = Text::new();
+        let mut text = Text::new();
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Megashader"),
@@ -182,67 +190,46 @@ impl State {
             cache: None,
         });
 
-        Self { window, device, queue, surface, pipeline, vertex_buffer, ellipse_buffer, text_bind_group, params_bind_group, ellipse_bind_group, ellipses: Vec::new(), shapes: Vec::new(), text, text_renderer, }
-    }
+        // Add some text
+        let text_box_1 = text.add_text_box("Hello, world!", (10.0, 10.0), (24.0, 24.0), 0.0);
+        let text_box_2 = text.add_text_box("Cope, and sneed!", (50.0, 50.0), (24.0, 24.0), 0.0);
+        let text_box_3 = text.add_text_box("zzzzzzz", (50.0, 50.0), (24.0, 24.0), 0.0);
 
-    fn clear(&mut self) {
-        self.ellipses.clear();
-        self.shapes.clear();
-        // Clear text boxes for this frame
-        self.text.advance_frame_and_hide_boxes();
-    }
-
-    fn add_ellipse(&mut self, x: f32, y: f32, w: f32, h: f32, color: [f32; 4]) {
-        let ellipse = Ellipse { x, y, w, h, color };
-        self.ellipses.push(ellipse);
+        let mut ellipses = Vec::with_capacity(5);
         
-        let shape = Shape { shape_kind: ELLIPSE, shape_offset: (self.ellipses.len() - 1) as u32 };
-        self.shapes.push(shape);
-    }
-
-    fn add_text(&mut self, text: &str, x: f32, y: f32, _size: f32) -> TextBoxHandle {
-        // For now, just use the fixed size and basic styling
-        let handle = self.text.add_text_box(text.to_string(), (x as f64, y as f64), (400.0, 100.0), 0.0);
+        ellipses.push(Ellipse::new(100.0, 100.0, 80.0, 80.0, [1.0, 0.0, 0.0, 1.0]));
+        ellipses.push(Ellipse::new(300.0, 150.0, 120.0, 60.0, [0.0, 1.0, 0.0, 0.8]));
+        ellipses.push(Ellipse::new(200.0, 300.0, 100.0, 100.0, [0.0, 0.0, 1.0, 0.6]));
+        ellipses.push(Ellipse::new(450.0, 250.0, 90.0, 140.0, [1.0, 1.0, 0.0, 0.9]));
+        ellipses.push(Ellipse::new(50.0, 400.0,  160.0, 80.0, [1.0, 0.0, 1.0, 0.7]));
         
-        // Refresh the text box to keep it visible this frame
-        self.text.refresh_text_box(&handle);
+        let shapes = Vec::with_capacity(5);
         
-        handle
-    }
-
-    fn add_text_shapes(&mut self) {
-        // Add shapes for text quads after text is prepared
-        if let Some(quads) = self.text_renderer.quads().get(0..) {
-            let _text_shape_start = self.shapes.len() as u32;
-            for i in 0..quads.len() {
-                let shape = Shape { 
-                    shape_kind: TEXT, 
-                    shape_offset: i as u32
-                };
-                self.shapes.push(shape);
-            }
-        }
+        Self { window, device, queue, surface, pipeline, shape_buffer: vertex_buffer, ellipse_buffer, text_bind_group, params_bind_group, ellipse_bind_group, ellipses, shapes, text, text_renderer, text_box_1, text_box_2, text_box_3 }
     }
 
     fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
-        // Prepare text and load text renderer data to GPU
-        self.text.prepare_all(&mut self.text_renderer);
+        self.text.prepare_all_for_window(&mut self.text_renderer, &self.window);
         self.text_renderer.load_to_gpu(&self.device, &self.queue);
 
-        // Add text shapes to the unified shape system
-        self.add_text_shapes();
+        // rebuild shapes
+        self.shapes.clear();
 
-        // Update buffers
-        if !self.ellipses.is_empty() {
-            self.queue.write_buffer(&self.ellipse_buffer, 0, bytemuck::cast_slice(&self.ellipses));
+        self.shapes.push( Shape { shape_kind: ELLIPSE, shape_offset: 0 } );
+        self.shapes.push( Shape { shape_kind: ELLIPSE, shape_offset: 1 } );
+
+        let text_range = self.text.get_text_box(&self.text_box_1).quad_range();
+        for q in (text_range.0)..(text_range.1) {
+            self.shapes.push( Shape { shape_kind: TEXT, shape_offset: q as u32 } );
         }
-        
-        // Text quads are already in the text renderer's vertex buffer via load_to_gpu()
-        
-        // Write shapes to vertex buffer
-        if !self.shapes.is_empty() {
-            self.queue.write_buffer(&self.vertex_buffer, 0, bytemuck::cast_slice(&self.shapes));
-        }
+
+        self.shapes.push( Shape { shape_kind: ELLIPSE, shape_offset: 2 } );
+        self.shapes.push( Shape { shape_kind: ELLIPSE, shape_offset: 3 } );
+
+        self.queue.write_buffer(&self.shape_buffer, 0, bytemuck::cast_slice(&self.shapes));
+
+        self.queue.write_buffer(&self.shape_buffer, 0, bytemuck::cast_slice(&self.shapes));
+        self.queue.write_buffer(&self.ellipse_buffer, 0, bytemuck::cast_slice(&self.ellipses));
 
         let output = self.surface.get_current_texture()?;
         let view = output.texture.create_view(&Default::default());
@@ -268,19 +255,16 @@ impl State {
                 timestamp_writes: None,
             });
 
-            // Render everything using the unified megashader pipeline
-            if !self.shapes.is_empty() {
-                let n = self.shapes.len() as u32;
+            let n = self.shapes.len() as u32;
 
-                render_pass.set_pipeline(&self.pipeline);
+            render_pass.set_pipeline(&self.pipeline);
 
-                render_pass.set_bind_group(0, &self.ellipse_bind_group, &[]);
-                render_pass.set_bind_group(1, &self.params_bind_group, &[]);
-                render_pass.set_bind_group(2, &self.text_bind_group, &[]);
-                
-                render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-                render_pass.draw(0..4, 0..n);
-            }
+            render_pass.set_bind_group(0, &self.ellipse_bind_group, &[]);
+            render_pass.set_bind_group(1, &self.params_bind_group, &[]);
+            render_pass.set_bind_group(2, &self.text_bind_group, &[]);
+            
+            render_pass.set_vertex_buffer(0, self.shape_buffer.slice(..));
+            render_pass.draw(0..4, 0..n);
         }
 
         self.queue.submit(std::iter::once(encoder.finish()));
@@ -312,18 +296,6 @@ impl winit::application::ApplicationHandler for Application {
                 std::process::exit(0);
             }
             WindowEvent::RedrawRequested => {
-                state.clear();
-
-                state.add_ellipse(100.0, 100.0, 80.0, 80.0, [1.0, 0.0, 0.0, 1.0]);
-                state.add_ellipse(300.0, 150.0, 120.0, 60.0, [0.0, 1.0, 0.0, 0.8]);
-                state.add_ellipse(200.0, 300.0, 100.0, 100.0, [0.0, 0.0, 1.0, 0.6]);
-                state.add_ellipse(450.0, 250.0, 90.0, 140.0, [1.0, 1.0, 0.0, 0.9]);
-                state.add_ellipse(50.0, 400.0,  160.0, 80.0, [1.0, 0.0, 1.0, 0.7]);
-
-                // Add some text
-                let _handle1 = state.add_text("Hello, World!", 50.0, 50.0, 24.0);
-                let _handle2 = state.add_text("Megashader with Text!", 200.0, 500.0, 18.0);
-
                 state.render().unwrap();
                 state.window.request_redraw();
             }

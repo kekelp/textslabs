@@ -41,23 +41,14 @@ struct VertexOutput {
     @location(4) @interpolate(flat) page_index: u32,
 }
 
-@group(0) @binding(0)
-var<storage, read> ellipse_storage: array<Ellipse>;
+@group(0) @binding(0) var<storage, read> ellipse_storage: array<Ellipse>;
 
-@group(1) @binding(0)
-var<storage, read> params: array<Params>;
+@group(1) @binding(0) var<storage, read> params: array<Params>;
 
-@group(2) @binding(0)
-var mask_atlas_texture: texture_2d_array<f32>;
-
-@group(2) @binding(1)
-var color_atlas_texture: texture_2d_array<f32>;
-
-@group(2) @binding(2)
-var atlas_sampler: sampler;
-
-@group(2) @binding(3)
-var<storage, read> text_storage: array<TextQuad>;
+@group(2) @binding(0) var mask_atlas_texture: texture_2d_array<f32>;
+@group(2) @binding(1) var color_atlas_texture: texture_2d_array<f32>;
+@group(2) @binding(2) var atlas_sampler: sampler;
+@group(2) @binding(3) var<storage, read> text_storage: array<TextQuad>;
 
 const SCREEN_SIZE: vec2f = vec2f(800, 600);
 
@@ -76,7 +67,7 @@ fn split(u: u32) -> vec2<f32> {
 fn vs_main(
     @builtin(vertex_index) vertex_index: u32,
     @location(0) shape_kind: u32,
-    @location(1) shape_i: u32,
+    @location(1) shape_offset: u32,
 ) -> VertexOutput {
     var output: VertexOutput;
     
@@ -93,7 +84,7 @@ fn vs_main(
     var page_index: u32 = 0u;
     
     if (shape_kind == SHAPE_ELLIPSE) {
-        let ellipse = ellipse_storage[shape_i];
+        let ellipse = ellipse_storage[shape_offset];
 
         color = ellipse.color;
         
@@ -108,7 +99,7 @@ fn vs_main(
         position = screen_to_clip(local_pos);
         
     } else if (shape_kind == SHAPE_TEXT) {
-        let text_quad = text_storage[shape_i];
+        let text_quad = text_storage[shape_offset];
         
         let dim = split(text_quad.dim);
         let quad_pos = vec2f(text_quad.pos);

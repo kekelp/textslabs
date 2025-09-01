@@ -274,6 +274,14 @@ impl_for_textbox_and_textboxmut! {
     pub fn can_hide(&self) -> bool {
         self.inner.can_hide
     }
+
+    /// Returns the range of prepared quads in the [`TextRenderer`]'s buffer.
+    /// 
+    /// Must be called after [`Text::prepare_all()`].
+    pub fn quad_range(&self) -> (usize, usize) {
+        self.inner.quad_storage.quad_range.expect("No quad_range. Call prepare() before.")
+    }
+
 }
 
 impl<'a> TextBoxMut<'a> {
