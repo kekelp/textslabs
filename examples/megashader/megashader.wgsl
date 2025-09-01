@@ -26,6 +26,12 @@ struct TextQuad {
     page_index: u32,
 }
 
+struct Params {
+    screen_resolution: vec2<f32>,
+    srgb: u32,
+    _pad: u32,
+};
+
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
     @location(0) color: vec4<f32>,
@@ -38,17 +44,20 @@ struct VertexOutput {
 @group(0) @binding(0)
 var<storage, read> ellipse_storage: array<Ellipse>;
 
-@group(0) @binding(1)
-var<storage, read> text_storage: array<TextQuad>;
-
 @group(1) @binding(0)
+var<storage, read> params: array<Params>;
+
+@group(2) @binding(0)
 var mask_atlas_texture: texture_2d_array<f32>;
 
-@group(1) @binding(1)
+@group(2) @binding(1)
 var color_atlas_texture: texture_2d_array<f32>;
 
-@group(1) @binding(2)
+@group(2) @binding(2)
 var atlas_sampler: sampler;
+
+@group(2) @binding(3)
+var<storage, read> text_storage: array<TextQuad>;
 
 const SCREEN_SIZE: vec2f = vec2f(800, 600);
 

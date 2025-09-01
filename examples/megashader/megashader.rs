@@ -39,8 +39,10 @@ struct State {
 
     vertex_buffer: wgpu::Buffer,
     ellipse_buffer: wgpu::Buffer,
-    bind_group_0: wgpu::BindGroup,
-    bind_group_1: Option<wgpu::BindGroup>,
+
+    text_bind_group: wgpu::BindGroup,
+    params_bind_group: wgpu::BindGroup,
+    ellipse_bind_group: wgpu::BindGroup,
 
     ellipses: Vec<Ellipse>,
     shapes: Vec<Shape>,
@@ -84,7 +86,7 @@ impl State {
             source: wgpu::ShaderSource::Wgsl(include_str!("megashader.wgsl").into()),
         });
 
-        let bind_group_layout_0 = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        let ellipse_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             entries: &[
                 wgpu::BindGroupLayoutEntry {
                     binding: 0,
@@ -96,55 +98,42 @@ impl State {
                     },
                     count: None,
                 },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                }
             ],
-            label: Some("bind_group_layout_0"),
+            label: Some("ellipse_bind_group_layout"),
         });
 
-        let bind_group_layout_1 = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        multisampled: false,
-                        view_dimension: wgpu::TextureViewDimension::D2Array,
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        multisampled: false,
-                        view_dimension: wgpu::TextureViewDimension::D2Array,
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                }
-            ],
-            label: Some("bind_group_layout_1"),
+        let vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Vertex Buffer"),
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            size: 1024,
+            mapped_at_creation: false,
         });
+
+        let ellipse_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Ellipse Buffer"),
+            size: 64 * 1024,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let ellipse_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &ellipse_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: ellipse_buffer.as_entire_binding(),
+                },
+            ],
+            label: Some("bind_group_0"),
+        });
+
+        let text_bind_group = text_renderer.atlas_bind_group();
+        let params_bind_group = text_renderer.params_bind_group();
+
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Render Pipeline Layout"),
-            bind_group_layouts: &[&bind_group_layout_0, &bind_group_layout_1],
+            bind_group_layouts: &[&ellipse_bind_group_layout, &text_renderer.params_bind_group_layout(), &text_renderer.atlas_bind_group_layout()],
             ..Default::default()
         });
 
@@ -193,50 +182,7 @@ impl State {
             cache: None,
         });
 
-        let vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Vertex Buffer"),
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-            size: 1024,
-            mapped_at_creation: false,
-        });
-
-        let ellipse_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Ellipse Buffer"),
-            size: 64 * 1024,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-
-        let bind_group_0 = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &bind_group_layout_0,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: ellipse_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: text_renderer.vertex_buffer().as_entire_binding(),
-                }
-            ],
-            label: Some("bind_group_0"),
-        });
-
-        Self {
-            window,
-            device,
-            queue,
-            surface,
-            pipeline,
-            vertex_buffer,
-            ellipse_buffer,
-            bind_group_0,
-            bind_group_1: None, // Will be set from text renderer
-            ellipses: Vec::new(),
-            shapes: Vec::new(),
-            text,
-            text_renderer,
-        }
+        Self { window, device, queue, surface, pipeline, vertex_buffer, ellipse_buffer, text_bind_group, params_bind_group, ellipse_bind_group, ellipses: Vec::new(), shapes: Vec::new(), text, text_renderer, }
     }
 
     fn clear(&mut self) {
@@ -327,12 +273,10 @@ impl State {
                 let n = self.shapes.len() as u32;
 
                 render_pass.set_pipeline(&self.pipeline);
-                render_pass.set_bind_group(0, &self.bind_group_0, &[]);
-                
-                // Set text atlas bind group if available
-                if let Some(bind_group_1) = &self.bind_group_1 {
-                    render_pass.set_bind_group(1, bind_group_1, &[]);
-                }
+
+                render_pass.set_bind_group(0, &self.ellipse_bind_group, &[]);
+                render_pass.set_bind_group(1, &self.params_bind_group, &[]);
+                render_pass.set_bind_group(2, &self.text_bind_group, &[]);
                 
                 render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
                 render_pass.draw(0..4, 0..n);
