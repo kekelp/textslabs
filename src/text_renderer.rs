@@ -191,7 +191,7 @@ fn quantize<const N: u8>(pos: f32) -> (i32, f32, SubpixelBin::<N>) {
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Zeroable, Pod)]
-pub(crate) struct Quad {
+pub struct Quad {
     pub pos: [i32; 2],
     pub dim: [u16; 2],
     pub uv_origin: [u16; 2],
@@ -324,7 +324,8 @@ impl TextRenderer {
         Self::new_with_params(device, queue, format, None, TextRendererParams::default())
     }
 
-    pub(crate) fn update_resolution(&mut self, width: f32, height: f32) {
+    /// Update the screen resolution for text rendering
+    pub fn update_resolution(&mut self, width: f32, height: f32) {
         self.text_renderer.update_resolution(width, height);
     }
 
@@ -455,6 +456,46 @@ impl TextRenderer {
         };
         
         quad_storage.last_offset = current_offset;
+    }
+
+    /// Get the vertex buffer for external rendering
+    pub fn vertex_buffer(&self) -> &Buffer {
+        &self.text_renderer.vertex_buffer
+    }
+
+    /// Get the atlas bind group for external rendering
+    pub fn atlas_bind_group(&self) -> Option<&BindGroup> {
+        self.text_renderer.atlas_bind_group.as_ref()
+    }
+
+    /// Get the params bind group for external rendering
+    pub fn params_bind_group(&self) -> &BindGroup {
+        &self.text_renderer.params_bind_group
+    }
+
+    /// Get the quads buffer for external rendering
+    pub fn quads(&self) -> &[Quad] {
+        &self.text_renderer.quads
+    }
+
+    /// Get the render pipeline for external rendering
+    pub fn pipeline(&self) -> &RenderPipeline {
+        &self.text_renderer.pipeline
+    }
+
+    /// Get mask texture array for external rendering
+    pub fn mask_texture_array(&self) -> Option<&Texture> {
+        self.text_renderer.mask_texture_array.as_ref()
+    }
+
+    /// Get color texture array for external rendering  
+    pub fn color_texture_array(&self) -> Option<&Texture> {
+        self.text_renderer.color_texture_array.as_ref()
+    }
+
+    /// Get the atlas sampler for external rendering
+    pub fn sampler(&self) -> &Sampler {
+        &self.text_renderer.sampler
     }
 }
 

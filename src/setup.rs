@@ -83,7 +83,7 @@ fn create_vertex_buffer(device: &Device, size: u64) -> Buffer {
     device.create_buffer(&BufferDescriptor {
         label: Some("shared vertex buffer"),
         size,
-        usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
+        usage: BufferUsages::VERTEX | BufferUsages::STORAGE | BufferUsages::COPY_DST,
         mapped_at_creation: false,
     })
 }

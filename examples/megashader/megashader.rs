@@ -1,7 +1,9 @@
 use std::sync::Arc;
 use winit::{dpi::PhysicalSize, event::WindowEvent, event_loop::EventLoop, window::Window};
+use textslabs::*;
 
 const ELLIPSE: u32 = 0;
+const TEXT: u32 = 1;
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -36,10 +38,15 @@ struct State {
 
     vertex_buffer: wgpu::Buffer,
     ellipse_buffer: wgpu::Buffer,
-    bind_group: wgpu::BindGroup,
+    bind_group_0: wgpu::BindGroup,
+    bind_group_1: Option<wgpu::BindGroup>,
 
     ellipses: Vec<Ellipse>,
     shapes: Vec<Shape>,
+    
+    // Text rendering
+    text: Text,
+    text_renderer: TextRenderer,
 }
 
 impl State {
@@ -67,28 +74,78 @@ impl State {
         let config = surface.get_default_config(&adapter, size.width, size.height).unwrap();
         surface.configure(&device, &config);
 
+        // Initialize text renderer
+        let mut text_renderer = TextRenderer::new(&device, &queue, config.format);
+        text_renderer.update_resolution(size.width as f32, size.height as f32);
+        
+        let text = Text::new();
+
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Megashader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("megashader.wgsl").into()),
         });
 
-        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Storage { read_only: true },
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
+        let bind_group_layout_0 = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
                 },
-                count: None,
-            }],
-            label: Some("bind_group_layout"),
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }
+            ],
+            label: Some("bind_group_layout_0"),
+        });
+
+        let bind_group_layout_1 = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: wgpu::TextureViewDimension::D2Array,
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: wgpu::TextureViewDimension::D2Array,
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                }
+            ],
+            label: Some("bind_group_layout_1"),
         });
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Render Pipeline Layout"),
-            bind_group_layouts: &[&bind_group_layout],
+            bind_group_layouts: &[&bind_group_layout_0, &bind_group_layout_1],
             ..Default::default()
         });
 
@@ -151,13 +208,19 @@ impl State {
             mapped_at_creation: false,
         });
 
-        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &bind_group_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: ellipse_buffer.as_entire_binding(),
-            }],
-            label: Some("bind_group"),
+        let bind_group_0 = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &bind_group_layout_0,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: ellipse_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: text_renderer.vertex_buffer().as_entire_binding(),
+                }
+            ],
+            label: Some("bind_group_0"),
         });
 
         Self {
@@ -168,30 +231,137 @@ impl State {
             pipeline,
             vertex_buffer,
             ellipse_buffer,
-            bind_group,
+            bind_group_0,
+            bind_group_1: None, // Will be set from text renderer
             ellipses: Vec::new(),
             shapes: Vec::new(),
+            text,
+            text_renderer,
         }
     }
 
     fn clear(&mut self) {
         self.ellipses.clear();
         self.shapes.clear();
+        // Clear text boxes for this frame
+        self.text.advance_frame_and_hide_boxes();
     }
 
     fn add_ellipse(&mut self, x: f32, y: f32, w: f32, h: f32, color: [f32; 4]) {
         let ellipse = Ellipse { x, y, w, h, color };
         self.ellipses.push(ellipse);
         
-        let shape = Shape { shape_kind: ELLIPSE, shape_offset: self.shapes.len() as u32 };
+        let shape = Shape { shape_kind: ELLIPSE, shape_offset: (self.ellipses.len() - 1) as u32 };
         self.shapes.push(shape);
     }
 
+    fn add_text(&mut self, text: &str, x: f32, y: f32, _size: f32) -> TextBoxHandle {
+        // For now, just use the fixed size and basic styling
+        let handle = self.text.add_text_box(text.to_string(), (x as f64, y as f64), (400.0, 100.0), 0.0);
+        
+        // Refresh the text box to keep it visible this frame
+        self.text.refresh_text_box(&handle);
+        
+        handle
+    }
+
+    fn add_text_shapes(&mut self) {
+        // Add shapes for text quads after text is prepared
+        if let Some(quads) = self.text_renderer.quads().get(0..) {
+            let _text_shape_start = self.shapes.len() as u32;
+            for i in 0..quads.len() {
+                let shape = Shape { 
+                    shape_kind: TEXT, 
+                    shape_offset: i as u32
+                };
+                self.shapes.push(shape);
+            }
+        }
+    }
+
     fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
+        // Prepare text and load text renderer data to GPU
+        self.text.prepare_all(&mut self.text_renderer);
+        self.text_renderer.load_to_gpu(&self.device, &self.queue);
+
+        // Add text shapes to the unified shape system
+        self.add_text_shapes();
+
+        // Update buffers
         if !self.ellipses.is_empty() {
             self.queue.write_buffer(&self.ellipse_buffer, 0, bytemuck::cast_slice(&self.ellipses));
         }
-        self.queue.write_buffer(&self.vertex_buffer, 0, bytemuck::cast_slice(&self.shapes));
+        
+        // Text quads are already in the text renderer's vertex buffer via load_to_gpu()
+        
+        // Write shapes to vertex buffer
+        if !self.shapes.is_empty() {
+            self.queue.write_buffer(&self.vertex_buffer, 0, bytemuck::cast_slice(&self.shapes));
+        }
+
+        // Create text atlas bind group if not already created
+        if self.bind_group_1.is_none() {
+            if let (Some(mask_texture), Some(color_texture)) = (
+                self.text_renderer.mask_texture_array(),
+                self.text_renderer.color_texture_array()
+            ) {
+                let bind_group_1 = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    layout: &self.device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                        entries: &[
+                            wgpu::BindGroupLayoutEntry {
+                                binding: 0,
+                                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                                ty: wgpu::BindingType::Texture {
+                                    multisampled: false,
+                                    view_dimension: wgpu::TextureViewDimension::D2Array,
+                                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                                },
+                                count: None,
+                            },
+                            wgpu::BindGroupLayoutEntry {
+                                binding: 1,
+                                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                                ty: wgpu::BindingType::Texture {
+                                    multisampled: false,
+                                    view_dimension: wgpu::TextureViewDimension::D2Array,
+                                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                                },
+                                count: None,
+                            },
+                            wgpu::BindGroupLayoutEntry {
+                                binding: 2,
+                                visibility: wgpu::ShaderStages::FRAGMENT,
+                                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                                count: None,
+                            }
+                        ],
+                        label: Some("text_atlas_bind_group_layout"),
+                    }),
+                    entries: &[
+                        wgpu::BindGroupEntry {
+                            binding: 0,
+                            resource: wgpu::BindingResource::TextureView(&mask_texture.create_view(&wgpu::TextureViewDescriptor {
+                                dimension: Some(wgpu::TextureViewDimension::D2Array),
+                                ..Default::default()
+                            })),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 1,
+                            resource: wgpu::BindingResource::TextureView(&color_texture.create_view(&wgpu::TextureViewDescriptor {
+                                dimension: Some(wgpu::TextureViewDimension::D2Array),
+                                ..Default::default()
+                            })),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 2,
+                            resource: wgpu::BindingResource::Sampler(self.text_renderer.sampler()),
+                        }
+                    ],
+                    label: Some("text_atlas_bind_group"),
+                });
+                self.bind_group_1 = Some(bind_group_1);
+            }
+        }
 
         let output = self.surface.get_current_texture()?;
         let view = output.texture.create_view(&Default::default());
@@ -216,11 +386,18 @@ impl State {
                 timestamp_writes: None,
             });
 
-            if !self.ellipses.is_empty() {
-                let n = self.ellipses.len() as u32;
+            // Render everything using the unified megashader pipeline
+            if !self.shapes.is_empty() {
+                let n = self.shapes.len() as u32;
 
                 render_pass.set_pipeline(&self.pipeline);
-                render_pass.set_bind_group(0, &self.bind_group, &[]);
+                render_pass.set_bind_group(0, &self.bind_group_0, &[]);
+                
+                // Set text atlas bind group if available
+                if let Some(bind_group_1) = &self.bind_group_1 {
+                    render_pass.set_bind_group(1, bind_group_1, &[]);
+                }
+                
                 render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
                 render_pass.draw(0..4, 0..n);
             }
@@ -262,6 +439,10 @@ impl winit::application::ApplicationHandler for Application {
                 state.add_ellipse(200.0, 300.0, 100.0, 100.0, [0.0, 0.0, 1.0, 0.6]);
                 state.add_ellipse(450.0, 250.0, 90.0, 140.0, [1.0, 1.0, 0.0, 0.9]);
                 state.add_ellipse(50.0, 400.0,  160.0, 80.0, [1.0, 0.0, 1.0, 0.7]);
+
+                // Add some text
+                let _handle1 = state.add_text("Hello, World!", 50.0, 50.0, 24.0);
+                let _handle2 = state.add_text("Megashader with Text!", 200.0, 500.0, 18.0);
 
                 state.render().unwrap();
                 state.window.request_redraw();
