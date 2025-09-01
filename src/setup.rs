@@ -32,6 +32,17 @@ const ATLAS_BIND_GROUP_LAYOUT: BindGroupLayoutDescriptor = wgpu::BindGroupLayout
             ty: BindingType::Sampler(SamplerBindingType::Filtering),
             count: None,
         },
+        // Experimentally bind the vertex buffer as well
+        wgpu::BindGroupLayoutEntry {
+            binding: 3,
+            visibility: wgpu::ShaderStages::VERTEX,
+            ty: wgpu::BindingType::Buffer {
+                ty: wgpu::BufferBindingType::Storage { read_only: true },
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
+            count: None,
+        }
     ],
     label: Some("atlas bind group layout"),
 };
@@ -268,6 +279,7 @@ impl ContextlessTextRenderer {
             device,
             &mask_texture_array,
             &color_texture_array,
+            &vertex_buffer,
             &sampler,
             &atlas_bind_group_layout,
         );
@@ -370,6 +382,7 @@ impl ContextlessTextRenderer {
             device,
             &self.mask_texture_array,
             &self.color_texture_array,
+            &self.vertex_buffer,
             &self.sampler,
             &self.atlas_bind_group_layout,
         );
@@ -383,6 +396,7 @@ fn create_atlas_bind_group(
     device: &wgpu::Device,
     mask_texture_array: &wgpu::Texture,
     color_texture_array: &wgpu::Texture,
+    vertex_buffer: &wgpu::Buffer,
     sampler: &wgpu::Sampler,
     atlas_bind_group_layout: &wgpu::BindGroupLayout,
 ) -> wgpu::BindGroup {
@@ -409,6 +423,10 @@ fn create_atlas_bind_group(
         wgpu::BindGroupEntry {
             binding: 2,
             resource: wgpu::BindingResource::Sampler(sampler),
+        },
+        wgpu::BindGroupEntry {
+            binding: 3,
+            resource: vertex_buffer.as_entire_binding(),
         },
     ];
 

@@ -37,6 +37,9 @@ var color_atlas_texture: texture_2d_array<f32>;
 @group(0) @binding(2)
 var atlas_sampler: sampler;
 
+// @group(0) @binding(3)
+// var<storage, read> _vertex_buffer: array<VertexInput>;
+
 @group(1) @binding(0)
 var<uniform> params: Params;
 
