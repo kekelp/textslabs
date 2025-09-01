@@ -1,13 +1,14 @@
 struct VertexInput {
     @builtin(vertex_index) idx: u32,
     @location(0) pos: vec2<i32>,
-    @location(1) dim: u32,
-    @location(2) uv_origin: u32,
-    @location(3) color: u32,
-    @location(4) depth: f32,
-    @location(5) flags: u32,
-    @location(6) clip_rect: vec4<i32>,
-    @location(7) page_index: u32,
+    @location(1) pad: vec2<u32>,
+    @location(2) dim: vec2<u32>,
+    @location(3) uv_origin: vec2<u32>,
+    @location(4) page_index: u32,
+    @location(5) color: u32,
+    @location(6) depth: f32,
+    @location(7) flags: u32,
+    @location(8) clip_rect: vec4<i32>,
 }
 
 struct VertexOutput {
@@ -73,7 +74,8 @@ fn vs_main(input: VertexInput) -> VertexOutput {
     );
     let coords = vec2f(ucoords);
 
-    let dim = split(input.dim);
+    let dim = vec2f(input.dim);
+    // let dim = split(input.dim);
     let quad_pos = vec2f(input.pos);
     
     // Apply clipping in vertex shader
@@ -99,7 +101,8 @@ fn vs_main(input: VertexInput) -> VertexOutput {
     let clipped_dim = vec2f(clipped_x1 - clipped_x0, clipped_y1 - clipped_y0);
     
     // Adjust UV coordinates for clipped area
-    let uv_origin = split(input.uv_origin);
+    let uv_origin = vec2f(input.uv_origin);
+    // let uv_origin = split(input.uv_origin);
     let adjusted_uv_origin = uv_origin + vec2f(left_clip, top_clip);
     let atlas_size = vec2f(textureDimensions(mask_atlas_texture, 0).xy);
     vert_output.uv = (adjusted_uv_origin + clipped_dim * coords) / atlas_size;

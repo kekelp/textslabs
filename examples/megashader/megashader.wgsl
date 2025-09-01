@@ -17,13 +17,14 @@ struct Ellipse {
 
 struct TextQuad {
     pos: vec2<i32>,
-    dim: u32,
-    uv_origin: u32,
+    pad: vec2<u32>,
+    dim: vec2<u32>,
+    uv_origin: vec2<u32>,
+    page_index: u32,
     color: u32,
     depth: f32,
     flags: u32,
     clip_rect: vec4<i32>,
-    page_index: u32,
 }
 
 struct Params {
@@ -101,15 +102,17 @@ fn vs_main(
     } else if (shape_kind == SHAPE_TEXT) {
         let text_quad = text_storage[shape_offset];
         
-        let dim = split(text_quad.dim);
         let quad_pos = vec2f(text_quad.pos);
+        // let dim = split(text_quad.dim);
+        let dim = vec2f(text_quad.dim);
         
         // Calculate position using text renderer logic
         let local_pos = quad_pos + dim * coords;
         position = screen_to_clip(local_pos);
         
         // Calculate UV coordinates for text atlas
-        let uv_origin = split(text_quad.uv_origin);
+        let uv_origin = vec2f(text_quad.uv_origin);
+        // let uv_origin = split(text_quad.uv_origin);
         let atlas_size = vec2f(textureDimensions(mask_atlas_texture, 0).xy);
         uv = (uv_origin + dim * coords) / atlas_size;
         
@@ -178,6 +181,7 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
         
         // Early discard for fully transparent text
         if (final_color.a < 0.01) {
+            // final_color = vec4f(1.0, 0.0, 0.0, 0.3);
             discard;
         }
     }

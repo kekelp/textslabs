@@ -148,7 +148,7 @@ impl ContextlessTextRenderer {
 
         let shader_source = generate_shader_source(params.enable_z_range_filtering);
         let shader = device.create_shader_module(ShaderModuleDescriptor {
-            label: Some("shader"),
+            label: Some("textslabs shader"),
             source: shader_source,
         });
 
@@ -157,13 +157,14 @@ impl ContextlessTextRenderer {
             step_mode: wgpu::VertexStepMode::Instance,
             attributes: &wgpu::vertex_attr_array![
                 0 => Sint32x2,
-                1 => Uint32,
-                2 => Uint32,
-                3 => Uint32,
-                4 => Float32,
+                1 => Uint32x2,
+                2 => Uint32x2,
+                3 => Uint32x2,
+                4 => Uint32,
                 5 => Uint32,
-                6 => Sint16x4,
+                6 => Float32,
                 7 => Uint32,
+                8 => Sint32x4,
             ],
         };
 
@@ -326,7 +327,7 @@ impl ContextlessTextRenderer {
         self.color_texture_array = color_texture_array;
 
         // Rebuild bind group after textures are updated
-        self.create_atlas_bind_group(device);
+        self.recreate_atlas_bind_group(device);
     }
 
     pub(crate) fn update_texture_arrays(&mut self, queue: &wgpu::Queue) {
@@ -378,7 +379,7 @@ impl ContextlessTextRenderer {
     }
     
 
-    fn create_atlas_bind_group(&mut self, device: &wgpu::Device) {
+    pub(crate) fn recreate_atlas_bind_group(&mut self, device: &wgpu::Device) {
         let bind_group = create_atlas_bind_group(
             device,
             &self.mask_texture_array,

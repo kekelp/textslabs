@@ -90,7 +90,7 @@ impl State {
         let mut text = Text::new();
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("Megashader"),
+            label: Some("megashader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("megashader.wgsl").into()),
         });
 
@@ -191,9 +191,9 @@ impl State {
         });
 
         // Add some text
-        let text_box_1 = text.add_text_box("Hello, world!", (10.0, 10.0), (24.0, 24.0), 0.0);
-        let text_box_2 = text.add_text_box("Cope, and sneed!", (50.0, 50.0), (24.0, 24.0), 0.0);
-        let text_box_3 = text.add_text_box("zzzzzzz", (50.0, 50.0), (24.0, 24.0), 0.0);
+        let text_box_1 = text.add_text_box("1234567890ABCDEFG", (10.0, 10.0), (500.0, 500.0), 0.0);
+        let text_box_2 = text.add_text_box("Hello, world!", (50.0, 50.0), (500.0, 500.0), 0.0);
+        let text_box_3 = text.add_text_box("Cope, and sneed!", (100.0, 100.0), (500.0, 500.0), 0.0);
 
         let mut ellipses = Vec::with_capacity(5);
         
@@ -219,6 +219,14 @@ impl State {
         self.shapes.push( Shape { shape_kind: ELLIPSE, shape_offset: 1 } );
 
         let text_range = self.text.get_text_box(&self.text_box_1).quad_range();
+        for q in (text_range.0)..(text_range.1) {
+            self.shapes.push( Shape { shape_kind: TEXT, shape_offset: q as u32 } );
+        }
+        let text_range = self.text.get_text_box(&self.text_box_2).quad_range();
+        for q in (text_range.0)..(text_range.1) {
+            self.shapes.push( Shape { shape_kind: TEXT, shape_offset: q as u32 } );
+        }
+        let text_range = self.text.get_text_box(&self.text_box_3).quad_range();
         for q in (text_range.0)..(text_range.1) {
             self.shapes.push( Shape { shape_kind: TEXT, shape_offset: q as u32 } );
         }
@@ -260,8 +268,8 @@ impl State {
             render_pass.set_pipeline(&self.pipeline);
 
             render_pass.set_bind_group(0, &self.ellipse_bind_group, &[]);
-            render_pass.set_bind_group(1, &self.params_bind_group, &[]);
-            render_pass.set_bind_group(2, &self.text_bind_group, &[]);
+            render_pass.set_bind_group(1, &self.text_renderer.params_bind_group(), &[]);
+            render_pass.set_bind_group(2, &self.text_renderer.atlas_bind_group(), &[]);
             
             render_pass.set_vertex_buffer(0, self.shape_buffer.slice(..));
             render_pass.draw(0..4, 0..n);
@@ -290,6 +298,8 @@ impl winit::application::ApplicationHandler for Application {
 
     fn window_event(&mut self, _event_loop: &winit::event_loop::ActiveEventLoop, _: winit::window::WindowId, event: WindowEvent) {
         let state = &mut self.state.as_mut().unwrap();
+
+        state.text.handle_event(&event, &state.window);
 
         match event {
             WindowEvent::CloseRequested => {

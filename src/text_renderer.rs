@@ -133,13 +133,14 @@ impl ContextlessTextRenderer {
 
         let quad = Quad {
             pos: [x0, y0],
-            dim: [(x1 - x0) as u16, (y1 - y0) as u16],
+            dim: [(x1 - x0) as u32, (y1 - y0) as u32],
             color,
             uv_origin: [0, 0],
             depth: 0.0,
             flags: pack_flags(CONTENT_TYPE_DECORATION, false),
             clip_rect: [0, 0, 32767, 32767], // No clipping for decorations
             page_index: 0, // Decorations use the first mask page
+            pad: [0, 0]
         };
         self.quads.push(quad);
     }
@@ -191,17 +192,19 @@ fn quantize<const N: u8>(pos: f32) -> (i32, f32, SubpixelBin::<N>) {
 }
 
 /// The struct corresponding to the gpu-side representation of a text glyph.
+#[allow(missing_docs)]
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Zeroable, Pod)]
 pub struct Quad {
     pub pos: [i32; 2],
-    pub dim: [u16; 2],
-    pub uv_origin: [u16; 2],
+    pub pad: [u32; 2],
+    pub dim: [u32; 2],
+    pub uv_origin: [u32; 2],
+    pub page_index: u32, // Which texture array layer to sample from
     pub color: u32,
     pub depth: f32,
     pub flags: u32,
-    pub clip_rect: [i16; 4], // x, y, width, height in pixels
-    pub page_index: u32, // Which texture array layer to sample from
+    pub clip_rect: [i32; 4], // x, y, width, height in pixels
 }
 
 fn make_quad(glyph: &GlyphWithContext, stored_glyph: &StoredGlyph, depth: f32) -> Quad {
@@ -218,13 +221,14 @@ fn make_quad(glyph: &GlyphWithContext, stored_glyph: &StoredGlyph, depth: f32) -
     };
     return Quad {
         pos: [x, y],
-        dim: [size_x as u16, size_y as u16],
-        uv_origin: [uv_x as u16, uv_y as u16],
+        dim: [size_x as u32, size_y as u32],
+        uv_origin: [uv_x as u32, uv_y as u32],
         color,
         flags: pack_flags(flags, false), // No fade by default
         depth,
         clip_rect: [0, 0, 32767, 32767], // No clipping (will be set later)
         page_index: stored_glyph.page as u32,
+        pad: [0, 0]
     };
 }
 
@@ -242,10 +246,10 @@ fn clip_quad(quad: Quad, left: f32, top: f32, clip_rect: Option<parley::Rect>, f
 
         // Set the GPU clip rectangle
         quad.clip_rect = [
-            clip_x0 as i16,
-            clip_y0 as i16,
-            clip_x1 as i16,
-            clip_y1 as i16,
+            clip_x0 as i32,
+            clip_y0 as i32,
+            clip_x1 as i32,
+            clip_y1 as i32,
         ];
 
         // Extract content type from existing flags
@@ -565,6 +569,7 @@ impl ContextlessTextRenderer {
             let new_size = u64::max(growth_size, current_growth);
             
             self.vertex_buffer = create_vertex_buffer(device, new_size);
+            self.recreate_atlas_bind_group(device);
         }
 
         // Write all quads to vertex buffer
