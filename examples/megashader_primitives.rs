@@ -20,7 +20,15 @@ struct Ellipse {
     color: [f32; 4],
 }
 
-struct MegashaderRenderer {
+
+
+fn main() {
+    let event_loop = EventLoop::new().unwrap();
+    event_loop.run_app(&mut Application { state: None }).unwrap();
+}
+
+struct State {
+    window: Arc<Window>,
     device: wgpu::Device,
     queue: wgpu::Queue,
     surface: wgpu::Surface<'static>,
@@ -34,7 +42,7 @@ struct MegashaderRenderer {
     shapes: Vec<Shape>,
 }
 
-impl MegashaderRenderer {
+impl State {
     fn new(window: Arc<Window>) -> Self {
         let size = window.inner_size();
         
@@ -143,19 +151,17 @@ impl MegashaderRenderer {
             mapped_at_creation: false,
         });
 
-        // Create bind group
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: ellipse_buffer.as_entire_binding(),
-                },
-            ],
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: ellipse_buffer.as_entire_binding(),
+            }],
             label: Some("bind_group"),
         });
 
         Self {
+            window,
             device,
             queue,
             surface,
@@ -163,7 +169,6 @@ impl MegashaderRenderer {
             vertex_buffer,
             ellipse_buffer,
             bind_group,
-
             ellipses: Vec::new(),
             shapes: Vec::new(),
         }
@@ -206,11 +211,12 @@ impl MegashaderRenderer {
                         store: wgpu::StoreOp::Store,
                     },
                 })],
-                ..Default::default()
+                depth_stencil_attachment: None,
+                occlusion_query_set: None,
+                timestamp_writes: None,
             });
 
             if !self.ellipses.is_empty() {
-                // todo: should be the sum of all shapes
                 let n = self.ellipses.len() as u32;
 
                 render_pass.set_pipeline(&self.pipeline);
@@ -224,23 +230,6 @@ impl MegashaderRenderer {
         output.present();
 
         Ok(())
-    }
-}
-
-fn main() {
-    let event_loop = EventLoop::new().unwrap();
-    event_loop.run_app(&mut Application { state: None }).unwrap();
-}
-
-struct State {
-    window: Arc<Window>,
-    renderer: MegashaderRenderer,
-}
-
-impl State {
-    fn new(window: Arc<Window>) -> Self {
-        let renderer = MegashaderRenderer::new(window.clone());
-        Self { window, renderer }
     }
 }
 
@@ -266,15 +255,15 @@ impl winit::application::ApplicationHandler for Application {
                 std::process::exit(0);
             }
             WindowEvent::RedrawRequested => {
-                state.renderer.clear();
+                state.clear();
 
-                state.renderer.add_ellipse(100.0, 100.0, 80.0, 80.0, [1.0, 0.0, 0.0, 1.0]); // Red circle
-                state.renderer.add_ellipse(300.0, 150.0, 120.0, 60.0, [0.0, 1.0, 0.0, 0.8]); // Green ellipse
-                state.renderer.add_ellipse(200.0, 300.0, 100.0, 100.0, [0.0, 0.0, 1.0, 0.6]); // Blue circle
-                state.renderer.add_ellipse(450.0, 250.0, 90.0, 140.0, [1.0, 1.0, 0.0, 0.9]); // Yellow ellipse
-                state.renderer.add_ellipse(50.0, 400.0,  160.0, 80.0, [1.0, 0.0, 1.0, 0.7]); // Magenta ellipse
+                state.add_ellipse(100.0, 100.0, 80.0, 80.0, [1.0, 0.0, 0.0, 1.0]);
+                state.add_ellipse(300.0, 150.0, 120.0, 60.0, [0.0, 1.0, 0.0, 0.8]);
+                state.add_ellipse(200.0, 300.0, 100.0, 100.0, [0.0, 0.0, 1.0, 0.6]);
+                state.add_ellipse(450.0, 250.0, 90.0, 140.0, [1.0, 1.0, 0.0, 0.9]);
+                state.add_ellipse(50.0, 400.0,  160.0, 80.0, [1.0, 0.0, 1.0, 0.7]);
 
-                state.renderer.render().unwrap();
+                state.render().unwrap();
                 state.window.request_redraw();
             }
             _ => {}
