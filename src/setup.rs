@@ -3,7 +3,7 @@ use crate::*;
 pub(crate) const INITIAL_BUFFER_SIZE: u64 = 4096;
 
 
-const ATLAS_BIND_GROUP_LAYOUT: BindGroupLayoutDescriptor = wgpu::BindGroupLayoutDescriptor {
+const ATLAS_BIND_GROUP_LAYOUT_DESC: BindGroupLayoutDescriptor = wgpu::BindGroupLayoutDescriptor {
     entries: &[
         BindGroupLayoutEntry {
             binding: 0,
@@ -204,7 +204,7 @@ impl ContextlessTextRenderer {
             label: Some("uniforms bind group"),
         });
 
-        let atlas_bind_group_layout = device.create_bind_group_layout(&ATLAS_BIND_GROUP_LAYOUT);
+        let atlas_bind_group_layout = device.create_bind_group_layout(&ATLAS_BIND_GROUP_LAYOUT_DESC);
 
         let glyph_cache = LruCache::unbounded_with_hasher(BuildHasherDefault::<FxHasher>::default());
 
@@ -296,6 +296,7 @@ impl ContextlessTextRenderer {
             atlas_bind_group,
             pipeline,
             atlas_bind_group_layout,
+            params_layout,
             sampler,
             params: uniform_params,
             params_buffer,

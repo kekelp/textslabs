@@ -43,6 +43,7 @@ pub(crate) struct ContextlessTextRenderer {
     pub(crate) mask_texture_array: Texture,
     pub(crate) color_texture_array: Texture,
     pub atlas_bind_group_layout: BindGroupLayout,
+    pub(crate) params_layout: BindGroupLayout,
     pub(crate) atlas_bind_group: BindGroup,
     
     pub params: Params,
@@ -464,14 +465,24 @@ impl TextRenderer {
         &self.text_renderer.vertex_buffer
     }
 
-    /// Get the atlas bind group for external rendering
-    pub fn atlas_bind_group(&self) -> &BindGroup {
-        &self.text_renderer.atlas_bind_group
+    /// Get the atlas bind group for external rendering.
+    pub fn atlas_bind_group(&self) -> BindGroup {
+        self.text_renderer.atlas_bind_group.clone()
     }
 
-    /// Get the params bind group for external rendering
-    pub fn params_bind_group(&self) -> &BindGroup {
-        &self.text_renderer.params_bind_group
+    /// Get the atlas bind group for external rendering.
+    pub fn atlas_bind_group_layout(&self) -> BindGroupLayout {
+        self.text_renderer.atlas_bind_group_layout.clone()
+    }
+
+    /// Get the params bind group for external rendering.
+    pub fn params_bind_group(&self) -> BindGroup {
+        self.text_renderer.params_bind_group.clone()
+    }
+
+    /// Get the params bind group for external rendering.
+    pub fn params_bind_group_layout(&self) -> BindGroupLayout {
+        self.text_renderer.params_layout.clone()
     }
 
     /// Get the quads buffer for external rendering
