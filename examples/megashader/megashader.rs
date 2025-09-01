@@ -241,7 +241,7 @@ impl winit::application::ApplicationHandler for Application {
     fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
         if self.state.is_none() {
             let window = Arc::new(event_loop.create_window(
-                Window::default_attributes().with_inner_size(PhysicalSize::new(800, 600))
+                Window::default_attributes().with_inner_size(PhysicalSize::new(800, 600)).with_resizable(false)
             ).unwrap());
             self.state = Some(State::new(window));
         }
