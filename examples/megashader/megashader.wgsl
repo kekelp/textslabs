@@ -17,9 +17,8 @@ struct Ellipse {
 
 struct TextQuad {
     pos: vec2<i32>,
-    pad: vec2<u32>,
-    dim: vec2<u32>,
-    uv_origin: vec2<u32>,
+    dim_packed: u32,
+    uv_origin_packed: u32,
     page_index: u32,
     color: u32,
     depth: f32,
@@ -103,16 +102,14 @@ fn vs_main(
         let text_quad = text_storage[shape_offset];
         
         let quad_pos = vec2f(text_quad.pos);
-        // let dim = split(text_quad.dim);
-        let dim = vec2f(text_quad.dim);
+        let dim = split(text_quad.dim_packed);
         
         // Calculate position using text renderer logic
         let local_pos = quad_pos + dim * coords;
         position = screen_to_clip(local_pos);
         
         // Calculate UV coordinates for text atlas
-        let uv_origin = vec2f(text_quad.uv_origin);
-        // let uv_origin = split(text_quad.uv_origin);
+        let uv_origin = split(text_quad.uv_origin_packed);
         let atlas_size = vec2f(textureDimensions(mask_atlas_texture, 0).xy);
         uv = (uv_origin + dim * coords) / atlas_size;
         

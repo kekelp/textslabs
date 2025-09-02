@@ -156,15 +156,14 @@ impl ContextlessTextRenderer {
             array_stride: std::mem::size_of::<Quad>() as wgpu::BufferAddress,
             step_mode: wgpu::VertexStepMode::Instance,
             attributes: &wgpu::vertex_attr_array![
-                0 => Sint32x2,
-                1 => Uint32x2,
-                2 => Uint32x2,
-                3 => Uint32x2,
-                4 => Uint32,
-                5 => Uint32,
-                6 => Float32,
-                7 => Uint32,
-                8 => Sint32x4,
+                0 => Sint32x2,    // pos
+                1 => Uint32,      // dim_packed
+                2 => Uint32,      // uv_origin_packed  
+                3 => Uint32,      // page_index
+                4 => Uint32,      // color
+                5 => Float32,     // depth
+                6 => Uint32,      // flags
+                7 => Sint32x4,    // clip_rect
             ],
         };
 

@@ -133,14 +133,13 @@ impl ContextlessTextRenderer {
 
         let quad = Quad {
             pos: [x0, y0],
-            dim: [(x1 - x0) as u32, (y1 - y0) as u32],
+            dim_packed: pack_u16_pair((x1 - x0) as u32, (y1 - y0) as u32),
             color,
-            uv_origin: [0, 0],
+            uv_origin_packed: pack_u16_pair(0, 0),
             depth: 0.0,
             flags: pack_flags(CONTENT_TYPE_DECORATION, false),
             clip_rect: [0, 0, 32767, 32767], // No clipping for decorations
             page_index: 0, // Decorations use the first mask page
-            pad: [0, 0]
         };
         self.quads.push(quad);
     }
@@ -196,15 +195,19 @@ fn quantize<const N: u8>(pos: f32) -> (i32, f32, SubpixelBin::<N>) {
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Zeroable, Pod)]
 pub struct Quad {
-    pub pos: [i32; 2],
-    pub pad: [u32; 2],
-    pub dim: [u32; 2],
-    pub uv_origin: [u32; 2],
-    pub page_index: u32, // Which texture array layer to sample from
-    pub color: u32,
-    pub depth: f32,
-    pub flags: u32,
-    pub clip_rect: [i32; 4], // x, y, width, height in pixels
+    pub pos: [i32; 2],                    // 8 bytes
+    pub dim_packed: u32,                  // 4 bytes - pack width,height as u16,u16  
+    pub uv_origin_packed: u32,            // 4 bytes - pack u,v as u16,u16
+    pub page_index: u32,                  // 4 bytes
+    pub color: u32,                       // 4 bytes  
+    pub depth: f32,                       // 4 bytes
+    pub flags: u32,                       // 4 bytes
+    pub clip_rect: [i32; 4],              // 16 bytes
+}
+
+// Helper functions to pack/unpack u16 pairs into u32
+fn pack_u16_pair(a: u32, b: u32) -> u32 {
+    (a & 0xFFFF) | ((b & 0xFFFF) << 16)
 }
 
 fn make_quad(glyph: &GlyphWithContext, stored_glyph: &StoredGlyph, depth: f32) -> Quad {
@@ -221,14 +224,13 @@ fn make_quad(glyph: &GlyphWithContext, stored_glyph: &StoredGlyph, depth: f32) -
     };
     return Quad {
         pos: [x, y],
-        dim: [size_x as u32, size_y as u32],
-        uv_origin: [uv_x as u32, uv_y as u32],
+        dim_packed: pack_u16_pair(size_x as u32, size_y as u32),
+        uv_origin_packed: pack_u16_pair(uv_x as u32, uv_y as u32),
         color,
         flags: pack_flags(flags, false), // No fade by default
         depth,
         clip_rect: [0, 0, 32767, 32767], // No clipping (will be set later)
-        page_index: stored_glyph.page as u32,
-        pad: [0, 0]
+        page_index: stored_glyph.page as u32
     };
 }
 
