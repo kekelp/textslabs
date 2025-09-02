@@ -23,6 +23,7 @@ struct TextQuad {
     color: u32,
     depth: f32,
     flags_and_page: u32,
+    pad: u32,
 }
 
 struct Params {

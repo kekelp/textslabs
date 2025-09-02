@@ -139,6 +139,7 @@ impl ContextlessTextRenderer {
             color,
             depth: 0.0,
             flags_and_page: pack_flags_and_page(pack_flags(CONTENT_TYPE_DECORATION, false), 0),
+            pad: 0,
         };
         self.quads.push(quad);
     }
@@ -201,6 +202,7 @@ pub struct Quad {
     pub color: u32,                       // 4 bytes  
     pub depth: f32,                       // 4 bytes
     pub flags_and_page: u32,              // 4 bytes - flags (24 bits) + page_index (8 bits)
+    pub pad: u32,                         // 4 bytes - padding to get to 40 bytes
 }
 
 // Helper functions to pack/unpack u16 pairs into u32
@@ -249,6 +251,7 @@ fn make_quad(glyph: &GlyphWithContext, stored_glyph: &StoredGlyph, depth: f32) -
         color,
         depth,
         flags_and_page: pack_flags_and_page(pack_flags(flags, false), stored_glyph.page as u32),
+        pad: 0,
     };
 }
 

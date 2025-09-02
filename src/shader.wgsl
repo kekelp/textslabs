@@ -7,6 +7,7 @@ struct VertexInput {
     @location(4) color: u32,
     @location(5) depth: f32,
     @location(6) flags_and_page: u32,
+    @location(7) pad: u32,
 }
 
 struct VertexOutput {
