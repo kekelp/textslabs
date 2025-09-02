@@ -17,13 +17,12 @@ struct Ellipse {
 
 struct TextQuad {
     pos: vec2<i32>,
+    clip_rect_packed: vec2<u32>,
     dim_packed: u32,
     uv_origin_packed: u32,
-    page_index: u32,
     color: u32,
     depth: f32,
-    flags: u32,
-    clip_rect: vec4<i32>,
+    flags_and_page: u32,
 }
 
 struct Params {
@@ -121,8 +120,8 @@ fn vs_main(
             f32((text_quad.color & 0x000000ffu))        / 255.0,
         );
         
-        text_flags = text_quad.flags;
-        page_index = text_quad.page_index;
+        text_flags = unpack_flags(text_quad.flags_and_page);
+        page_index = unpack_page_index(text_quad.flags_and_page);
         
     } else {
         // Unknown shape type, draw some random crap
@@ -143,6 +142,14 @@ fn vs_main(
 
 fn get_content_type(flags: u32) -> u32 {
     return flags & 0x0Fu;
+}
+
+fn unpack_flags(flags_and_page: u32) -> u32 {
+    return flags_and_page & 0xFFFFFFu;
+}
+
+fn unpack_page_index(flags_and_page: u32) -> u32 {
+    return (flags_and_page >> 24u) & 0xFFu;
 }
 
 @fragment

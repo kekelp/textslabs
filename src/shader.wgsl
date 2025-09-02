@@ -1,13 +1,12 @@
 struct VertexInput {
     @builtin(vertex_index) idx: u32,
     @location(0) pos: vec2<i32>,
-    @location(1) dim_packed: u32,
-    @location(2) uv_origin_packed: u32,
-    @location(3) page_index: u32,
+    @location(1) clip_rect_packed: vec2<u32>,
+    @location(2) dim_packed: u32,
+    @location(3) uv_origin_packed: u32,
     @location(4) color: u32,
     @location(5) depth: f32,
-    @location(6) flags: u32,
-    @location(7) clip_rect: vec4<i32>,
+    @location(6) flags_and_page: u32,
 }
 
 struct VertexOutput {
@@ -54,12 +53,29 @@ fn split(u: u32) -> vec2<f32> {
     ));
 }
 
+fn split_i16(u: u32) -> vec2<f32> {
+    let a = i32(u & 0x0000ffffu);
+    let b = i32((u & 0xffff0000u) >> 16u);
+    // Convert from u16 bit pattern to i16 values
+    let a_i16 = select(a, a - 65536, a >= 32768);
+    let b_i16 = select(b, b - 65536, b >= 32768);
+    return vec2f(f32(a_i16), f32(b_i16));
+}
+
 fn get_content_type(flags: u32) -> u32 {
     return flags & 0x0Fu;
 }
 
 fn get_fade_enabled(flags: u32) -> bool {
     return (flags & (1u << 4u)) != 0u;
+}
+
+fn unpack_flags(flags_and_page: u32) -> u32 {
+    return flags_and_page & 0xFFFFFFu;
+}
+
+fn unpack_page_index(flags_and_page: u32) -> u32 {
+    return (flags_and_page >> 24u) & 0xFFu;
 }
 
 
@@ -76,8 +92,10 @@ fn vs_main(input: VertexInput) -> VertexOutput {
     let dim = split(input.dim_packed);
     let quad_pos = vec2f(input.pos);
     
-    // Apply clipping in vertex shader
-    let clip_rect = vec4<f32>(input.clip_rect);
+    // Apply clipping in vertex shader - unpack i16 pairs
+    let clip_xy = split_i16(input.clip_rect_packed.x);
+    let clip_wh = split_i16(input.clip_rect_packed.y);
+    let clip_rect = vec4<f32>(clip_xy.x, clip_xy.y, clip_wh.x, clip_wh.y);
     
     // Calculate original quad bounds
     let quad_x0 = quad_pos.x;
@@ -121,12 +139,15 @@ fn vs_main(input: VertexInput) -> VertexOutput {
         f32((input.color & 0x000000ffu))        / 255.0,
     );
 
-    vert_output.flags = input.flags;
+    let flags = unpack_flags(input.flags_and_page);
+    let page_index = unpack_page_index(input.flags_and_page);
+    
+    vert_output.flags = flags;
     vert_output.quad_pos = coords;
     vert_output.quad_size = clipped_dim;
     vert_output.clip_rect = clip_rect;
     vert_output.screen_pos = clipped_pos;
-    vert_output.page_index = input.page_index;
+    vert_output.page_index = page_index;
 
     return vert_output;
 }

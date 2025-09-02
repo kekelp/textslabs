@@ -157,13 +157,12 @@ impl ContextlessTextRenderer {
             step_mode: wgpu::VertexStepMode::Instance,
             attributes: &wgpu::vertex_attr_array![
                 0 => Sint32x2,    // pos
-                1 => Uint32,      // dim_packed
-                2 => Uint32,      // uv_origin_packed  
-                3 => Uint32,      // page_index
+                1 => Uint32x2,    // clip_rect_packed
+                2 => Uint32,      // dim_packed
+                3 => Uint32,      // uv_origin_packed  
                 4 => Uint32,      // color
                 5 => Float32,     // depth
-                6 => Uint32,      // flags
-                7 => Sint32x4,    // clip_rect
+                6 => Uint32,      // flags_and_page
             ],
         };
 

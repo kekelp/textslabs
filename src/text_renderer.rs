@@ -133,13 +133,12 @@ impl ContextlessTextRenderer {
 
         let quad = Quad {
             pos: [x0, y0],
+            clip_rect_packed: [pack_i16_pair(0, 0), pack_i16_pair(32767, 32767)], // No clipping for decorations
             dim_packed: pack_u16_pair((x1 - x0) as u32, (y1 - y0) as u32),
-            color,
             uv_origin_packed: pack_u16_pair(0, 0),
+            color,
             depth: 0.0,
-            flags: pack_flags(CONTENT_TYPE_DECORATION, false),
-            clip_rect: [0, 0, 32767, 32767], // No clipping for decorations
-            page_index: 0, // Decorations use the first mask page
+            flags_and_page: pack_flags_and_page(pack_flags(CONTENT_TYPE_DECORATION, false), 0),
         };
         self.quads.push(quad);
     }
@@ -196,19 +195,39 @@ fn quantize<const N: u8>(pos: f32) -> (i32, f32, SubpixelBin::<N>) {
 #[derive(Clone, Copy, Debug, Zeroable, Pod)]
 pub struct Quad {
     pub pos: [i32; 2],                    // 8 bytes
+    pub clip_rect_packed: [u32; 2],       // 8 bytes - pack i16 pairs into u32s
     pub dim_packed: u32,                  // 4 bytes - pack width,height as u16,u16  
     pub uv_origin_packed: u32,            // 4 bytes - pack u,v as u16,u16
-    pub page_index: u32,                  // 4 bytes
     pub color: u32,                       // 4 bytes  
     pub depth: f32,                       // 4 bytes
-    pub flags: u32,                       // 4 bytes
-    pub clip_rect: [i32; 4],              // 16 bytes
+    pub flags_and_page: u32,              // 4 bytes - flags (24 bits) + page_index (8 bits)
 }
 
 // Helper functions to pack/unpack u16 pairs into u32
 fn pack_u16_pair(a: u32, b: u32) -> u32 {
     (a & 0xFFFF) | ((b & 0xFFFF) << 16)
 }
+
+// Helper functions to pack/unpack i16 pairs into u32
+fn pack_i16_pair(a: i32, b: i32) -> u32 {
+    ((a as u16) as u32) | (((b as u16) as u32) << 16)
+}
+
+// Pack flags (24 bits) and page_index (8 bits) into u32
+fn pack_flags_and_page(flags: u32, page_index: u32) -> u32 {
+    (flags & 0xFFFFFF) | ((page_index & 0xFF) << 24)
+}
+
+// Unpack flags from packed field
+fn unpack_flags_rust(flags_and_page: u32) -> u32 {
+    flags_and_page & 0xFFFFFF
+}
+
+// Unpack page_index from packed field  
+fn unpack_page_index_rust(flags_and_page: u32) -> u32 {
+    (flags_and_page >> 24) & 0xFF
+}
+
 
 fn make_quad(glyph: &GlyphWithContext, stored_glyph: &StoredGlyph, depth: f32) -> Quad {
     let y = glyph.quantized_pos_y - stored_glyph.placement_top as i32;
@@ -224,13 +243,12 @@ fn make_quad(glyph: &GlyphWithContext, stored_glyph: &StoredGlyph, depth: f32) -
     };
     return Quad {
         pos: [x, y],
+        clip_rect_packed: [pack_i16_pair(0, 0), pack_i16_pair(32767, 32767)], // No clipping (will be set later)
         dim_packed: pack_u16_pair(size_x as u32, size_y as u32),
         uv_origin_packed: pack_u16_pair(uv_x as u32, uv_y as u32),
         color,
-        flags: pack_flags(flags, false), // No fade by default
         depth,
-        clip_rect: [0, 0, 32767, 32767], // No clipping (will be set later)
-        page_index: stored_glyph.page as u32
+        flags_and_page: pack_flags_and_page(pack_flags(flags, false), stored_glyph.page as u32),
     };
 }
 
@@ -246,22 +264,26 @@ fn clip_quad(quad: Quad, left: f32, top: f32, clip_rect: Option<parley::Rect>, f
         let clip_y0 = top + clip.y0 as i32;
         let clip_y1 = top + clip.y1 as i32;
 
-        // Set the GPU clip rectangle
-        quad.clip_rect = [
-            clip_x0 as i32,
-            clip_y0 as i32,
-            clip_x1 as i32,
-            clip_y1 as i32,
+        // Set the GPU clip rectangle  
+        let clamped_x0 = clip_x0.clamp(i16::MIN as i32, i16::MAX as i32);
+        let clamped_y0 = clip_y0.clamp(i16::MIN as i32, i16::MAX as i32);
+        let clamped_x1 = clip_x1.clamp(i16::MIN as i32, i16::MAX as i32);
+        let clamped_y1 = clip_y1.clamp(i16::MIN as i32, i16::MAX as i32);
+        quad.clip_rect_packed = [
+            pack_i16_pair(clamped_x0, clamped_y0),
+            pack_i16_pair(clamped_x1, clamped_y1)
         ];
 
-        // Extract content type from existing flags
-        let content_type = quad.flags & 0x0F;
+        // Extract content type and page from existing packed field
+        let existing_flags = unpack_flags_rust(quad.flags_and_page);
+        let page_index = unpack_page_index_rust(quad.flags_and_page);
+        let content_type = existing_flags & 0x0F;
         
-        // Pack flags with fade enabled boolean
-        quad.flags = pack_flags(content_type, fade);
+        // Update flags with fade bit, keeping same page
+        quad.flags_and_page = pack_flags_and_page(pack_flags(content_type, fade), page_index);
     } else {
         // No clipping - use maximum clip rectangle
-        quad.clip_rect = [0, 0, 32767, 32767];
+        quad.clip_rect_packed = [pack_i16_pair(0, 0), pack_i16_pair(32767, 32767)];
     }
     
     Some(quad)
@@ -618,7 +640,7 @@ impl ContextlessTextRenderer {
         // Since decorations are now mixed with regular quads, 
         // we need to filter them out by content type
         self.quads.retain(|quad| {
-            get_content_type(quad.flags) != CONTENT_TYPE_DECORATION
+            get_content_type(unpack_flags_rust(quad.flags_and_page)) != CONTENT_TYPE_DECORATION
         });
         self.needs_gpu_sync = true;
     }
