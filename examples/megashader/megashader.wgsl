@@ -16,14 +16,13 @@ struct Ellipse {
 }
 
 struct TextQuad {
-    pos: vec2<i32>,
+    pos_packed: u32,
     clip_rect_packed: vec2<u32>,
     dim_packed: u32,
     uv_origin_packed: u32,
     color: u32,
     depth: f32,
     flags_and_page: u32,
-    pad: u32,
 }
 
 struct Params {
@@ -101,7 +100,7 @@ fn vs_main(
     } else if (shape_kind == SHAPE_TEXT) {
         let text_quad = text_storage[shape_offset];
         
-        let quad_pos = vec2f(text_quad.pos);
+        let quad_pos = split(text_quad.pos_packed);
         let dim = split(text_quad.dim_packed);
         
         // Calculate position using text renderer logic

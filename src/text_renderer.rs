@@ -132,14 +132,13 @@ impl ContextlessTextRenderer {
         }
 
         let quad = Quad {
-            pos: [x0, y0],
+            pos_packed: pack_i32_pair_as_u16(x0, y0),
             clip_rect_packed: [pack_i16_pair(0, 0), pack_i16_pair(32767, 32767)], // No clipping for decorations
             dim_packed: pack_u16_pair((x1 - x0) as u32, (y1 - y0) as u32),
             uv_origin_packed: pack_u16_pair(0, 0),
             color,
             depth: 0.0,
             flags_and_page: pack_flags_and_page(pack_flags(CONTENT_TYPE_DECORATION, false), 0),
-            pad: 0,
         };
         self.quads.push(quad);
     }
@@ -195,19 +194,47 @@ fn quantize<const N: u8>(pos: f32) -> (i32, f32, SubpixelBin::<N>) {
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Zeroable, Pod)]
 pub struct Quad {
-    pub pos: [i32; 2],                    // 8 bytes
+    pub pos_packed: u32,                  // 4 bytes - pack x,y as u16,u16
     pub clip_rect_packed: [u32; 2],       // 8 bytes - pack i16 pairs into u32s
     pub dim_packed: u32,                  // 4 bytes - pack width,height as u16,u16  
     pub uv_origin_packed: u32,            // 4 bytes - pack u,v as u16,u16
     pub color: u32,                       // 4 bytes  
     pub depth: f32,                       // 4 bytes
     pub flags_and_page: u32,              // 4 bytes - flags (24 bits) + page_index (8 bits)
-    pub pad: u32,                         // 4 bytes - padding to get to 40 bytes
+}
+
+impl Quad {
+    /// Adjust the position by the given delta, using saturating arithmetic
+    pub fn adjust_position(&mut self, delta_x: i32, delta_y: i32) {
+        let (x, y) = unpack_pos_as_i32(self.pos_packed);
+        let new_x = x - delta_x;  // Assuming the original code subtracts
+        let new_y = y - delta_y;
+        self.pos_packed = pack_i32_pair_as_u16(new_x, new_y);
+    }
 }
 
 // Helper functions to pack/unpack u16 pairs into u32
 fn pack_u16_pair(a: u32, b: u32) -> u32 {
     (a & 0xFFFF) | ((b & 0xFFFF) << 16)
+}
+
+// Saturating cast from i32 to u16 (clamp negatives to 0)
+fn saturating_u16_cast(value: i32) -> u16 {
+    value.clamp(0, u16::MAX as i32) as u16
+}
+
+// Pack i32 coordinates as u16 pairs with saturating cast
+fn pack_i32_pair_as_u16(a: i32, b: i32) -> u32 {
+    let a_u16 = saturating_u16_cast(a);
+    let b_u16 = saturating_u16_cast(b);
+    (a_u16 as u32) | ((b_u16 as u32) << 16)
+}
+
+// Unpack u32 to two i32 coordinates (u16 -> i32)
+fn unpack_pos_as_i32(packed: u32) -> (i32, i32) {
+    let x = (packed & 0xFFFF) as i32;
+    let y = ((packed >> 16) & 0xFFFF) as i32;
+    (x, y)
 }
 
 // Helper functions to pack/unpack i16 pairs into u32
@@ -244,14 +271,13 @@ fn make_quad(glyph: &GlyphWithContext, stored_glyph: &StoredGlyph, depth: f32) -
         Content::SubpixelMask => unreachable!(),
     };
     return Quad {
-        pos: [x, y],
+        pos_packed: pack_i32_pair_as_u16(x, y),
         clip_rect_packed: [pack_i16_pair(0, 0), pack_i16_pair(32767, 32767)], // No clipping (will be set later)
         dim_packed: pack_u16_pair(size_x as u32, size_y as u32),
         uv_origin_packed: pack_u16_pair(uv_x as u32, uv_y as u32),
         color,
         depth,
         flags_and_page: pack_flags_and_page(pack_flags(flags, false), stored_glyph.page as u32),
-        pad: 0,
     };
 }
 

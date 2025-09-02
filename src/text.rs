@@ -1753,8 +1753,7 @@ fn move_quads_for_scroll(text_renderer: &mut TextRenderer, quad_storage: &mut Qu
 
     if let Some((start, end)) = quad_storage.quad_range {
         for quad in &mut text_renderer.text_renderer.quads[start..end] {
-            quad.pos[0] -= delta_x_rounded as i32;
-            quad.pos[1] -= delta_y_rounded as i32;
+            quad.adjust_position(delta_x_rounded as i32, delta_y_rounded as i32);
         }
     }
 

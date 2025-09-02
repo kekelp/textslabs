@@ -1,13 +1,12 @@
 struct VertexInput {
     @builtin(vertex_index) idx: u32,
-    @location(0) pos: vec2<i32>,
+    @location(0) pos_packed: u32,
     @location(1) clip_rect_packed: vec2<u32>,
     @location(2) dim_packed: u32,
     @location(3) uv_origin_packed: u32,
     @location(4) color: u32,
     @location(5) depth: f32,
     @location(6) flags_and_page: u32,
-    @location(7) pad: u32,
 }
 
 struct VertexOutput {
@@ -91,7 +90,7 @@ fn vs_main(input: VertexInput) -> VertexOutput {
     let coords = vec2f(ucoords);
 
     let dim = split(input.dim_packed);
-    let quad_pos = vec2f(input.pos);
+    let quad_pos = split(input.pos_packed);
     
     // Apply clipping in vertex shader - unpack i16 pairs
     let clip_xy = split_i16(input.clip_rect_packed.x);
