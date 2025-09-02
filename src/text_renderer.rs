@@ -194,8 +194,8 @@ fn quantize<const N: u8>(pos: f32) -> (i32, f32, SubpixelBin::<N>) {
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Zeroable, Pod)]
 pub struct Quad {
-    pub pos_packed: u32,                  // 4 bytes - pack x,y as u16,u16
     pub clip_rect_packed: [u32; 2],       // 8 bytes - pack i16 pairs into u32s
+    pub pos_packed: u32,                  // 4 bytes - pack x,y as u16,u16
     pub dim_packed: u32,                  // 4 bytes - pack width,height as u16,u16  
     pub uv_origin_packed: u32,            // 4 bytes - pack u,v as u16,u16
     pub color: u32,                       // 4 bytes  

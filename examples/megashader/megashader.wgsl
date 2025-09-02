@@ -16,8 +16,8 @@ struct Ellipse {
 }
 
 struct TextQuad {
-    pos_packed: u32,
     clip_rect_packed: vec2<u32>,
+    pos_packed: u32,
     dim_packed: u32,
     uv_origin_packed: u32,
     color: u32,

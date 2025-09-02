@@ -1,7 +1,7 @@
 struct VertexInput {
     @builtin(vertex_index) idx: u32,
-    @location(0) pos_packed: u32,
-    @location(1) clip_rect_packed: vec2<u32>,
+    @location(0) clip_rect_packed: vec2<u32>,
+    @location(1) pos_packed: u32,
     @location(2) dim_packed: u32,
     @location(3) uv_origin_packed: u32,
     @location(4) color: u32,
