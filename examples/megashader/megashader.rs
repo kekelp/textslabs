@@ -48,10 +48,10 @@ struct State {
     params_bind_group: wgpu::BindGroup,
     ellipse_bind_group: wgpu::BindGroup,
 
-    text_box_1: TextBoxHandle,
-    text_box_2: TextBoxHandle,
-    text_box_3: TextBoxHandle,
-    text_box_4: TextBoxHandle,
+    text_edit_1: TextEditHandle,
+    text_edit_2: TextEditHandle,
+    text_edit_3: TextEditHandle,
+    text_edit_4: TextEditHandle,
 
     ellipses: Vec<Ellipse>,
     shapes: Vec<Shape>,
@@ -202,10 +202,10 @@ impl State {
             "...",
         ];
 
-        let text_box_1 = text.add_text_box(texts[0], pos[0], (200.0, 200.0), depths[0]);
-        let text_box_2 = text.add_text_box(texts[1], pos[1], (200.0, 200.0), depths[1]);
-        let text_box_3 = text.add_text_box(texts[2], pos[2], (200.0, 200.0), depths[2]);
-        let text_box_4 = text.add_text_box(texts[3], pos[3], (200.0, 200.0), depths[3]);
+        let text_edit_1 = text.add_text_edit(texts[0].to_string(), pos[0], (200.0, 200.0), depths[0]);
+        let text_edit_2 = text.add_text_edit(texts[1].to_string(), pos[1], (200.0, 200.0), depths[1]);
+        let text_edit_3 = text.add_text_edit(texts[2].to_string(), pos[2], (200.0, 200.0), depths[2]);
+        let text_edit_4 = text.add_text_edit(texts[3].to_string(), pos[3], (200.0, 200.0), depths[3]);
 
         let mut ellipses = Vec::with_capacity(5);
         
@@ -218,11 +218,11 @@ impl State {
         
         let shapes = Vec::with_capacity(20);
         
-        Self { window, device, queue, surface, pipeline, shape_buffer: vertex_buffer, ellipse_buffer, text_bind_group, params_bind_group, ellipse_bind_group, ellipses, shapes, text, text_renderer, text_box_1, text_box_2, text_box_3, text_box_4 }
+        Self { window, device, queue, surface, pipeline, shape_buffer: vertex_buffer, ellipse_buffer, text_bind_group, params_bind_group, ellipse_bind_group, ellipses, shapes, text, text_renderer, text_edit_1, text_edit_2, text_edit_3, text_edit_4 }
     }
 
     // Partial borrows moment. It's so stupid it's not even funny anymore.
-    fn draw_text_box(text_box: &TextBox, shapes: &mut Vec<Shape>) {
+    fn draw_text_edit(text_box: &TextEdit, shapes: &mut Vec<Shape>) {
         let QuadRanges { glyph_range, decorations_range } = text_box.quad_range();
         for q in (glyph_range.0)..(glyph_range.1) {
             shapes.push( Shape { shape_kind: TEXT, shape_offset: q as u32 } );
@@ -240,13 +240,13 @@ impl State {
 
         // Push everything to the shape buffer in order.
 
-        Self::draw_text_box(&self.text.get_text_box(&self.text_box_1), &mut self.shapes);
+        Self::draw_text_edit(&self.text.get_text_edit(&self.text_edit_1), &mut self.shapes);
         self.shapes.push( Shape { shape_kind: ELLIPSE, shape_offset: 0 } );
-        Self::draw_text_box(&self.text.get_text_box(&self.text_box_2), &mut self.shapes);
+        Self::draw_text_edit(&self.text.get_text_edit(&self.text_edit_2), &mut self.shapes);
         self.shapes.push( Shape { shape_kind: ELLIPSE, shape_offset: 1 } );
-        Self::draw_text_box(&self.text.get_text_box(&self.text_box_3), &mut self.shapes);
+        Self::draw_text_edit(&self.text.get_text_edit(&self.text_edit_3), &mut self.shapes);
         self.shapes.push( Shape { shape_kind: ELLIPSE, shape_offset: 2 } );
-        Self::draw_text_box(&self.text.get_text_box(&self.text_box_4), &mut self.shapes);
+        Self::draw_text_edit(&self.text.get_text_edit(&self.text_edit_4), &mut self.shapes);
         self.shapes.push( Shape { shape_kind: ELLIPSE, shape_offset: 3 } );
 
 

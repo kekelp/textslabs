@@ -1285,6 +1285,11 @@ impl_for_textedit_and_texteditmut! {
     pub fn selection(&self) -> Selection {
         self.text_box.selection()
     }
+
+    /// Returns the quad ranges for this text edit (glyph and decoration ranges).
+    pub fn quad_range(&self) -> QuadRanges {
+        self.text_box.quad_range_impl(true)
+    }
 }
 
 /// A struct that refers to a text edit box stored inside a [`Text`] struct.

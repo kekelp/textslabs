@@ -62,6 +62,15 @@ fn split(u: u32) -> vec2<f32> {
     ));
 }
 
+fn split_i16(u: u32) -> vec2<f32> {
+    let a = i32(u & 0x0000ffffu);
+    let b = i32((u & 0xffff0000u) >> 16u);
+    // Convert from u16 bit pattern to i16 values
+    let a_i16 = select(a, a - 65536, a >= 32768);
+    let b_i16 = select(b, b - 65536, b >= 32768);
+    return vec2f(f32(a_i16), f32(b_i16));
+}
+
 @vertex
 fn vs_main(
     @builtin(vertex_index) vertex_index: u32,
@@ -103,14 +112,39 @@ fn vs_main(
         let quad_pos = split(text_quad.pos_packed);
         let dim = split(text_quad.dim_packed);
         
-        // Calculate position using text renderer logic
-        let local_pos = quad_pos + dim * coords;
-        position = screen_to_clip(local_pos);
+        // Apply clipping - unpack i16 pairs
+        let clip_xy = split_i16(text_quad.clip_rect_packed.x);
+        let clip_wh = split_i16(text_quad.clip_rect_packed.y);
+        let clip_rect = vec4<f32>(clip_xy.x, clip_xy.y, clip_wh.x, clip_wh.y);
         
-        // Calculate UV coordinates for text atlas
+        // Calculate original quad bounds
+        let quad_x0 = quad_pos.x;
+        let quad_y0 = quad_pos.y;
+        let quad_x1 = quad_x0 + dim.x;
+        let quad_y1 = quad_y0 + dim.y;
+        
+        // Calculate clipped bounds - ensure we're within the clip rectangle on all sides
+        let clipped_x0 = max(quad_x0, clip_rect.x);  
+        let clipped_x1 = max(clipped_x0, min(quad_x1, clip_rect.z));  // Ensure x1 >= x0
+        let clipped_y0 = max(quad_y0, clip_rect.y);  
+        let clipped_y1 = max(clipped_y0, min(quad_y1, clip_rect.w));  // Ensure y1 >= y0
+        
+        // Calculate how much was clipped from left/top
+        let left_clip = clipped_x0 - quad_x0;
+        let top_clip = clipped_y0 - quad_y0;
+        
+        // Calculate clipped dimensions (guaranteed to be non-negative)
+        let clipped_dim = vec2f(clipped_x1 - clipped_x0, clipped_y1 - clipped_y0);
+        
+        // Use clipped position and dimensions
+        let clipped_pos = vec2f(clipped_x0, clipped_y0) + clipped_dim * coords;
+        position = screen_to_clip(clipped_pos);
+        
+        // Adjust UV coordinates for clipped area
         let uv_origin = split(text_quad.uv_origin_packed);
+        let adjusted_uv_origin = uv_origin + vec2f(left_clip, top_clip);
         let atlas_size = vec2f(textureDimensions(mask_atlas_texture, 0).xy);
-        uv = (uv_origin + dim * coords) / atlas_size;
+        uv = (adjusted_uv_origin + clipped_dim * coords) / atlas_size;
         
         // Decode color from packed u32
         color = vec4<f32>(

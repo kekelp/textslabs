@@ -281,10 +281,15 @@ impl_for_textbox_and_textboxmut! {
     /// 
     /// Must be called after [`Text::prepare_all()`].
     pub fn quad_range(&self) -> QuadRanges {
+        self.quad_range_impl(false)
+    }
+
+    pub(crate) fn quad_range_impl(&self, edit: bool) -> QuadRanges {
         debug_assert!(self.inner.quad_storage.quad_range.is_some(), "Quad range called before this text box was prepared.");
         let glyph_range = self.inner.quad_storage.quad_range.unwrap_or_else(|| (0,0));
         let is_focused = match self.shared.focused {
-            Some(AnyBox::TextBox(f)) => f == self.key,
+            Some(AnyBox::TextBox(f)) if !edit => f == self.key,
+            Some(AnyBox::TextEdit(f)) if edit => f == self.key,
             _ => false,
         };
         let decorations_range = if is_focused {
