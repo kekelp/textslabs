@@ -51,6 +51,7 @@ struct State {
     text_box_1: TextBoxHandle,
     text_box_2: TextBoxHandle,
     text_box_3: TextBoxHandle,
+    text_box_4: TextBoxHandle,
 
     ellipses: Vec<Ellipse>,
     shapes: Vec<Shape>,
@@ -113,7 +114,7 @@ impl State {
         let vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Vertex Buffer"),
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-            size: 1024,
+            size: 64 * 1024,
             mapped_at_creation: false,
         });
 
@@ -190,22 +191,34 @@ impl State {
             cache: None,
         });
 
-        // Add some text
-        let text_box_1 = text.add_text_box("1234567890ABCDEFG", (10.0, 10.0), (500.0, 500.0), 0.0);
-        let text_box_2 = text.add_text_box("Hello, world!", (50.0, 50.0), (500.0, 500.0), 0.0);
-        let text_box_3 = text.add_text_box("Cope, and sneed!", (100.0, 100.0), (500.0, 500.0), 0.0);
+        // This functional stuff looked better in my head. Many such cases, I think.
+        let pos: Vec<(f64, f64)> = (0..5).map(|x| 30.0 + x as f64 * 130.0).map(|x| (x,x)).collect();
+        let depths: Vec<f32> = (0..5).map(|x| 1.0 - 0.1 * x as f32).collect();
+        let texts = [
+            "ヘッケはこれらのL-函数が全複素平面へ有理型接続を持ち、指標が自明であるときには s = 1 でオーダー 1 である極を持ち、それ以外では解析的であることを証明した。原始ヘッケ指標（原始ディリクレ指標に同じ方法である modulus に相対的に定義された）に対し、ヘッケは、これらのL-函数が指標の L-函数の函数等式を満たし、L-函",
+            "Мунди деленит молестиае усу ад, пертинах глориатур диссентиас ет нец. Ессент иудицабит маиестатис яуи ад, про ут дицо лорем легере. Вис те цоммодо сцрипта цорпора, тритани интеллегат аргументум цу еум, меи те яуем феугаит. При дисцере интеллегат ат, аеяуе афферт ф",
+            " “ , A “-“ ‘ » “ ΄ οὐρανῷ ὀμνύει ἐν τῷ θρόνῳ τοῦ θεοῦ καὶ ἐν τῷ καθημένῳ Ἢ ς .« « ͵ : . ’ 3 ~ + ee, e ~ “ A ΄- -23 ἐπάνω αὐτοῦ. Ουαὶ υμῖν, γραμματεῖς καὶ Φαρισαῖοι ὑποOe 3 9° “ ν ἐᾳφ Ν i Ν  κριταί, OTL ἀποδεκατοῦτε TO ἡδύοσμον Kal TO ἄνηθον καὶ TO ,ὔ A Ε] a A , ~ ’ ‘ ’ κύμινον, καὶ ἀφήκατε τὰ βαρύτερα τοῦ νόμου, τὴν κρίσιν Ν  om” ‘ XN 4 “",
+            "s ualidis ingentem viribus hastam  in latus inque feri curvam compagibus alvum contorsit. stetit illa tremens, uteroque recusso insonuere cavae gemitumque dedere cavernae. et, si fata deum, si mens non laeva fuisset, impulerat ferro Argolicas foedare latebras, Troiaque nunc staret, Priamique arx alta maneres. Ecce, manus iuvenem interea post terga revinctum pastores magno ad regem clamore trahebant Dardanidae, qui se ignotum venientibus ultro, hoc ipsum ut ",
+            "...",
+        ];
+
+        let text_box_1 = text.add_text_box(texts[0], pos[0], (200.0, 200.0), depths[0]);
+        let text_box_2 = text.add_text_box(texts[1], pos[1], (200.0, 200.0), depths[1]);
+        let text_box_3 = text.add_text_box(texts[2], pos[2], (200.0, 200.0), depths[2]);
+        let text_box_4 = text.add_text_box(texts[3], pos[3], (200.0, 200.0), depths[3]);
 
         let mut ellipses = Vec::with_capacity(5);
         
-        ellipses.push(Ellipse::new(100.0, 100.0, 80.0, 80.0, [1.0, 0.0, 0.0, 1.0]));
-        ellipses.push(Ellipse::new(300.0, 150.0, 120.0, 60.0, [0.0, 1.0, 0.0, 0.8]));
-        ellipses.push(Ellipse::new(200.0, 300.0, 100.0, 100.0, [0.0, 0.0, 1.0, 0.6]));
-        ellipses.push(Ellipse::new(450.0, 250.0, 90.0, 140.0, [1.0, 1.0, 0.0, 0.9]));
-        ellipses.push(Ellipse::new(50.0, 400.0,  160.0, 80.0, [1.0, 0.0, 1.0, 0.7]));
+        let pos: Vec<(f32, f32)> = (0..6).map(|x| 70.0 + x as f32 * 130.0).map(|x| (x,x)).collect();
+
+        ellipses.push(Ellipse::new(pos[0].0, pos[0].1, 260.0, 260.0, [1.0, 0.1, 0.2, 0.8]));
+        ellipses.push(Ellipse::new(pos[1].0, pos[1].1, 260.0, 260.0, [0.1, 1.0, 0.2, 0.8]));
+        ellipses.push(Ellipse::new(pos[2].0, pos[2].1, 260.0, 260.0, [0.2, 0.3, 1.0, 0.8]));
+        ellipses.push(Ellipse::new(pos[3].0, pos[3].1, 260.0, 260.0, [1.0, 0.2, 0.8, 0.8]));  
         
-        let shapes = Vec::with_capacity(5);
+        let shapes = Vec::with_capacity(20);
         
-        Self { window, device, queue, surface, pipeline, shape_buffer: vertex_buffer, ellipse_buffer, text_bind_group, params_bind_group, ellipse_bind_group, ellipses, shapes, text, text_renderer, text_box_1, text_box_2, text_box_3 }
+        Self { window, device, queue, surface, pipeline, shape_buffer: vertex_buffer, ellipse_buffer, text_bind_group, params_bind_group, ellipse_bind_group, ellipses, shapes, text, text_renderer, text_box_1, text_box_2, text_box_3, text_box_4 }
     }
 
     // Partial borrows moment. It's so stupid it's not even funny anymore.
@@ -223,21 +236,19 @@ impl State {
         self.text.prepare_all_for_window(&mut self.text_renderer, &self.window);
         self.text_renderer.load_to_gpu(&self.device, &self.queue);
 
-        // rebuild shapes
         self.shapes.clear();
 
-        self.shapes.push( Shape { shape_kind: ELLIPSE, shape_offset: 0 } );
-        self.shapes.push( Shape { shape_kind: ELLIPSE, shape_offset: 1 } );
+        // Push everything to the shape buffer in order.
 
-        // Partial fucking borrows
         Self::draw_text_box(&self.text.get_text_box(&self.text_box_1), &mut self.shapes);
+        self.shapes.push( Shape { shape_kind: ELLIPSE, shape_offset: 0 } );
         Self::draw_text_box(&self.text.get_text_box(&self.text_box_2), &mut self.shapes);
+        self.shapes.push( Shape { shape_kind: ELLIPSE, shape_offset: 1 } );
         Self::draw_text_box(&self.text.get_text_box(&self.text_box_3), &mut self.shapes);
-
         self.shapes.push( Shape { shape_kind: ELLIPSE, shape_offset: 2 } );
+        Self::draw_text_box(&self.text.get_text_box(&self.text_box_4), &mut self.shapes);
         self.shapes.push( Shape { shape_kind: ELLIPSE, shape_offset: 3 } );
 
-        self.queue.write_buffer(&self.shape_buffer, 0, bytemuck::cast_slice(&self.shapes));
 
         self.queue.write_buffer(&self.shape_buffer, 0, bytemuck::cast_slice(&self.shapes));
         self.queue.write_buffer(&self.ellipse_buffer, 0, bytemuck::cast_slice(&self.ellipses));
@@ -293,7 +304,7 @@ impl winit::application::ApplicationHandler for Application {
     fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
         if self.state.is_none() {
             let window = Arc::new(event_loop.create_window(
-                Window::default_attributes().with_inner_size(PhysicalSize::new(800, 600)).with_resizable(false)
+                Window::default_attributes().with_inner_size(PhysicalSize::new(800, 800)).with_resizable(false)
             ).unwrap());
             self.state = Some(State::new(window));
         }
