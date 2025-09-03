@@ -76,13 +76,15 @@ pub struct TextBoxMut<'a> {
 pub struct TextBox<'a> {
     pub(crate) inner: &'a TextBoxInner,
     pub(crate) shared: &'a Shared,
+    // This key is only useful for checking the box is focused.
+    pub(crate) key: DefaultKey,
 }
 
 
 /// Remembers the location of the glyph quads corresponding to the text in this text box, in order to allow fast scrolling without relayouting.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct QuadStorage {
-    /// Range into the text renderer quads
+    /// Range into the text renderer quads. If None, it doesn't mean that there are no quads, but rather that the text box was never prepared. 
     pub quad_range: Option<(usize, usize)>,
     /// The scroll offset used when this quad data was generated
     pub last_offset: (f32, f32),
@@ -278,10 +280,28 @@ impl_for_textbox_and_textboxmut! {
     /// Returns the range of prepared quads in the [`TextRenderer`]'s buffer.
     /// 
     /// Must be called after [`Text::prepare_all()`].
-    pub fn quad_range(&self) -> (usize, usize) {
-        self.inner.quad_storage.quad_range.expect("No quad_range. Call prepare() before.")
+    pub fn quad_range(&self) -> QuadRanges {
+        debug_assert!(self.inner.quad_storage.quad_range.is_some(), "Quad range called before this text box was prepared.");
+        let glyph_range = self.inner.quad_storage.quad_range.unwrap_or_else(|| (0,0));
+        let is_focused = match self.shared.focused {
+            Some(AnyBox::TextBox(f)) => f == self.key,
+            _ => false,
+        };
+        let decorations_range = if is_focused {
+            self.shared.decorations_range
+        } else {
+            (0,0)
+        };
+        return QuadRanges { glyph_range, decorations_range }
     }
+}
 
+/// Ranges of this texbox's quads in the [`TextRenderer`]'s buffer.
+pub struct QuadRanges {
+    /// Range of the glyph quads.
+    pub glyph_range: (usize, usize),
+    /// Range of the decoration quads.
+    pub decorations_range: (usize, usize),
 }
 
 impl<'a> TextBoxMut<'a> {
@@ -1021,7 +1041,7 @@ impl<'a> TextBoxMut<'a> {
 
     /// Sets focus to this text box.
     pub fn set_focus(&mut self) {
-        self.shared.focused = Some(crate::AnyBox::TextBox(self.key));
+        self.shared.focused = Some(AnyBox::TextBox(self.key));
     }
 }
 

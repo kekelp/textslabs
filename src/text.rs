@@ -65,25 +65,27 @@ pub struct Text {
 /// 
 // A cooler way to do this would be to make the TextBoxMut be TextBoxMut { i: u32, text: &mut Text }. So you have access to the whole Text struct unconditionally, and you don't have to separate things this way. And to get the actual text box, you do self.text.text_boxes[i] every time. But we're trying this way this time
 pub(crate) struct Shared {    
-    pub(crate) styles: SlotMap<DefaultKey, StyleInner>,
-    pub(crate) default_style_key: DefaultKey,
-    pub(crate) text_changed: bool,
-    pub(crate) decorations_changed: bool,
-    pub(crate) scrolled: bool,
-    pub(crate) event_consumed: bool,
-    pub(crate) focused: Option<AnyBox>,
+    pub styles: SlotMap<DefaultKey, StyleInner>,
+    pub default_style_key: DefaultKey,
+    pub text_changed: bool,
+    pub decorations_changed: bool,
+    pub scrolled: bool,
+    pub event_consumed: bool,
+    pub focused: Option<AnyBox>,
 
-    pub(crate) windows: Vec<WindowInfo>,
-    pub(crate) layout_cx: LayoutContext<ColorBrush>,
-    pub(crate) font_cx: FontContext,
+    pub windows: Vec<WindowInfo>,
+    pub layout_cx: LayoutContext<ColorBrush>,
+    pub font_cx: FontContext,
+
+    pub decorations_range: (usize, usize), 
 
     #[cfg(feature = "accessibility")]
-    pub(crate) accesskit_tree_update: TreeUpdate,
+    pub accesskit_tree_update: TreeUpdate,
     #[cfg(feature = "accessibility")]
-    pub(crate) accesskit_focus_tracker: FocusChange,
-    pub(crate) current_event_number: u64,
+    pub accesskit_focus_tracker: FocusChange,
+    pub current_event_number: u64,
     #[cfg(feature = "accessibility")]
-    pub(crate) node_id_generator: fn() -> NodeId,
+    pub node_id_generator: fn() -> NodeId,
 }
 
 #[cfg(feature = "accessibility")]
@@ -306,6 +308,7 @@ impl Text {
             
             shared: Shared {
                 windows: Vec::with_capacity(1),
+                decorations_range: (0, 0),
                 styles,
                 default_style_key,
                 text_changed: true,
@@ -429,14 +432,14 @@ impl Text {
     /// This is a fast lookup operation that does not require any hashing.
     pub fn get_text_edit(&mut self, handle: &TextEditHandle) -> TextEdit {
         let (text_edit_inner, text_box_inner) = self.text_edits.get_mut(handle.key).unwrap();
-        let text_box = TextBox { inner: text_box_inner, shared: &mut self.shared };
+        let text_box = TextBox { inner: text_box_inner, shared: &mut self.shared, key: handle.key };
         TextEdit { inner: text_edit_inner, text_box }
     }
 
     /// Returns a text edit if it exists, or `None` if it has been removed.
     pub fn try_get_text_edit(&mut self, handle: &ClonedTextEditHandle) -> Option<TextEdit> {
         let (text_edit_inner, text_box_inner) = self.text_edits.get_mut(handle.key)?;
-        let text_box = TextBox { inner: text_box_inner, shared: &mut self.shared };
+        let text_box = TextBox { inner: text_box_inner, shared: &mut self.shared, key: handle.key };
         Some(TextEdit { inner: text_edit_inner, text_box })
     }
 
@@ -733,8 +736,10 @@ impl Text {
             }
         }
 
+        
         // Decorations are prepared after the text. This matters for the quad ranges for the scroll fast path.
         if self.shared.decorations_changed || self.shared.text_changed  || !self.scrolled_moved_indices.is_empty() {
+            let start_index = text_renderer.quads().len();
             if let Some(focused) = self.shared.focused {
                 // For multi-window, only prepare decorations if the focused element belongs to this window
                 let focused_belongs_to_window = match focused {
@@ -769,7 +774,10 @@ impl Text {
                     }
                 }
             }
+            let end_index = text_renderer.quads().len();
+            self.shared.decorations_range = (start_index, end_index);
         }
+
 
         // Multi-window: mark prepared and check if all windows done.
         let should_clear_flags = {
@@ -1256,13 +1264,13 @@ impl Text {
     /// This is a fast lookup operation that does not require any hashing.
     pub fn get_text_box(&self, handle: &TextBoxHandle) -> TextBox {
         let text_box_inner = &self.text_boxes[handle.key];
-        TextBox { inner: text_box_inner, shared: &self.shared }
+        TextBox { inner: text_box_inner, shared: &self.shared, key: handle.key }
     }
 
     /// Returns a text box if it exists, or `None` if it has been removed.
     pub fn try_get_text_box(&self, handle: &ClonedTextBoxHandle) -> Option<TextBox> {
         let text_box_inner = self.text_boxes.get(handle.key)?;
-        Some(TextBox { inner: text_box_inner, shared: &self.shared })
+        Some(TextBox { inner: text_box_inner, shared: &self.shared, key: handle.key })
     }
 
     /// Returns a mutable text box if it exists, or `None` if it has been removed.

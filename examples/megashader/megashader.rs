@@ -208,6 +208,17 @@ impl State {
         Self { window, device, queue, surface, pipeline, shape_buffer: vertex_buffer, ellipse_buffer, text_bind_group, params_bind_group, ellipse_bind_group, ellipses, shapes, text, text_renderer, text_box_1, text_box_2, text_box_3 }
     }
 
+    // Partial borrows moment. It's so stupid it's not even funny anymore.
+    fn draw_text_box(text_box: &TextBox, shapes: &mut Vec<Shape>) {
+        let QuadRanges { glyph_range, decorations_range } = text_box.quad_range();
+        for q in (glyph_range.0)..(glyph_range.1) {
+            shapes.push( Shape { shape_kind: TEXT, shape_offset: q as u32 } );
+        }
+        for q in (decorations_range.0)..(decorations_range.1) {
+            shapes.push( Shape { shape_kind: TEXT, shape_offset: q as u32 } );
+        }
+    }
+
     fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
         self.text.prepare_all_for_window(&mut self.text_renderer, &self.window);
         self.text_renderer.load_to_gpu(&self.device, &self.queue);
@@ -218,18 +229,10 @@ impl State {
         self.shapes.push( Shape { shape_kind: ELLIPSE, shape_offset: 0 } );
         self.shapes.push( Shape { shape_kind: ELLIPSE, shape_offset: 1 } );
 
-        let text_range = self.text.get_text_box(&self.text_box_1).quad_range();
-        for q in (text_range.0)..(text_range.1) {
-            self.shapes.push( Shape { shape_kind: TEXT, shape_offset: q as u32 } );
-        }
-        let text_range = self.text.get_text_box(&self.text_box_2).quad_range();
-        for q in (text_range.0)..(text_range.1) {
-            self.shapes.push( Shape { shape_kind: TEXT, shape_offset: q as u32 } );
-        }
-        let text_range = self.text.get_text_box(&self.text_box_3).quad_range();
-        for q in (text_range.0)..(text_range.1) {
-            self.shapes.push( Shape { shape_kind: TEXT, shape_offset: q as u32 } );
-        }
+        // Partial fucking borrows
+        Self::draw_text_box(&self.text.get_text_box(&self.text_box_1), &mut self.shapes);
+        Self::draw_text_box(&self.text.get_text_box(&self.text_box_2), &mut self.shapes);
+        Self::draw_text_box(&self.text.get_text_box(&self.text_box_3), &mut self.shapes);
 
         self.shapes.push( Shape { shape_kind: ELLIPSE, shape_offset: 2 } );
         self.shapes.push( Shape { shape_kind: ELLIPSE, shape_offset: 3 } );

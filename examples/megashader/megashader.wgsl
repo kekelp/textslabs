@@ -173,20 +173,16 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
         // Text rendering
         let content_type = get_content_type(input.text_flags);
         
-        if (content_type == 1u) {
+        if (content_type == 1) {
             // Color bitmap text
             let color = textureSampleLevel(color_atlas_texture, atlas_sampler, input.uv, input.page_index, 0.0);
             final_color = vec4<f32>(input.color.rgb * color.rgb, input.color.a * color.a);
-        } else {
-            // Mask text (most common case)
+        } else if content_type == 0 {
+            // Mask text
             let glyph_alpha = textureSampleLevel(mask_atlas_texture, atlas_sampler, input.uv, input.page_index, 0.0).r;
             final_color = vec4<f32>(input.color.rgb, input.color.a * glyph_alpha);
-        }
-        
-        // Early discard for fully transparent text
-        if (final_color.a < 0.01) {
-            // final_color = vec4f(1.0, 0.0, 0.0, 0.3);
-            discard;
+        } else {
+            return input.color;
         }
     }
     
