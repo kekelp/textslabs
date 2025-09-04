@@ -127,7 +127,7 @@
 //! 
 //! #### Z-range batching
 //! 
-//! The third strategy is implemented by [`TextRenderer::render_z_range()`], an experimental function that only renders the text boxes in a given range of depth values. This uses push constants and a filter in the shader to draw different ranges of text boxes in-order without having to rearrange or reupload the data in the buffers. See the `z_range.rs` example in the repository to see how this works. 
+//! The third strategy is implemented by [`TextRenderer::render_z_range()`], an experimental function that renders only the text boxes in a given range of depth values. This uses push constants and a filter in the shader to select different ranges in different draw calls, but in the same render pass, without having to rearrange or reupload the data. See the `z_range.rs` example in the repository to see how this works. 
 //! 
 //! This strategy is the simplest way to integrate a handful of truly custom rendered elements, but it's probably not great for a general-purpose renderer that can end up having to draw a lot of text boxes and shapes all interleaved.
 //!  
