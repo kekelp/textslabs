@@ -242,6 +242,7 @@ impl winit::application::ApplicationHandler for Application {
             .with_title("Z-Range example")
             .with_resizable(false);
         let window = Arc::new(event_loop.create_window(window_attributes).unwrap());
+        window.set_ime_allowed(true);
 
         self.state = Some(State::new(window));
     }

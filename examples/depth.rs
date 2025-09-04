@@ -325,6 +325,7 @@ impl winit::application::ApplicationHandler for Application {
             .with_inner_size(LogicalSize::new(WINDOW_WIDTH as f64, WINDOW_HEIGHT as f64))
             .with_resizable(false);
         let window = Arc::new(event_loop.create_window(window_attributes).unwrap());
+        window.set_ime_allowed(true);
 
         self.state = Some(State::new(window));
     }

@@ -81,12 +81,14 @@ impl winit::application::ApplicationHandler for Application {
                 .with_inner_size(LogicalSize::new(600, 400))
                 .with_title("Window 1")
         ).unwrap());
+        window1.set_ime_allowed(true);
         
         let window2 = Arc::new(event_loop.create_window(
             Window::default_attributes()
                 .with_inner_size(LogicalSize::new(800, 600))
                 .with_title("Window 2")
         ).unwrap());
+        window2.set_ime_allowed(true);
 
         self.state = Some(State::new(vec![window1, window2]));
     }

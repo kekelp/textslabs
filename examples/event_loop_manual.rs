@@ -150,6 +150,7 @@ impl winit::application::ApplicationHandler<()> for Application {
             .with_title("Manual cursor blink timing")
             .with_inner_size(LogicalSize::new(800, 600));
         let window = Arc::new(event_loop.create_window(window_attributes).unwrap());
+        window.set_ime_allowed(true);
         self.state = Some(State::new(window));
     }
 
