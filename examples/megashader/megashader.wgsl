@@ -109,7 +109,7 @@ fn vs_main(
     } else if (shape_kind == SHAPE_TEXT) {
         let text_quad = text_storage[shape_offset];
         
-        let quad_pos = split(text_quad.pos_packed);
+        let quad_pos = split_i16(text_quad.pos_packed);
         let dim = split(text_quad.dim_packed);
         
         // Apply clipping - unpack i16 pairs

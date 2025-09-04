@@ -191,8 +191,9 @@ impl State {
             cache: None,
         });
 
-        // This functional stuff looked better in my head. Many such cases, I think.
-        let pos: Vec<(f64, f64)> = (0..5).map(|x| 30.0 + x as f64 * 130.0).map(|x| (x,x)).collect();
+        let start = 75.0;
+        let start2 = start as f32 + 30.0;
+        let pos: Vec<(f64, f64)> = (0..5).map(|x| start + x as f64 * 130.0).map(|x| (x,x)).collect();
         let depths: Vec<f32> = (0..5).map(|x| 1.0 - 0.1 * x as f32).collect();
         let texts = [
             "ヘッケはこれらのL-函数が全複素平面へ有理型接続を持ち、指標が自明であるときには s = 1 でオーダー 1 である極を持ち、それ以外では解析的であることを証明した。原始ヘッケ指標（原始ディリクレ指標に同じ方法である modulus に相対的に定義された）に対し、ヘッケは、これらのL-函数が指標の L-函数の函数等式を満たし、L-函",
@@ -209,7 +210,7 @@ impl State {
 
         let mut ellipses = Vec::with_capacity(5);
         
-        let pos: Vec<(f32, f32)> = (0..6).map(|x| 70.0 + x as f32 * 130.0).map(|x| (x,x)).collect();
+        let pos: Vec<(f32, f32)> = (0..6).map(|x| start2 + x as f32 * 130.0).map(|x| (x,x)).collect();
 
         ellipses.push(Ellipse::new(pos[0].0, pos[0].1, 260.0, 260.0, [1.0, 0.1, 0.2, 0.8]));
         ellipses.push(Ellipse::new(pos[1].0, pos[1].1, 260.0, 260.0, [0.1, 1.0, 0.2, 0.8]));

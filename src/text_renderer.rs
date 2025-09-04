@@ -224,17 +224,24 @@ fn saturating_u16_cast(value: i32) -> u16 {
     value.clamp(0, u16::MAX as i32) as u16
 }
 
-// Pack i32 coordinates as u16 pairs with saturating cast
-fn pack_i32_pair_as_u16(a: i32, b: i32) -> u32 {
-    let a_u16 = saturating_u16_cast(a);
-    let b_u16 = saturating_u16_cast(b);
-    (a_u16 as u32) | ((b_u16 as u32) << 16)
+// Saturating cast from i32 to i16 (preserves negatives within i16 range)
+fn saturating_i16_cast(value: i32) -> i16 {
+    value.clamp(i16::MIN as i32, i16::MAX as i32) as i16
 }
 
-// Unpack u32 to two i32 coordinates (u16 -> i32)
+// Pack i32 coordinates as i16 pairs with saturating cast (stored as u16 bit patterns)
+fn pack_i32_pair_as_u16(a: i32, b: i32) -> u32 {
+    let a_i16 = saturating_i16_cast(a);
+    let b_i16 = saturating_i16_cast(b);
+    (a_i16 as u16 as u32) | ((b_i16 as u16 as u32) << 16)
+}
+
+// Unpack u32 to two i32 coordinates (i16 bit patterns -> i32)
 fn unpack_pos_as_i32(packed: u32) -> (i32, i32) {
-    let x = (packed & 0xFFFF) as i32;
-    let y = ((packed >> 16) & 0xFFFF) as i32;
+    let x_u16 = (packed & 0xFFFF) as u16;
+    let y_u16 = ((packed >> 16) & 0xFFFF) as u16;
+    let x = x_u16 as i16 as i32;
+    let y = y_u16 as i16 as i32;
     (x, y)
 }
 

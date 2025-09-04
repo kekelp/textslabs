@@ -90,7 +90,7 @@ fn vs_main(input: VertexInput) -> VertexOutput {
     let coords = vec2f(ucoords);
 
     let dim = split(input.dim_packed);
-    let quad_pos = split(input.pos_packed);
+    let quad_pos = split_i16(input.pos_packed);
     
     // Apply clipping in vertex shader - unpack i16 pairs
     let clip_xy = split_i16(input.clip_rect_packed.x);
