@@ -207,6 +207,7 @@ impl Quad {
     /// Adjust the position by the given delta, using saturating arithmetic
     pub fn adjust_position(&mut self, delta_x: i32, delta_y: i32) {
         let (x, y) = unpack_pos_as_i32(self.pos_packed);
+        
         let new_x = x - delta_x;  // Assuming the original code subtracts
         let new_y = y - delta_y;
         self.pos_packed = pack_i32_pair_as_u16(new_x, new_y);

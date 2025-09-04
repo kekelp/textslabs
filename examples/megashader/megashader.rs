@@ -221,7 +221,7 @@ impl State {
         Self { window, device, queue, surface, pipeline, shape_buffer: vertex_buffer, ellipse_buffer, text_bind_group, params_bind_group, ellipse_bind_group, ellipses, shapes, text, text_renderer, text_edit_1, text_edit_2, text_edit_3, text_edit_4 }
     }
 
-    // Partial borrows moment. It's so stupid it's not even funny anymore.
+    // Partial borrows moment.
     fn draw_text_edit(text_box: &TextEdit, shapes: &mut Vec<Shape>) {
         let QuadRanges { glyph_range, decorations_range } = text_box.quad_range();
         for q in (glyph_range.0)..(glyph_range.1) {

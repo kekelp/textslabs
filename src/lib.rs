@@ -34,7 +34,7 @@
 //! # let window: winit::window::Window = unimplemented!();
 //! text.handle_event(&event, &window);
 //! 
-//! // Do shaping, layout, rasterization, etc. to prepare the text to be rendered:
+//! // Do shaping, layout, rasterization, etc. to prepare all the text to be rendered:
 //! text.prepare_all(&mut text_renderer);
 //! // Load the data on the gpu:
 //! text_renderer.load_to_gpu(&device, &queue);
@@ -103,18 +103,41 @@
 //! 
 //! This library was written for use in Keru, which is a declarative library that diffs node trees, so it uses imperative-mode calls to remove widgets. However, it uses the declarative interface for hiding text boxes that need to be kept hidden in the background.
 //! 
+//! ## Advanced rendering
+//! 
+//! When using [`TextRenderer::render()`], all text boxes are rendered in a single draw call.
+//! 
+//! The `TextRenderer` supports using a depth buffer, so this is a perfectly good solution in many cases. However, it's not enough to get correct results when many semitransparent elements overlap.
+//! 
+//! As far as I know, there's no simple solution to this problem, but there are at least three complicated ones:
+//! 
+//! 1) Use a shader that can render both text glyphs and any other elements (rectangles, shapes, bezier paths, etc.), and render everything in one draw call. Then, the GPU will draw the elements in the order they appear in the buffer with perfect blending, all automatically.
+//! 2) Use "batching": do separate draw calls for the first contiguous range of text glyphs, then switch the pipeline and do another draw call for a range of other elements, etc.
+//! 3) Use a slightly different form of batching where the draw call still goes through all the quads, but specifies a depth range. The shader then filters out all quads outside of the range.
+//! 
+//! #### Megashader
+//! 
+//! The `megashader.rs` example shows how this library can be used as part of a render pipeline implementing the first strategy.
+//! 
+//! I tried my hardest to do this in an "extensible" way while keeping all text-related code as a separate module, but the results were limited due to the heavy limitations of the `wgsl` shading language. I will give it another try if I can ever get `slang` shaders to work.
+//! 
+//! #### Batching
+//! 
+//! "Regular" batching is currently not implemented.
+//! 
+//! #### Z-range batching
+//! 
+//! The third strategy is implemented by [`TextRenderer::render_z_range()`], an experimental function that only renders the text boxes in a given range of depth values. This uses push constants and a filter in the shader to draw different ranges of text boxes in-order without having to rearrange or reupload the data in the buffers. See the `z_range.rs` example in the repository to see how this works. 
+//! 
+//! This strategy is the simplest way to integrate a handful of truly custom rendered elements, but it's probably not great for a general-purpose renderer that can end up having to draw a lot of text boxes and shapes all interleaved.
+//!  
+//! Note that push constants are a native-only feature that may not be available in some `wgpu` backends. See the `wgpu` documentation for more information.
+//! 
+//! 
+//! 
 //! # Open Issues
 //! 
-//! There are two main open issues in the design of the library:
-//! 
-//! - Normally, all text boxes are rendered in a single draw call. The `TextRenderer` supports using a depth buffer, but that's not enough to get correct results when many semitransparent elements overlap.
-//! 
-//!     A possible solution is [`TextRenderer::render_z_range()`], an experimental function that only renders the text boxes in a given range of depth values. This uses push constants and a filter in the shader to draw different ranges of text boxes in-order without having to rearrange or reupload the data in the buffers. See the `z_range.rs` example in the repository to see how this works. 
-//!  
-//!     Note that push constants are a native-only feature that may not be available in some `wgpu` backends. See the `wgpu` documentation for more information.
-//! 
-//! 
-//! - the math for scrolling and smooth scrolling animations in overflowing text edit boxes is hardcoded in the library. This means that a GUI library using Textslabs might have inconsistent scrolling behavior between the Textslabs text edit boxes and the GUI library's generic scrollable containers.
+//! There is an open issue in the design of the library: the math for scrolling and smooth scrolling animations in overflowing text edit boxes is hardcoded in the library. This means that a GUI library using `textslabs` might have inconsistent scrolling behavior between the `textslabs` text edit boxes and the GUI library's generic scrollable containers.
 
 
 mod setup;
@@ -185,10 +208,7 @@ use std::num::NonZeroU64;
 use swash::scale::image::{Content, Image};
 use swash::scale::{Render, ScaleContext, Scaler, Source, StrikeWith};
 use swash::{FontRef, GlyphId};
-use wgpu::{
-    MultisampleState, Texture, TextureFormat,
-    TextureUsages, TextureViewDescriptor,
-};
+use wgpu::{MultisampleState, Texture, TextureFormat};
 use swash::zeno::Placement;
 
 pub use parley::{FontWeight, FontStyle, LineHeight, FontStack, Alignment, AlignmentOptions, OverflowWrap};
