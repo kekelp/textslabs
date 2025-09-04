@@ -204,24 +204,28 @@ pub struct Quad {
 }
 
 impl Quad {
-    /// Adjust the position by the given delta, using saturating arithmetic
-    pub fn adjust_position(&mut self, delta_x: i32, delta_y: i32) {
+    /// Adjust the position by the given delta, returning false if overflow would occur
+    pub fn adjust_position(&mut self, delta_x: i32, delta_y: i32) -> bool {
         let (x, y) = unpack_pos_as_i32(self.pos_packed);
         
         let new_x = x - delta_x;  // Assuming the original code subtracts
         let new_y = y - delta_y;
+        
+        // Check for i16 overflow/underflow.
+        // Feels a bit bad to do these checks all the time, but whatever.
+        if new_x < i16::MIN as i32 || new_x > i16::MAX as i32 ||
+           new_y < i16::MIN as i32 || new_y > i16::MAX as i32 {
+            return false; // Overflow would occur, abort
+        }
+        
         self.pos_packed = pack_i32_pair_as_u16(new_x, new_y);
+        true // Success
     }
 }
 
 // Helper functions to pack/unpack u16 pairs into u32
 fn pack_u16_pair(a: u32, b: u32) -> u32 {
     (a & 0xFFFF) | ((b & 0xFFFF) << 16)
-}
-
-// Saturating cast from i32 to u16 (clamp negatives to 0)
-fn saturating_u16_cast(value: i32) -> u16 {
-    value.clamp(0, u16::MAX as i32) as u16
 }
 
 // Saturating cast from i32 to i16 (preserves negatives within i16 range)

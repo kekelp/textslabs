@@ -707,9 +707,16 @@ impl Text {
         // Prepare text layout for all text boxes/edits
         if !self.shared.text_changed {
             if !self.scrolled_moved_indices.is_empty() {
-                self.handle_scroll_fast_path(text_renderer);
+                if !self.handle_scroll_fast_path(text_renderer) {
+                    // Fast path failed due to overflow, fall back to full prepare
+                    text_renderer.clear();
+                    // Set text_changed to trigger full prepare
+                    self.shared.text_changed = true;
+                }
             }
-        } else {
+        }
+        
+        if self.shared.text_changed {
             let current_frame = self.current_visibility_frame;
             if self.shared.text_changed {
                 for (key, text_edit) in self.text_edits.iter_mut() {
@@ -804,22 +811,28 @@ impl Text {
         }
     }
 
-    /// Fast path for handling scroll-only changes by moving quads in-place
-    fn handle_scroll_fast_path(&mut self, text_renderer: &mut TextRenderer) {
+    /// Fast path for handling scroll-only changes by moving quads in-place.
+    /// Since the quad positions are packed as i16 for speed and gpu alignment, if the user is scrolling through a massive scroll area, there's a chance that the i16s will overflow. In that case, this function returns false, so that the caller should fall back to a normal prepare.
+    fn handle_scroll_fast_path(&mut self, text_renderer: &mut TextRenderer) -> bool {
         for any_box in &self.scrolled_moved_indices {
             match any_box {
                 AnyBox::TextEdit(i) => {
                     if let Some((_text_edit_inner, text_box_inner)) = self.text_edits.get_mut(*i) {
-                        move_quads_for_scroll(text_renderer, &mut text_box_inner.quad_storage, text_box_inner.scroll_offset);
+                        if !move_quads_for_scroll(text_renderer, &mut text_box_inner.quad_storage, text_box_inner.scroll_offset) {
+                            return false;
+                        }
                     }
                 },
                 AnyBox::TextBox(i) => {
                     if let Some(text_box_inner) = self.text_boxes.get_mut(*i) {
-                        move_quads_for_scroll(text_renderer, &mut text_box_inner.quad_storage, text_box_inner.scroll_offset);
+                        if !move_quads_for_scroll(text_renderer, &mut text_box_inner.quad_storage, text_box_inner.scroll_offset) {
+                            return false;
+                        }
                     }
                 },
             }
         }
+        true
     }
 
     /// Clear scroll indices only for elements that have finished their animations
@@ -1751,7 +1764,7 @@ pub(crate) fn get_full_text_box_partial_borrows_but_for_iterating<'a>(
     TextBoxMut { inner: text_box_inner, shared, key }
 }
 
-fn move_quads_for_scroll(text_renderer: &mut TextRenderer, quad_storage: &mut QuadStorage, current_offset: (f32, f32)) {
+fn move_quads_for_scroll(text_renderer: &mut TextRenderer, quad_storage: &mut QuadStorage, current_offset: (f32, f32)) -> bool {
     let delta_x = current_offset.0 - quad_storage.last_offset.0;
     let delta_y = current_offset.1 - quad_storage.last_offset.1;
 
@@ -1761,12 +1774,15 @@ fn move_quads_for_scroll(text_renderer: &mut TextRenderer, quad_storage: &mut Qu
 
     if let Some((start, end)) = quad_storage.quad_range {
         for quad in &mut text_renderer.text_renderer.quads[start..end] {
-            quad.adjust_position(delta_x_rounded as i32, delta_y_rounded as i32);
+            if !quad.adjust_position(delta_x_rounded as i32, delta_y_rounded as i32) {
+                return false; // Overflow detected, abort fast path
+            }
         }
     }
 
     quad_storage.last_offset.0 += delta_x_rounded;
     quad_storage.last_offset.1 += delta_y_rounded;
+    true
 }
 
 // todo: get this from system settings.
