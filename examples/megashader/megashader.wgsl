@@ -123,11 +123,11 @@ fn vs_main(
         let quad_x1 = quad_x0 + dim.x;
         let quad_y1 = quad_y0 + dim.y;
         
-        // Calculate clipped bounds - ensure we're within the clip rectangle on all sides
+        // Calculate clipped bounds
         let clipped_x0 = max(quad_x0, clip_rect.x);  
-        let clipped_x1 = max(clipped_x0, min(quad_x1, clip_rect.z));  // Ensure x1 >= x0
+        let clipped_x1 = max(clipped_x0, min(quad_x1, clip_rect.z));
         let clipped_y0 = max(quad_y0, clip_rect.y);  
-        let clipped_y1 = max(clipped_y0, min(quad_y1, clip_rect.w));  // Ensure y1 >= y0
+        let clipped_y1 = max(clipped_y0, min(quad_y1, clip_rect.w));
         
         // Calculate how much was clipped from left/top
         let left_clip = clipped_x0 - quad_x0;
