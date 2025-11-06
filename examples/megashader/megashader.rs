@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use wgpu::DeviceDescriptor;
-use winit::{dpi::PhysicalSize, event::WindowEvent, event_loop::EventLoop, window::Window};
+use winit::{dpi::PhysicalSize, event::WindowEvent, event_loop::{ActiveEventLoop, EventLoop}, window::{Window, WindowId}};
 use textslabs::*;
 
 const ELLIPSE: u32 = 0;
@@ -312,15 +312,13 @@ impl winit::application::ApplicationHandler for Application {
         }
     }
 
-    fn window_event(&mut self, _event_loop: &winit::event_loop::ActiveEventLoop, _: winit::window::WindowId, event: WindowEvent) {
+    fn window_event(&mut self, event_loop: &ActiveEventLoop, _: WindowId, event: WindowEvent) {
         let state = &mut self.state.as_mut().unwrap();
 
         state.text.handle_event(&event, &state.window);
 
         match event {
-            WindowEvent::CloseRequested => {
-                std::process::exit(0);
-            }
+            WindowEvent::CloseRequested => event_loop.exit(),
             WindowEvent::RedrawRequested => {
                 state.render().unwrap();
                 state.window.request_redraw();
