@@ -37,7 +37,7 @@ pub(crate) struct TextBoxInner {
     pub(crate) height: f32, 
     pub(crate) alignment: Alignment,
     pub(crate) scale: f32,
-    pub(crate) clip_rect: Option<parley::Rect>,
+    pub(crate) clip_rect: Option<parley::BoundingBox>,
     pub(crate) fadeout_clipping: bool,
     pub(crate) auto_clip: bool,
     pub(crate) scroll_offset: (f32, f32),
@@ -239,7 +239,7 @@ impl_for_textbox_and_textboxmut! {
     }
 
     /// Returns the current clip rect of the text box.
-    pub fn clip_rect(&self) -> Option<parley::Rect> {
+    pub fn clip_rect(&self) -> Option<parley::BoundingBox> {
         self.inner.clip_rect
     }
     
@@ -311,9 +311,9 @@ pub struct QuadRanges {
 
 impl<'a> TextBoxMut<'a> {
 
-    pub(crate) fn effective_clip_rect(&self) -> Option<parley::Rect> {
+    pub(crate) fn effective_clip_rect(&self) -> Option<parley::BoundingBox> {
         let auto_clip_rect = if self.inner.auto_clip {
-            Some(parley::Rect {
+            Some(parley::BoundingBox {
                 x0: self.inner.scroll_offset.0 as f64,
                 y0: self.inner.scroll_offset.1 as f64,
                 x1: (self.inner.scroll_offset.0 + self.inner.max_advance) as f64,
@@ -324,7 +324,7 @@ impl<'a> TextBoxMut<'a> {
         };
 
         let clip_rect = self.inner.clip_rect.map(|explicit| {
-            parley::Rect {
+            parley::BoundingBox {
                 x0: explicit.x0 + self.inner.scroll_offset.0 as f64,
                 y0: explicit.y0 + self.inner.scroll_offset.1 as f64,
                 x1: explicit.x1 + self.inner.scroll_offset.0 as f64,
@@ -343,9 +343,9 @@ impl<'a> TextBoxMut<'a> {
                 let y1 = auto.y1.min(explicit.y1);
                 
                 if x0 < x1 && y0 < y1 {
-                    Some(parley::Rect { x0, y0, x1, y1 })
+                    Some(parley::BoundingBox { x0, y0, x1, y1 })
                 } else {
-                    Some(parley::Rect { x0: 0.0, y0: 0.0, x1: 0.0, y1: 0.0 })
+                    Some(parley::BoundingBox { x0: 0.0, y0: 0.0, x1: 0.0, y1: 0.0 })
                 }
             }
         }
@@ -680,7 +680,7 @@ impl<'a> TextBoxMut<'a> {
     }
 
     /// Sets the clipping rectangle for the text box.
-    pub fn set_clip_rect(&mut self, clip_rect: Option<parley::Rect>) {
+    pub fn set_clip_rect(&mut self, clip_rect: Option<parley::BoundingBox>) {
         self.inner.clip_rect = clip_rect;
         self.shared.text_changed = true;
     }
@@ -1056,7 +1056,7 @@ impl<'a> TextBoxMut<'a> {
 
 
 
-pub use parley::Rect;
+pub use parley::BoundingBox;
 
 pub(crate) trait Ext1 {
     fn hit_bounding_box(&mut self, cursor_pos: (f64, f64)) -> bool;

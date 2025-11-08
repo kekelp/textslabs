@@ -104,7 +104,7 @@ impl ContextlessTextRenderer {
         self.last_frame_evicted != current_frame
     }
 
-    fn add_selection_rect(&mut self, rect: parley::Rect, left: f32, top: f32, color: u32, clip_rect: Option<parley::Rect>) {        
+    fn add_selection_rect(&mut self, rect: parley::BoundingBox, left: f32, top: f32, color: u32, clip_rect: Option<parley::BoundingBox>) {        
         let left = left as i32;
         let top = top as i32;
 
@@ -293,7 +293,7 @@ fn make_quad(glyph: &GlyphWithContext, stored_glyph: &StoredGlyph, depth: f32) -
     };
 }
 
-fn clip_quad(quad: Quad, left: f32, top: f32, clip_rect: Option<parley::Rect>, fade: bool) -> Option<Quad> {
+fn clip_quad(quad: Quad, left: f32, top: f32, clip_rect: Option<parley::BoundingBox>, fade: bool) -> Option<Quad> {
     let mut quad = quad;
 
     if let Some(clip) = clip_rect {
@@ -412,7 +412,7 @@ impl TextRenderer {
     }
 
     /// Prepare an individual parley layout for rendering at the specified position.
-    pub fn prepare_layout(&mut self, layout: &Layout<ColorBrush>, left: f32, top: f32, clip_rect: Option<parley::Rect>, fade: bool, depth: f32) {
+    pub fn prepare_layout(&mut self, layout: &Layout<ColorBrush>, left: f32, top: f32, clip_rect: Option<parley::BoundingBox>, fade: bool, depth: f32) {
         self.text_renderer.prepare_layout(layout, &mut self.scale_cx, left, top, clip_rect, fade, depth);
         self.text_renderer.needs_gpu_sync = true;
     }
@@ -687,7 +687,7 @@ impl ContextlessTextRenderer {
     }
 
 
-    fn prepare_layout(&mut self, layout: &Layout<ColorBrush>, scale_cx: &mut ScaleContext, left: f32, top: f32, clip_rect: Option<parley::Rect>, fade: bool, depth: f32) {
+    fn prepare_layout(&mut self, layout: &Layout<ColorBrush>, scale_cx: &mut ScaleContext, left: f32, top: f32, clip_rect: Option<parley::BoundingBox>, fade: bool, depth: f32) {
         for line in layout.lines() {
             for item in line.items() {
                 match item {
@@ -706,7 +706,7 @@ impl ContextlessTextRenderer {
         scale_cx: &mut ScaleContext,
         left: f32,
         top: f32,
-        clip_rect: Option<parley::Rect>,
+        clip_rect: Option<parley::BoundingBox>,
         fade: bool,
         depth: f32
     ) {
@@ -838,7 +838,7 @@ impl ContextlessTextRenderer {
         Render::new(SOURCES)
             .format(Format::Alpha)
             .offset(glyph.frac_offset())
-            .render_into(scaler, glyph.glyph.id, &mut self.tmp_image);
+            .render_into(scaler, glyph.glyph.id as u16, &mut self.tmp_image);
         return (self.tmp_image.content, self.tmp_image.placement);
     }
 
@@ -1034,7 +1034,7 @@ impl GlyphWithContext {
     fn key(&self) -> GlyphKey {
         GlyphKey {
             font_id: self.font_key,
-            glyph_id: self.glyph.id,
+            glyph_id: self.glyph.id as u16,
             font_size_bits: self.font_size.to_bits(),
             x_bin: self.subpixel_bin_x,
             y_bin: self.subpixel_bin_y,

@@ -1262,7 +1262,7 @@ impl_for_textedit_and_texteditmut! {
     }
     
     /// Returns the clipping rectangle.
-    pub fn clip_rect(&self) -> Option<parley::Rect> {
+    pub fn clip_rect(&self) -> Option<parley::BoundingBox> {
         self.text_box.clip_rect()
     }
     
@@ -1344,7 +1344,7 @@ impl<'a> TextEditMut<'a> {
     }
     
     /// Sets the clipping rectangle for the text edit box.
-    pub fn set_clip_rect(&mut self, clip_rect: Option<parley::Rect>) {
+    pub fn set_clip_rect(&mut self, clip_rect: Option<parley::BoundingBox>) {
         self.text_box.set_clip_rect(clip_rect);
     }
     
@@ -1448,7 +1448,7 @@ impl<'a> TextEditMut<'a> {
     }
     
     /// Returns the cursor geometry if visible.
-    pub fn cursor_geometry(&mut self, size: f32) -> Option<Rect> {
+    pub fn cursor_geometry(&mut self, size: f32) -> Option<parley::BoundingBox> {
         if !self.inner.show_cursor {
             return None;
         }
@@ -1531,6 +1531,120 @@ impl<'a> TextEditMut<'a> {
     pub fn set_focus(&mut self) {
         self.text_box.shared.focused = Some(crate::AnyBox::TextEdit(self.text_box.key));
     }
+
+    /// Render this text edit box to a `vello_hybrid` `Scene`.
+    pub fn render_to_scene(&mut self, scene: &mut vello_hybrid::Scene) {
+        use parley::PositionedLayoutItem;
+        use peniko::color::AlphaColor;
+        use vello_common::{kurbo::{Rect, Shape}, paint::PaintType};
+
+        let (left, top) = self.pos();
+        let (left, top) = (left as f32, top as f32);
+
+        // Account for scroll offset
+        let content_left = left - self.scroll_offset().0;
+        let content_top = top - self.scroll_offset().1;
+
+        self.refresh_layout();
+
+        // Set up clipping if a clip rect is defined
+        let clip_rect = self.text_box.effective_clip_rect();
+        if let Some(clip) = clip_rect {
+            let clip_x0 = content_left + clip.x0 as f32;
+            let clip_y0 = content_top + clip.y0 as f32;
+            let clip_x1 = content_left + clip.x1 as f32;
+            let clip_y1 = content_top + clip.y1 as f32;
+            let clip_rect = Rect::new(
+                clip_x0 as f64,
+                clip_y0 as f64,
+                clip_x1 as f64,
+                clip_y1 as f64,
+            );
+            scene.push_clip_layer(&clip_rect.to_path(0.1));
+        }
+
+        // Render selection rectangles
+        let selection_color = AlphaColor::from_rgba8(0x33, 0x33, 0xff, 0xaa);
+        self.selection().geometry_with(&self.layout(), |rect, _line_i| {
+            let x = content_left + rect.x0 as f32;
+            let y = content_top + rect.y0 as f32;
+            let width = (rect.x1 - rect.x0) as f32;
+            let height = (rect.y1 - rect.y0) as f32;
+            let rect = Rect::new(x as f64, y as f64, (x + width) as f64, (y + height) as f64);
+            scene.set_paint(PaintType::Solid(selection_color));
+            scene.fill_rect(&rect);
+        });
+
+        // Render cursor if selection is collapsed
+        if self.selection().is_collapsed() {
+            let cursor_color = AlphaColor::from_rgba8(0xee, 0xee, 0xee, 0xff);
+            let cursor_width = CURSOR_WIDTH;
+            let cursor_rect = self.selection().focus().geometry(&self.layout(), cursor_width);
+            let x = content_left + cursor_rect.x0 as f32;
+            let y = content_top + cursor_rect.y0 as f32;
+            let width = (cursor_rect.x1 - cursor_rect.x0) as f32;
+            let height = (cursor_rect.y1 - cursor_rect.y0) as f32;
+            let rect = Rect::new(x as f64, y as f64, (x + width) as f64, (y + height) as f64);
+            scene.set_paint(PaintType::Solid(cursor_color));
+            scene.fill_rect(&rect);
+        }
+
+        // Render text
+        for line in self.layout().lines() {
+            for item in line.items() {
+                if let PositionedLayoutItem::GlyphRun(glyph_run) = item {
+                    render_glyph_run_to_scene(scene, &glyph_run, content_left, content_top);
+                }
+            }
+        }
+
+        // Pop the clip layer if we pushed one
+        if clip_rect.is_some() {
+            scene.pop_layer();
+        }
+    }
+}
+
+/// Helper function to render a glyph run to a vello_hybrid Scene.
+fn render_glyph_run_to_scene(
+    ctx: &mut vello_hybrid::Scene,
+    glyph_run: &GlyphRun<'_, ColorBrush>,
+    left: f32,
+    top: f32,
+) {
+    use peniko::color::AlphaColor;
+    use vello_common::{glyph::Glyph, paint::PaintType};
+
+    let mut run_x = glyph_run.offset();
+    let run_y = glyph_run.baseline();
+    let glyphs = glyph_run.glyphs().map(|glyph| {
+        let glyph_x = run_x + glyph.x + left;
+        let glyph_y = run_y - glyph.y + top;
+        run_x += glyph.advance;
+
+        Glyph {
+            id: glyph.id as u32,
+            x: glyph_x,
+            y: glyph_y,
+        }
+    });
+
+    let run = glyph_run.run();
+    let font = run.font();
+    let font_size = run.font_size();
+    let normalized_coords = bytemuck::cast_slice(run.normalized_coords());
+
+    let style = glyph_run.style();
+    let r = style.brush.0[0];
+    let g = style.brush.0[1];
+    let b = style.brush.0[2];
+    let a = style.brush.0[3];
+    ctx.set_paint(PaintType::Solid(AlphaColor::from_rgba8(r, g, b, a)));
+    ctx.glyph_run(font)
+        .font_size(font_size)
+        .normalized_coords(normalized_coords)
+        .hint(true)
+        .fill_glyphs(glyphs);
 }
 
 /// Determine if animation should be used based on delta type and which component is being used

@@ -16,7 +16,8 @@ opt-level = 3
 [dependencies]
 # parley = { git = "https://github.com/linebender/parley", rev = "93a2faa" }
 # parley = { path = "../../../clones/parley/parley" }
-parley = { git = "https://github.com/kekelp/parley", rev = "c4b6da8" }
+# parley = { git = "https://github.com/kekelp/parley", rev = "c4b6da8" }
+parley = "0.6.0"
 wgpu = { version = "26", default-features = true }
 etagere = "0.2.10"
 lru = { version = "0.12.1", default-features = false }
@@ -32,6 +33,8 @@ peniko = "0.4.0"
 arboard = "3.5.0"
 slotmap = "1.0"
 smallvec = "1.13"
+vello_hybrid = "0.0.4"
+vello_common = "0.0.4"
 
 
 [dev-dependencies]
