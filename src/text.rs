@@ -111,6 +111,7 @@ impl Shared {
     // If the cursor needs to be blinking, reset it. Otherwise, stop it.
     pub(crate) fn reset_cursor_blink(&mut self) {
         if let Some(AnyBox::TextEdit(_)) = self.focused {
+            // todo: reorganize some stuff and also check that the selection is collapsed?
             self.cursor_blink_start = Some(Instant::now());
             self.decorations_changed = true;
 

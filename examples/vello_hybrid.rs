@@ -1,5 +1,6 @@
-use parley::{TextStyle, FontStack, FontFamily};
+use parley::{FontFamily, FontStack, TextStyle};
 use textslabs::*;
+use vello_hybrid::{RenderSize, RenderTargetConfig, Renderer, Scene};
 use std::sync::Arc;
 use wgpu::*;
 use winit::{
@@ -24,14 +25,19 @@ struct State {
     surface_config: SurfaceConfiguration,
     window: Arc<Window>,
 
-    text_renderer: TextRenderer,
     text: Text,
 
-    single_line_input: TextEditHandle,
-    clipped_text_box: TextBoxHandle,
+    scene: Scene,
+    renderer: Renderer,
+
+    // single_line_input: TextEditHandle,
+    // clipped_text_box: TextBoxHandle,
 
     big_text_style: StyleHandle,
     modifiers: ModifiersState,
+
+    // justified_static_text: TextBoxHandle,
+    editable_text_with_unicode: TextEditHandle,
 }
 
 impl State {
@@ -66,7 +72,7 @@ impl State {
         let font_name = text.load_font(include_bytes!("PublicPixel.ttf")).expect("Failed to load font");
         // font_name will be "Public Pixel".
 
-        let custom_font_style_handle = text.add_style(TextStyle {
+        let _custom_font_style_handle = text.add_style(TextStyle {
             font_size: 22.0,
             brush: ColorBrush([0, 255, 150, 255]),
             font_stack: FontStack::Single(FontFamily::Named(font_name.into())),
@@ -74,7 +80,7 @@ impl State {
             ..Default::default()
         }, None);
 
-        let monospace_style_handle = text.add_style(TextStyle {
+        let _monospace_style_handle = text.add_style(TextStyle {
             font_size: 22.0,
             font_stack: FontStack::Source("monospace".into()),
             brush: ColorBrush([30, 60, 255, 255]),
@@ -83,40 +89,48 @@ impl State {
         }, None);
 
         // Create text boxes and get handles. Normally, the handle would be owned by a higher level struct representing a node in a GUI tree or something similar.
-        let single_line_input = text.add_text_edit("".to_string(), (10.0, 15.0), (200.0, 35.0), 0.0);
+        // let single_line_input = text.add_text_edit("".to_string(), (10.0, 15.0), (200.0, 35.0), 0.0);
         let editable_text_with_unicode = text.add_text_edit("Editable text ⚡⚡ 無限での座を含む全ての سلام دنیا، این یک متن قابل ویرایش است Editable text 無限での座を含む全ての سلام دنیا، این یک متن قابل ویرایش است".to_string(), (300.0, 200.0), (400.0, 200.0), 0.0);
-        let _info = text.add_text_box("Press Ctrl + D to disable the top edit box. Press Ctrl + H to toggle the fade effect on the clipped text box".to_string(), (10.0, 60.0), (200.0, 100.0), 0.0);
-        let _help_text_edit = text.add_text_edit("Press Ctrl + Plus and Ctrl + Minus to adjust the size of the big text.".to_string(), (470.0, 60.0), (200.0, 150.0), 0.0);
-        let shift_enter_text_edit = text.add_text_edit("Use Shift+Enter for newlines here".to_string(), (250.0, 60.0), (200.0, 100.0), 0.0);
+        // let _info = text.add_text_box("Press Ctrl + D to disable the top edit box. Press Ctrl + H to toggle the fade effect on the clipped text box".to_string(), (10.0, 60.0), (200.0, 100.0), 0.0);
+        // let _help_text_edit = text.add_text_edit("Press Ctrl + Plus and Ctrl + Minus to adjust the size of the big text.".to_string(), (470.0, 60.0), (200.0, 150.0), 0.0);
+        // let shift_enter_text_edit = text.add_text_edit("Use Shift+Enter for newlines here".to_string(), (250.0, 60.0), (200.0, 100.0), 0.0);
         
-        let clipped_text_box = text.add_text_box("Clipped text".to_string(), (10.0, 340.0), (300.0, 50.0), 0.0);
+        // let clipped_text_box = text.add_text_box("Clipped text".to_string(), (10.0, 340.0), (300.0, 50.0), 0.0);
         
         // Using a &'static str here for this non-editable text box.
-        let justified_static_text = text.add_text_box("Long static words, Long static words, Long static words, Long static words, ... (justified btw) ", (150.0, 440.0), (600.0, 150.0), 0.0);
+        // let justified_static_text = text.add_text_box("Long static words, Long static words, Long static words, Long static words, ... (justified btw) ", (150.0, 440.0), (600.0, 150.0), 0.0);
         
         // Use the handles to access and edit text boxes. Accessing a box through a handle is a very fast operation, basically just an array access. There is no hashing involved.
-        text.get_text_edit_mut(&single_line_input).set_single_line(true);
-        text.get_text_edit_mut(&single_line_input).set_placeholder("Single line input".to_string());
+        // text.get_text_edit_mut(&single_line_input).set_single_line(true);
+        // text.get_text_edit_mut(&single_line_input).set_placeholder("Single line input".to_string());
         text.get_text_edit_mut(&editable_text_with_unicode).set_style(&big_text_style_handle);
-        text.get_text_edit_mut(&shift_enter_text_edit).set_newline_mode(NewlineMode::ShiftEnter);
-        text.get_text_edit_mut(&_help_text_edit).set_style(&monospace_style_handle);
+
+        // text.get_text_edit_mut(&shift_enter_text_edit).set_newline_mode(NewlineMode::ShiftEnter);
+        // text.get_text_edit_mut(&_help_text_edit).set_style(&monospace_style_handle);
         
-        text.get_text_box_mut(&clipped_text_box).set_style(&big_text_style_handle);
-        text.get_text_box_mut(&clipped_text_box).text_mut();
+        // text.get_text_box_mut(&clipped_text_box).set_style(&big_text_style_handle);
+        // text.get_text_box_mut(&clipped_text_box).text_mut();
         
-        text.get_text_box_mut(&clipped_text_box).set_clip_rect(Some(parley::BoundingBox {
-            x0: 0.0,
-            y0: 0.0,
-            x1: 200.0,
-            y1: 30.0,
-        }));
+        // text.get_text_box_mut(&clipped_text_box).set_clip_rect(Some(parley::BoundingBox {
+        //     x0: 0.0,
+        //     y0: 0.0,
+        //     x1: 200.0,
+        //     y1: 30.0,
+        // }));
 
         text.get_text_style_mut(&big_text_style_handle).font_size = 32.0;
 
-        text.get_text_box_mut(&justified_static_text).set_style(&custom_font_style_handle);
-        text.get_text_box_mut(&justified_static_text).set_alignment(Alignment::Justify);
+        // text.get_text_box_mut(&justified_static_text).set_style(&custom_font_style_handle);
+        // text.get_text_box_mut(&justified_static_text).set_alignment(Alignment::Justify);
 
-        let text_renderer = TextRenderer::new(&device, &queue, surface_config.format);
+        let renderer = Renderer::new(
+            &device,
+            &RenderTargetConfig {
+                format: surface_config.format,
+                width: surface_config.width,
+                height: surface_config.height,
+            },
+        );
 
         Self {
             device,
@@ -124,11 +138,16 @@ impl State {
             surface,
             surface_config,
             window,
-            text_renderer,
             text,
+            // justified_static_text,
+            editable_text_with_unicode,
 
-            single_line_input,
-            clipped_text_box,
+            renderer,
+
+            scene: Scene::new(physical_size.width as u16, physical_size.height as u16),
+
+            // single_line_input,
+            // clipped_text_box,
             big_text_style: big_text_style_handle,
 
             modifiers: ModifiersState::default(),
@@ -149,36 +168,25 @@ impl State {
                 self.surface.configure(&self.device, &self.surface_config);
                 self.window.request_redraw();
             }
-            WindowEvent::RedrawRequested => {
-                // Prepare the cpu-side text data for rendering.
-                self.text.prepare_all(&mut self.text_renderer);
-                // Load the text renderer's data on the gpu.
-                self.text_renderer.load_to_gpu(&self.device, &self.queue);
+            WindowEvent::RedrawRequested => {                
+                self.scene.reset();
+                self.text.get_text_edit_mut(&self.editable_text_with_unicode).render_to_scene(&mut self.scene);
+
+                self.text.clear_changes();
 
                 // A bunch of wgpu boilerplate to be able to draw on the screen.
                 let surface_texture = self.surface.get_current_texture().unwrap();
                 let view = surface_texture.texture.create_view(&TextureViewDescriptor::default());
                 let mut encoder = self.device.create_command_encoder(&CommandEncoderDescriptor { label: None });
-                {
-                    let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
-                        color_attachments: &[Some(RenderPassColorAttachment {
-                            view: &view,
-                            resolve_target: None,
-                            ops: Operations {
-                                load: LoadOp::Clear(wgpu::Color::BLACK),
-                                store: wgpu::StoreOp::Store,
-                            },
-                            depth_slice: None,
-                        })],
-                        ..Default::default()
-                    });
 
-                    // Finally, render the text on the screen.
-                    self.text_renderer.render(&mut pass);
-                }
+                let render_size = RenderSize {
+                    width: self.surface_config.width,
+                    height: self.surface_config.height,
+                };
+                self.renderer.render(&self.scene, &self.device, &self.queue, &mut encoder, &render_size, &view).unwrap();
 
                 // More boilerplate.
-                self.queue.submit(Some(encoder.finish()));
+                self.queue.submit([encoder.finish()]);
                 surface_texture.present();
                 self.window.request_redraw();
             }
@@ -198,14 +206,14 @@ impl State {
                                     self.text.get_text_style_mut(&self.big_text_style).font_size -= 2.0;
                                 }
                             }
-                            "d" => {
-                                let is_disabled = self.text.get_text_edit(&self.single_line_input).disabled();
-                                self.text.set_text_edit_disabled(&self.single_line_input, !is_disabled);
-                            }
-                            "h" => {
-                                let current_fadeout = self.text.get_text_box(&self.clipped_text_box).fadeout_clipping();
-                                self.text.get_text_box_mut(&self.clipped_text_box).set_fadeout_clipping(!current_fadeout);
-                            }
+                            // "d" => {
+                            //     let is_disabled = self.text.get_text_edit(&self.single_line_input).disabled();
+                            //     self.text.set_text_edit_disabled(&self.single_line_input, !is_disabled);
+                            // }
+                            // "h" => {
+                            //     let current_fadeout = self.text.get_text_box(&self.clipped_text_box).fadeout_clipping();
+                            //     self.text.get_text_box_mut(&self.clipped_text_box).set_fadeout_clipping(!current_fadeout);
+                            // }
                             _ => {}
                         }
                     }
