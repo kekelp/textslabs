@@ -52,9 +52,7 @@ pub struct Text {
     pub(crate) scroll_animations: Vec<ScrollAnimation>,
 
     pub(crate) current_visibility_frame: u64,
-    pub(crate) cursor_blink_start: Option<Instant>,
-    pub(crate) cursor_currently_blinked_out: bool,
-    
+
     pub(crate) cursor_blink_timer: Option<CursorBlinkWaker>,
 
     #[cfg(feature = "accessibility")]
@@ -64,7 +62,7 @@ pub struct Text {
 /// Data that TextBoxMut and similar things need to have a reference to. Kept all together so that TextBoxMut and similar things can hold a single pointer to all of it.
 /// 
 // A cooler way to do this would be to make the TextBoxMut be TextBoxMut { i: u32, text: &mut Text }. So you have access to the whole Text struct unconditionally, and you don't have to separate things this way. And to get the actual text box, you do self.text.text_boxes[i] every time. But we're trying this way this time
-pub(crate) struct Shared {    
+pub(crate) struct Shared {
     pub styles: SlotMap<DefaultKey, StyleInner>,
     pub default_style_key: DefaultKey,
     pub text_changed: bool,
@@ -77,7 +75,7 @@ pub(crate) struct Shared {
     pub layout_cx: LayoutContext<ColorBrush>,
     pub font_cx: FontContext,
 
-    pub decorations_range: (usize, usize), 
+    pub decorations_range: (usize, usize),
 
     #[cfg(feature = "accessibility")]
     pub accesskit_tree_update: TreeUpdate,
@@ -86,6 +84,30 @@ pub(crate) struct Shared {
     pub current_event_number: u64,
     #[cfg(feature = "accessibility")]
     pub node_id_generator: fn() -> NodeId,
+
+    // Cursor blink state
+    pub cursor_blink_start: Option<Instant>,
+    pub cursor_currently_blinked_out: bool,
+}
+
+impl Shared {
+    pub(crate) fn cursor_blinked_out(&mut self, update: bool) -> bool {
+        if let Some(start_time) = self.cursor_blink_start {
+            let elapsed = Instant::now().duration_since(start_time);
+            let blink_period = Duration::from_millis(CURSOR_BLINK_TIME_MILLIS);
+            let blinked_out = (elapsed.as_millis() / blink_period.as_millis()) % 2 == 0;
+            let changed = blinked_out != self.cursor_currently_blinked_out;
+            if changed {
+                self.decorations_changed = true;
+            }
+            if update {
+                self.cursor_currently_blinked_out = blinked_out;
+            }
+            return blinked_out;
+        } else {
+            false
+        }
+    }
 }
 
 #[cfg(feature = "accessibility")]
@@ -299,10 +321,8 @@ impl Text {
             scroll_animations: Vec::new(),
             current_visibility_frame: 1,
             using_frame_based_visibility: false,
-            cursor_blink_start: None,
-            cursor_currently_blinked_out: false,
             cursor_blink_timer: None,
-            
+
             #[cfg(feature = "accessibility")]
             accesskit_id_to_text_handle_map: HashMap::with_capacity(50),
             
@@ -329,6 +349,8 @@ impl Text {
                     tree: None,
                     focus: NodeId(0),
                 },
+                cursor_blink_start: None,
+                cursor_currently_blinked_out: false,
             },
         }
     }
@@ -696,7 +718,7 @@ impl Text {
             }
         }
         
-        let show_cursor = self.cursor_blinked_out(true);
+        let show_cursor = self.shared.cursor_blinked_out(true);
 
         if self.shared.text_changed {
             text_renderer.clear();
@@ -809,6 +831,22 @@ impl Text {
 
             self.shared.scrolled = self.get_max_animation_duration().is_some();
         }
+    }
+
+    pub fn clear_changes(&mut self) {
+        self.clear_finished_scroll_animations();
+
+        self.shared.text_changed = false;
+        self.shared.decorations_changed = false;
+        self.shared.event_consumed = false;
+        self.using_frame_based_visibility = false;
+
+        // Reset all windows to unprepared for next frame
+        for window_info in &mut self.shared.windows {
+            window_info.prepared = false;
+        }
+
+        self.shared.scrolled = self.get_max_animation_duration().is_some();
     }
 
     /// Fast path for handling scroll-only changes by moving quads in-place.
@@ -1193,10 +1231,6 @@ impl Text {
                 if self.shared.text_changed {
                     self.reset_cursor_blink();
                 }
-                if self.shared.decorations_changed {
-                    self.shared.decorations_changed = true;
-                    self.reset_cursor_blink();
-                }
                 if !self.shared.text_changed && self.shared.scrolled {
                     self.scrolled_moved_indices.push(AnyBox::TextEdit(i));
                 }
@@ -1255,7 +1289,7 @@ impl Text {
     /// 
     /// Games and applications that rerender continuously can call `Window::request_redraw()` unconditionally after every `RedrawRequested` event, without checking this method.
     pub fn needs_rerender(&mut self) -> bool {
-        self.cursor_blinked_out(false);
+        self.shared.cursor_blinked_out(false);
         return self.shared.text_changed || self.shared.decorations_changed || self.shared.scrolled || !self.scrolled_moved_indices.is_empty();
     }
 
@@ -1460,29 +1494,11 @@ impl Text {
         did_scroll
     }
 
-    pub(crate) fn cursor_blinked_out(&mut self, update: bool) -> bool {
-        if let Some(start_time) = self.cursor_blink_start {
-            let elapsed = Instant::now().duration_since(start_time);
-            let blink_period = Duration::from_millis(CURSOR_BLINK_TIME_MILLIS);
-            let blinked_out = (elapsed.as_millis() / blink_period.as_millis()) % 2 == 0;
-            let changed = blinked_out != self.cursor_currently_blinked_out;
-            if changed {
-                self.shared.decorations_changed = true;
-            }
-            if update {
-                self.cursor_currently_blinked_out = blinked_out;
-            }
-            return blinked_out;
-        } else {
-            false
-        }
-    }
-
     /// Returns the duration until the next cursor blink state change.
-    /// 
+    ///
     /// Returns `None` if cursor blinking should not be blinking.
     pub fn time_until_next_cursor_blink(&self) -> Option<Duration> {
-        if let Some(start_time) = self.cursor_blink_start {
+        if let Some(start_time) = self.shared.cursor_blink_start {
             let elapsed = Instant::now().duration_since(start_time);
             let blink_period = Duration::from_millis(CURSOR_BLINK_TIME_MILLIS);
             let elapsed_in_current_cycle = elapsed.as_millis() % blink_period.as_millis();
@@ -1499,19 +1515,19 @@ impl Text {
             let handle = TextEditHandle { key: i };
             let text_edit = self.get_full_text_edit(&handle);
             if text_edit.text_box.selection().is_collapsed() {
-                
-                self.cursor_blink_start = Some(Instant::now());
+
+                self.shared.cursor_blink_start = Some(Instant::now());
                 self.shared.decorations_changed = true;
-                
+
                 if let Some(timer) = &self.cursor_blink_timer {
                     timer.start_waker();
                 }
 
-                return;             
+                return;
             }
         }
 
-        self.cursor_blink_start = None;
+        self.shared.cursor_blink_start = None;
         if let Some(timer) = &self.cursor_blink_timer {
             timer.stop_waker();
         }

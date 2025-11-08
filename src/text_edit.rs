@@ -1534,18 +1534,19 @@ impl<'a> TextEditMut<'a> {
 
     /// Render this text edit box to a `vello_hybrid` `Scene`.
     pub fn render_to_scene(&mut self, scene: &mut vello_hybrid::Scene) {
+        use crate::AnyBox;
         use parley::PositionedLayoutItem;
         use peniko::color::AlphaColor;
         use vello_common::{kurbo::{Rect, Shape}, paint::PaintType};
 
+        self.refresh_layout();
+        
         let (left, top) = self.pos();
         let (left, top) = (left as f32, top as f32);
-
+        
         // Account for scroll offset
         let content_left = left - self.scroll_offset().0;
         let content_top = top - self.scroll_offset().1;
-
-        self.refresh_layout();
 
         // Set up clipping if a clip rect is defined
         let clip_rect = self.text_box.effective_clip_rect();
@@ -1563,30 +1564,40 @@ impl<'a> TextEditMut<'a> {
             scene.push_clip_layer(&clip_rect.to_path(0.1));
         }
 
-        // Render selection rectangles
-        let selection_color = AlphaColor::from_rgba8(0x33, 0x33, 0xff, 0xaa);
-        self.selection().geometry_with(&self.layout(), |rect, _line_i| {
-            let x = content_left + rect.x0 as f32;
-            let y = content_top + rect.y0 as f32;
-            let width = (rect.x1 - rect.x0) as f32;
-            let height = (rect.y1 - rect.y0) as f32;
-            let rect = Rect::new(x as f64, y as f64, (x + width) as f64, (y + height) as f64);
-            scene.set_paint(PaintType::Solid(selection_color));
-            scene.fill_rect(&rect);
-        });
+        // Check if this text edit is focused
+        let is_focused = match self.text_box.shared.focused {
+            Some(AnyBox::TextEdit(f)) => f == self.text_box.key,
+            _ => false,
+        };
 
-        // Render cursor if selection is collapsed
-        if self.selection().is_collapsed() {
-            let cursor_color = AlphaColor::from_rgba8(0xee, 0xee, 0xee, 0xff);
-            let cursor_width = CURSOR_WIDTH;
-            let cursor_rect = self.selection().focus().geometry(&self.layout(), cursor_width);
-            let x = content_left + cursor_rect.x0 as f32;
-            let y = content_top + cursor_rect.y0 as f32;
-            let width = (cursor_rect.x1 - cursor_rect.x0) as f32;
-            let height = (cursor_rect.y1 - cursor_rect.y0) as f32;
-            let rect = Rect::new(x as f64, y as f64, (x + width) as f64, (y + height) as f64);
-            scene.set_paint(PaintType::Solid(cursor_color));
-            scene.fill_rect(&rect);
+        let show_cursor = self.text_box.shared.cursor_blinked_out(true);
+
+        if is_focused {
+            // Render selection rectangles
+            let selection_color = AlphaColor::from_rgba8(0x33, 0x33, 0xff, 0xaa);
+            self.selection().geometry_with(&self.layout(), |rect, _line_i| {
+                let x = content_left + rect.x0 as f32;
+                let y = content_top + rect.y0 as f32;
+                let width = (rect.x1 - rect.x0) as f32;
+                let height = (rect.y1 - rect.y0) as f32;
+                let rect = Rect::new(x as f64, y as f64, (x + width) as f64, (y + height) as f64);
+                scene.set_paint(PaintType::Solid(selection_color));
+                scene.fill_rect(&rect);
+            });
+
+            // Render cursor
+            if show_cursor && self.selection().is_collapsed() {
+                let cursor_color = AlphaColor::from_rgba8(0xee, 0xee, 0xee, 0xff);
+                let cursor_width = CURSOR_WIDTH;
+                let cursor_rect = self.selection().focus().geometry(&self.layout(), cursor_width);
+                let x = content_left + cursor_rect.x0 as f32;
+                let y = content_top + cursor_rect.y0 as f32;
+                let width = (cursor_rect.x1 - cursor_rect.x0) as f32;
+                let height = (cursor_rect.y1 - cursor_rect.y0) as f32;
+                let rect = Rect::new(x as f64, y as f64, (x + width) as f64, (y + height) as f64);
+                scene.set_paint(PaintType::Solid(cursor_color));
+                scene.fill_rect(&rect);
+            }
         }
 
         // Render text

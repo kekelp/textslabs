@@ -10,6 +10,7 @@ accessibility = ["dep:accesskit", "dep:accesskit_winit", "parley/accesskit"]
 
 [profile.dev]
 opt-level = 1
+strip = "debuginfo"
 [profile.dev.package."*"]
 opt-level = 3
 

@@ -73,7 +73,7 @@ impl State {
         let font_name = text.load_font(include_bytes!("PublicPixel.ttf")).expect("Failed to load font");
         // font_name will be "Public Pixel".
 
-        let custom_font_style_handle = text.add_style(TextStyle {
+        let _custom_font_style_handle = text.add_style(TextStyle {
             font_size: 22.0,
             brush: ColorBrush([0, 255, 150, 255]),
             font_stack: FontStack::Single(FontFamily::Named(font_name.into())),
@@ -81,7 +81,7 @@ impl State {
             ..Default::default()
         }, None);
 
-        let monospace_style_handle = text.add_style(TextStyle {
+        let _monospace_style_handle = text.add_style(TextStyle {
             font_size: 22.0,
             font_stack: FontStack::Source("monospace".into()),
             brush: ColorBrush([30, 60, 255, 255]),
@@ -172,37 +172,16 @@ impl State {
                 self.surface.configure(&self.device, &self.surface_config);
                 self.window.request_redraw();
             }
-            WindowEvent::RedrawRequested => {
-                // Prepare the cpu-side text data for rendering.
-                self.text.prepare_all(&mut self.text_renderer);
-                // // Load the text renderer's data on the gpu.
-                // self.text_renderer.load_to_gpu(&self.device, &self.queue);
-
+            WindowEvent::RedrawRequested => {                
                 self.scene.reset();
-
                 self.text.get_text_edit_mut(&self.editable_text_with_unicode).render_to_scene(&mut self.scene);
+
+                self.text.clear_changes();
 
                 // A bunch of wgpu boilerplate to be able to draw on the screen.
                 let surface_texture = self.surface.get_current_texture().unwrap();
                 let view = surface_texture.texture.create_view(&TextureViewDescriptor::default());
                 let mut encoder = self.device.create_command_encoder(&CommandEncoderDescriptor { label: None });
-                // {
-                //     let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
-                //         color_attachments: &[Some(RenderPassColorAttachment {
-                //             view: &view,
-                //             resolve_target: None,
-                //             ops: Operations {
-                //                 load: LoadOp::Clear(wgpu::Color::WHITE),
-                //                 store: wgpu::StoreOp::Store,
-                //             },
-                //             depth_slice: None,
-                //         })],
-                //         ..Default::default()
-                //     });
-
-                //     // Finally, render the text on the screen.
-                    // self.text_renderer.render(&mut pass);
-                // }
 
                 let render_size = RenderSize {
                     width: self.surface_config.width,
