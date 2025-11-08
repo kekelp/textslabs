@@ -53,8 +53,6 @@ pub struct Text {
 
     pub(crate) current_visibility_frame: u64,
 
-    pub(crate) cursor_blink_timer: Option<CursorBlinkWaker>,
-
     #[cfg(feature = "accessibility")]
     pub(crate) accesskit_id_to_text_handle_map: HashMap<NodeId, AnyBox>,
 }
@@ -88,6 +86,7 @@ pub(crate) struct Shared {
     // Cursor blink state
     pub cursor_blink_start: Option<Instant>,
     pub cursor_currently_blinked_out: bool,
+    pub cursor_blink_waker: Option<CursorBlinkWaker>,
 }
 
 impl Shared {
@@ -106,6 +105,24 @@ impl Shared {
             return blinked_out;
         } else {
             false
+        }
+    }
+
+    // If the cursor needs to be blinking, reset it. Otherwise, stop it.
+    pub(crate) fn reset_cursor_blink(&mut self) {
+        if let Some(AnyBox::TextEdit(_)) = self.focused {
+            self.cursor_blink_start = Some(Instant::now());
+            self.decorations_changed = true;
+
+            if let Some(timer) = &self.cursor_blink_waker {
+                timer.start_waker();
+            }
+
+        } else {   
+            self.cursor_blink_start = None;
+            if let Some(timer) = &self.cursor_blink_waker {
+                timer.stop_waker();
+            }
         }
     }
 }
@@ -321,7 +338,6 @@ impl Text {
             scroll_animations: Vec::new(),
             current_visibility_frame: 1,
             using_frame_based_visibility: false,
-            cursor_blink_timer: None,
 
             #[cfg(feature = "accessibility")]
             accesskit_id_to_text_handle_map: HashMap::with_capacity(50),
@@ -351,6 +367,7 @@ impl Text {
                 },
                 cursor_blink_start: None,
                 cursor_currently_blinked_out: false,
+                cursor_blink_waker: None,
             },
         }
     }
@@ -363,7 +380,7 @@ impl Text {
     /// 
     /// You can also handle cursor wakeups manually in your winit event loop with winit's `ControlFlow::WaitUntil` and [`Text::time_until_next_cursor_blink`]. See the `event_loop_smart.rs` example.
     pub fn set_auto_wakeup(&mut self, window: Arc<Window>) {
-        self.cursor_blink_timer = Some(CursorBlinkWaker::new(Arc::downgrade(&window)));
+        self.shared.cursor_blink_waker = Some(CursorBlinkWaker::new(Arc::downgrade(&window)));
     }
 
 
@@ -1151,7 +1168,7 @@ impl Text {
         if focus_changed {
             // todo: could skip some rerenders here if the old focus wasn't editable and had collapsed selection.
             self.shared.decorations_changed = true;
-            self.reset_cursor_blink();
+            self.shared.reset_cursor_blink();
         }
     }
 
@@ -1229,7 +1246,7 @@ impl Text {
                 }
 
                 if self.shared.text_changed {
-                    self.reset_cursor_blink();
+                    self.shared.reset_cursor_blink();
                 }
                 if !self.shared.text_changed && self.shared.scrolled {
                     self.scrolled_moved_indices.push(AnyBox::TextEdit(i));
@@ -1507,31 +1524,6 @@ impl Text {
         } else {
             None
         }
-    }
-
-    // If the cursor needs to be blinking, reset it. Otherwise, stop it.
-    fn reset_cursor_blink(&mut self) {
-        if let Some(AnyBox::TextEdit(i)) = self.shared.focused {
-            let handle = TextEditHandle { key: i };
-            let text_edit = self.get_full_text_edit(&handle);
-            if text_edit.text_box.selection().is_collapsed() {
-
-                self.shared.cursor_blink_start = Some(Instant::now());
-                self.shared.decorations_changed = true;
-
-                if let Some(timer) = &self.cursor_blink_timer {
-                    timer.start_waker();
-                }
-
-                return;
-            }
-        }
-
-        self.shared.cursor_blink_start = None;
-        if let Some(timer) = &self.cursor_blink_timer {
-            timer.stop_waker();
-        }
-
     }
 
     // todo: would be a lot nicer to have these as methods on TextBoxMut and TextEditMut, but is it worth carrying the key around just for this?

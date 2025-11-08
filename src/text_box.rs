@@ -537,6 +537,7 @@ impl<'a> TextBoxMut<'a> {
                                     )
                                 } else {
                                     self.inner.selection.move_to_point(&self.inner.layout, cursor_pos.0, cursor_pos.1);
+                                    self.shared.reset_cursor_blink();
                                 }
                             }
                         }
