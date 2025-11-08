@@ -1246,7 +1246,7 @@ impl Text {
                     text_edit.handle_event_editable(event, window, &self.input_state);
                 }
 
-                if self.shared.text_changed {
+                if self.shared.text_changed || self.shared.decorations_changed {
                     self.shared.reset_cursor_blink();
                 }
                 if !self.shared.text_changed && self.shared.scrolled {
