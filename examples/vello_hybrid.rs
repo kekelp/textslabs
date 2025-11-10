@@ -1,14 +1,15 @@
-use parley::{FontFamily, FontStack, TextStyle};
+use parley::TextStyle;
 use textslabs::*;
 use vello_hybrid::{RenderSize, RenderTargetConfig, Renderer, Scene};
+use vello_common::{kurbo::{Circle, Shape}, paint::PaintType};
+use peniko::color::AlphaColor;
 use std::sync::Arc;
 use wgpu::*;
 use winit::{
     dpi::LogicalSize,
-    event::{WindowEvent, ElementState},
+    event::WindowEvent,
     event_loop::EventLoop,
     window::Window,
-    keyboard::ModifiersState,
 };
 
 fn main() {
@@ -26,18 +27,10 @@ struct State {
     window: Arc<Window>,
 
     text: Text,
+    text_edit_handles: Vec<TextEditHandle>,
 
     scene: Scene,
     renderer: Renderer,
-
-    // single_line_input: TextEditHandle,
-    // clipped_text_box: TextBoxHandle,
-
-    big_text_style: StyleHandle,
-    modifiers: ModifiersState,
-
-    // justified_static_text: TextBoxHandle,
-    editable_text_with_unicode: TextEditHandle,
 }
 
 impl State {
@@ -57,71 +50,44 @@ impl State {
             .unwrap();
         surface.configure(&device, &surface_config);
 
-        let white = [255,0,0,255];
         let mut text = Text::new();
-        
-        // Create a style
-        let big_text_style_handle = text.add_style(TextStyle {
-            font_size: 64.0,
+
+        // Create text style
+        let white = [255, 255, 255, 255];
+        let text_style_handle = text.add_style(TextStyle {
+            font_size: 24.0,
             brush: ColorBrush(white),
             overflow_wrap: OverflowWrap::Anywhere,
             ..Default::default()
         }, None);
 
-        // Load a custom font using the `load_font` helper. For more advanced usage, you can access the `parley` FontContext directly via text.font_context().
-        let font_name = text.load_font(include_bytes!("PublicPixel.ttf")).expect("Failed to load font");
-        // font_name will be "Public Pixel".
+        // Create multiple text edit boxes with different text
+        let mut text_edit_handles = Vec::new();
 
-        let _custom_font_style_handle = text.add_style(TextStyle {
-            font_size: 22.0,
-            brush: ColorBrush([0, 255, 150, 255]),
-            font_stack: FontStack::Single(FontFamily::Named(font_name.into())),
-            overflow_wrap: OverflowWrap::Anywhere,
-            ..Default::default()
-        }, None);
+        let texts = vec![
+            "ヘッケはこれらのL-函数が全複素平面へ有理型接続を持ち、指標が自明であるときZ = 1でオーダー1",
+            "Мунди деленит молестиæ усу ад, перципиах глормату диссентиас",
+            "Εσσεν οβρανώ δινιζι εν το δρονινη τού θεού και εν τώ καθ'ημών",
+            "δις ναλιδισ ινγενθεμ υιριβυς ηασταμ ιν λατυς ινγυε φερι χυρυαμ χομπαγιβυσ αλυυμ χοντορσιτ.",
+        ];
 
-        let _monospace_style_handle = text.add_style(TextStyle {
-            font_size: 22.0,
-            font_stack: FontStack::Source("monospace".into()),
-            brush: ColorBrush([30, 60, 255, 255]),
-            overflow_wrap: OverflowWrap::Anywhere,
-            ..Default::default()
-        }, None);
+        let positions = [
+            (50.0, 50.0),
+            (200.0, 200.0),
+            (350.0, 350.0),
+            (500.0, 500.0),
+        ];
 
-        // Create text boxes and get handles. Normally, the handle would be owned by a higher level struct representing a node in a GUI tree or something similar.
-        // let single_line_input = text.add_text_edit("".to_string(), (10.0, 15.0), (200.0, 35.0), 0.0);
-        let editable_text_with_unicode = text.add_text_edit("Editable text ⚡⚡ 無限での座を含む全ての سلام دنیا، این یک متن قابل ویرایش است Editable text 無限での座を含む全ての سلام دنیا، این یک متن قابل ویرایش است".to_string(), (300.0, 200.0), (400.0, 200.0), 0.0);
-        // let _info = text.add_text_box("Press Ctrl + D to disable the top edit box. Press Ctrl + H to toggle the fade effect on the clipped text box".to_string(), (10.0, 60.0), (200.0, 100.0), 0.0);
-        // let _help_text_edit = text.add_text_edit("Press Ctrl + Plus and Ctrl + Minus to adjust the size of the big text.".to_string(), (470.0, 60.0), (200.0, 150.0), 0.0);
-        // let shift_enter_text_edit = text.add_text_edit("Use Shift+Enter for newlines here".to_string(), (250.0, 60.0), (200.0, 100.0), 0.0);
-        
-        // let clipped_text_box = text.add_text_box("Clipped text".to_string(), (10.0, 340.0), (300.0, 50.0), 0.0);
-        
-        // Using a &'static str here for this non-editable text box.
-        // let justified_static_text = text.add_text_box("Long static words, Long static words, Long static words, Long static words, ... (justified btw) ", (150.0, 440.0), (600.0, 150.0), 0.0);
-        
-        // Use the handles to access and edit text boxes. Accessing a box through a handle is a very fast operation, basically just an array access. There is no hashing involved.
-        // text.get_text_edit_mut(&single_line_input).set_single_line(true);
-        // text.get_text_edit_mut(&single_line_input).set_placeholder("Single line input".to_string());
-        text.get_text_edit_mut(&editable_text_with_unicode).set_style(&big_text_style_handle);
-
-        // text.get_text_edit_mut(&shift_enter_text_edit).set_newline_mode(NewlineMode::ShiftEnter);
-        // text.get_text_edit_mut(&_help_text_edit).set_style(&monospace_style_handle);
-        
-        // text.get_text_box_mut(&clipped_text_box).set_style(&big_text_style_handle);
-        // text.get_text_box_mut(&clipped_text_box).text_mut();
-        
-        // text.get_text_box_mut(&clipped_text_box).set_clip_rect(Some(parley::BoundingBox {
-        //     x0: 0.0,
-        //     y0: 0.0,
-        //     x1: 200.0,
-        //     y1: 30.0,
-        // }));
-
-        text.get_text_style_mut(&big_text_style_handle).font_size = 32.0;
-
-        // text.get_text_box_mut(&justified_static_text).set_style(&custom_font_style_handle);
-        // text.get_text_box_mut(&justified_static_text).set_alignment(Alignment::Justify);
+        for (_i, (content, pos)) in texts.iter().zip(positions.iter()).enumerate() {
+            let handle = text.add_text_edit(
+                content.to_string(),
+                *pos,
+                (250.0, 150.0),
+                0.0
+            );
+            text.get_text_edit_mut(&handle).set_style(&text_style_handle);
+            text_edit_handles.push(handle);
+        }
 
         let renderer = Renderer::new(
             &device,
@@ -139,18 +105,9 @@ impl State {
             surface_config,
             window,
             text,
-            // justified_static_text,
-            editable_text_with_unicode,
-
+            text_edit_handles,
             renderer,
-
             scene: Scene::new(physical_size.width as u16, physical_size.height as u16),
-
-            // single_line_input,
-            // clipped_text_box,
-            big_text_style: big_text_style_handle,
-
-            modifiers: ModifiersState::default(),
         }
     }
 
@@ -168,13 +125,33 @@ impl State {
                 self.surface.configure(&self.device, &self.surface_config);
                 self.window.request_redraw();
             }
-            WindowEvent::RedrawRequested => {                
+            WindowEvent::RedrawRequested => {
                 self.scene.reset();
-                self.text.get_text_edit_mut(&self.editable_text_with_unicode).render_to_scene(&mut self.scene);
+
+                // Define circle colors and positions
+                let circles = [
+                    (150.0, 150.0, 120.0, AlphaColor::from_rgba8(255, 100, 100, 120)), // Red
+                    (300.0, 300.0, 120.0, AlphaColor::from_rgba8(100, 255, 100, 120)), // Green
+                    (450.0, 450.0, 120.0, AlphaColor::from_rgba8(100, 100, 255, 120)), // Blue
+                    (600.0, 600.0, 120.0, AlphaColor::from_rgba8(255, 100, 255, 120)), // Magenta
+                ];
+
+                // Draw circles and text alternating
+                for (_i, (cx, cy, radius, color)) in circles.iter().enumerate() {
+                    // Draw circle
+                    let circle = Circle::new((*cx, *cy), *radius);
+                    self.scene.set_paint(PaintType::Solid(*color));
+                    self.scene.fill_path(&circle.to_path(0.1));
+
+                    // Draw corresponding text box
+                    if _i < self.text_edit_handles.len() {
+                        self.text.get_text_edit_mut(&self.text_edit_handles[_i]).render_to_scene(&mut self.scene);
+                    }
+                }
 
                 self.text.clear_changes();
 
-                // A bunch of wgpu boilerplate to be able to draw on the screen.
+                // Render to screen
                 let surface_texture = self.surface.get_current_texture().unwrap();
                 let view = surface_texture.texture.create_view(&TextureViewDescriptor::default());
                 let mut encoder = self.device.create_command_encoder(&CommandEncoderDescriptor { label: None });
@@ -185,39 +162,9 @@ impl State {
                 };
                 self.renderer.render(&self.scene, &self.device, &self.queue, &mut encoder, &render_size, &view).unwrap();
 
-                // More boilerplate.
                 self.queue.submit([encoder.finish()]);
                 surface_texture.present();
                 self.window.request_redraw();
-            }
-            WindowEvent::ModifiersChanged(modifiers) => {
-                self.modifiers = modifiers.state();
-            }
-            WindowEvent::KeyboardInput { event, .. } => {
-                if event.state == ElementState::Pressed && self.modifiers.control_key() {
-                    if let Some(s) = event.text {
-                        match s.as_str() {
-                            "+" => {
-                                self.text.get_text_style_mut(&self.big_text_style).font_size += 2.0;
-                            }
-                            "-" => {
-                                let current_size = self.text.get_text_style(&self.big_text_style).font_size;
-                                if current_size > 4.0 {
-                                    self.text.get_text_style_mut(&self.big_text_style).font_size -= 2.0;
-                                }
-                            }
-                            // "d" => {
-                            //     let is_disabled = self.text.get_text_edit(&self.single_line_input).disabled();
-                            //     self.text.set_text_edit_disabled(&self.single_line_input, !is_disabled);
-                            // }
-                            // "h" => {
-                            //     let current_fadeout = self.text.get_text_box(&self.clipped_text_box).fadeout_clipping();
-                            //     self.text.get_text_box_mut(&self.clipped_text_box).set_fadeout_clipping(!current_fadeout);
-                            // }
-                            _ => {}
-                        }
-                    }
-                }
             }
             WindowEvent::CloseRequested => event_loop.exit(),
             _ => {}
