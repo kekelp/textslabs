@@ -45,7 +45,6 @@ struct State {
     ellipse_buffer: wgpu::Buffer,
 
     text_bind_group: wgpu::BindGroup,
-    params_bind_group: wgpu::BindGroup,
     ellipse_bind_group: wgpu::BindGroup,
 
     text_edit_1: TextEditHandle,
@@ -136,13 +135,11 @@ impl State {
             label: Some("bind_group_0"),
         });
 
-        let text_bind_group = text_renderer.atlas_bind_group();
-        let params_bind_group = text_renderer.params_bind_group();
-
+        let text_bind_group = text_renderer.bind_group();
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Render Pipeline Layout"),
-            bind_group_layouts: &[&ellipse_bind_group_layout, &text_renderer.params_bind_group_layout(), &text_renderer.atlas_bind_group_layout()],
+            bind_group_layouts: &[&ellipse_bind_group_layout, &text_renderer.bind_group_layout()],
             ..Default::default()
         });
 
@@ -219,7 +216,7 @@ impl State {
         
         let shapes = Vec::with_capacity(20);
         
-        Self { window, device, queue, surface, pipeline, shape_buffer: vertex_buffer, ellipse_buffer, text_bind_group, params_bind_group, ellipse_bind_group, ellipses, shapes, text, text_renderer, text_edit_1, text_edit_2, text_edit_3, text_edit_4 }
+        Self { window, device, queue, surface, pipeline, shape_buffer: vertex_buffer, ellipse_buffer, text_bind_group, ellipse_bind_group, ellipses, shapes, text, text_renderer, text_edit_1, text_edit_2, text_edit_3, text_edit_4 }
     }
 
     // Partial borrows moment.
@@ -283,8 +280,7 @@ impl State {
             render_pass.set_pipeline(&self.pipeline);
 
             render_pass.set_bind_group(0, &self.ellipse_bind_group, &[]);
-            render_pass.set_bind_group(1, &self.text_renderer.params_bind_group(), &[]);
-            render_pass.set_bind_group(2, &self.text_renderer.atlas_bind_group(), &[]);
+            render_pass.set_bind_group(1, &self.text_bind_group, &[]);
             
             render_pass.set_vertex_buffer(0, self.shape_buffer.slice(..));
             render_pass.draw(0..4, 0..n);

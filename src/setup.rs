@@ -3,7 +3,7 @@ use crate::*;
 pub(crate) const INITIAL_BUFFER_SIZE: u64 = 4096;
 
 
-const ATLAS_BIND_GROUP_LAYOUT_DESC: BindGroupLayoutDescriptor = wgpu::BindGroupLayoutDescriptor {
+const BIND_GROUP_LAYOUT_DESC: BindGroupLayoutDescriptor = wgpu::BindGroupLayoutDescriptor {
     entries: &[
         BindGroupLayoutEntry {
             binding: 0,
@@ -42,9 +42,20 @@ const ATLAS_BIND_GROUP_LAYOUT_DESC: BindGroupLayoutDescriptor = wgpu::BindGroupL
                 min_binding_size: None,
             },
             count: None,
+        },
+        // Params uniform buffer
+        BindGroupLayoutEntry {
+            binding: 4,
+            visibility: ShaderStages::VERTEX.union(ShaderStages::FRAGMENT),
+            ty: BindingType::Buffer {
+                ty: BufferBindingType::Uniform,
+                has_dynamic_offset: false,
+                min_binding_size: NonZeroU64::new(mem::size_of::<Params>() as u64),
+            },
+            count: None,
         }
     ],
-    label: Some("atlas bind group layout"),
+    label: Some("bind group layout"),
 };
 
 /// Configuration parameters for the text renderer.
@@ -107,8 +118,8 @@ fn generate_shader_source(enable_z_range_filtering: bool) -> ShaderSource<'stati
         
         // Add push constants after params declaration
         let shader_with_push_constants = base_shader.replace(
-            "@group(1) @binding(0)\nvar<uniform> params: Params;",
-            &format!("@group(1) @binding(0)\nvar<uniform> params: Params;\n\n{}", push_constants_template)
+            "@group(0) @binding(4)\nvar<uniform> params: Params;",
+            &format!("@group(0) @binding(4)\nvar<uniform> params: Params;\n\n{}", push_constants_template)
         );
         
         // Replace the vertex shader function with the z-range filtering version
@@ -180,30 +191,7 @@ impl ContextlessTextRenderer {
             mapped_at_creation: false,
         });
 
-        let params_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            entries: &[BindGroupLayoutEntry {
-                binding: 0,
-                visibility: ShaderStages::VERTEX.union(ShaderStages::FRAGMENT),
-                ty: BindingType::Buffer {
-                    ty: BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: NonZeroU64::new(mem::size_of::<Params>() as u64),
-                },
-                count: None,
-            }],
-            label: Some("uniforms bind group layout"),
-        });
-
-        let params_bind_group = device.create_bind_group(&BindGroupDescriptor {
-            layout: &params_layout,
-            entries: &[BindGroupEntry {
-                binding: 0,
-                resource: params_buffer.as_entire_binding(),
-            }],
-            label: Some("uniforms bind group"),
-        });
-
-        let atlas_bind_group_layout = device.create_bind_group_layout(&ATLAS_BIND_GROUP_LAYOUT_DESC);
+        let bind_group_layout = device.create_bind_group_layout(&BIND_GROUP_LAYOUT_DESC);
 
         let glyph_cache = LruCache::unbounded_with_hasher(BuildHasherDefault::<FxHasher>::default());
 
@@ -228,7 +216,7 @@ impl ContextlessTextRenderer {
 
         let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: None,
-            bind_group_layouts: &[&atlas_bind_group_layout, &params_layout],
+            bind_group_layouts: &[&bind_group_layout],
             push_constant_ranges: &push_constant_ranges,
         });
 
@@ -274,13 +262,14 @@ impl ContextlessTextRenderer {
             &color_atlas_pages,
         );
 
-        let atlas_bind_group = create_atlas_bind_group(
+        let bind_group = create_bind_group(
             device,
             &mask_texture_array,
             &color_texture_array,
             &vertex_buffer,
             &sampler,
-            &atlas_bind_group_layout,
+            &params_buffer,
+            &bind_group_layout,
         );
 
         return Self {
@@ -292,14 +281,12 @@ impl ContextlessTextRenderer {
             quads: Vec::with_capacity(1000),
             mask_texture_array,
             color_texture_array,
-            atlas_bind_group,
+            bind_group,
             pipeline,
-            atlas_bind_group_layout,
-            params_layout,
+            bind_group_layout,
             sampler,
             params: uniform_params,
             params_buffer,
-            params_bind_group,
             glyph_cache,
             last_frame_evicted: 0,
             z_range_filtering_enabled: params.enable_z_range_filtering,
@@ -325,7 +312,7 @@ impl ContextlessTextRenderer {
         self.color_texture_array = color_texture_array;
 
         // Rebuild bind group after textures are updated
-        self.recreate_atlas_bind_group(device);
+        self.recreate_bind_group(device);
     }
 
     pub(crate) fn update_texture_arrays(&mut self, queue: &wgpu::Queue) {
@@ -377,28 +364,30 @@ impl ContextlessTextRenderer {
     }
     
 
-    pub(crate) fn recreate_atlas_bind_group(&mut self, device: &wgpu::Device) {
-        let bind_group = create_atlas_bind_group(
+    pub(crate) fn recreate_bind_group(&mut self, device: &wgpu::Device) {
+        let bind_group = create_bind_group(
             device,
             &self.mask_texture_array,
             &self.color_texture_array,
             &self.vertex_buffer,
             &self.sampler,
-            &self.atlas_bind_group_layout,
+            &self.params_buffer,
+            &self.bind_group_layout,
         );
 
-        self.atlas_bind_group = bind_group;
+        self.bind_group = bind_group;
     }
 }
 
 
-fn create_atlas_bind_group(
+fn create_bind_group(
     device: &wgpu::Device,
     mask_texture_array: &wgpu::Texture,
     color_texture_array: &wgpu::Texture,
     vertex_buffer: &wgpu::Buffer,
     sampler: &wgpu::Sampler,
-    atlas_bind_group_layout: &wgpu::BindGroupLayout,
+    params_buffer: &wgpu::Buffer,
+    bind_group_layout: &wgpu::BindGroupLayout,
 ) -> wgpu::BindGroup {
 
     let mask_view = mask_texture_array.create_view(&wgpu::TextureViewDescriptor {
@@ -428,12 +417,16 @@ fn create_atlas_bind_group(
             binding: 3,
             resource: vertex_buffer.as_entire_binding(),
         },
+        wgpu::BindGroupEntry {
+            binding: 4,
+            resource: params_buffer.as_entire_binding(),
+        },
     ];
 
     device.create_bind_group(&wgpu::BindGroupDescriptor {
-        layout: atlas_bind_group_layout,
+        layout: bind_group_layout,
         entries: &entries,
-        label: Some("atlas texture array bind group"),
+        label: Some("bind group"),
     })
 }
 

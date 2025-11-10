@@ -42,14 +42,12 @@ pub(crate) struct ContextlessTextRenderer {
     // Combined texture arrays and single bind group
     pub(crate) mask_texture_array: Texture,
     pub(crate) color_texture_array: Texture,
-    pub atlas_bind_group_layout: BindGroupLayout,
-    pub(crate) params_layout: BindGroupLayout,
-    pub(crate) atlas_bind_group: BindGroup,
-    
+    pub bind_group_layout: BindGroupLayout,
+    pub(crate) bind_group: BindGroup,
+
     pub params: Params,
     pub sampler: Sampler,
     pub params_buffer: Buffer,
-    pub params_bind_group: BindGroup,
 
     pub pipeline: RenderPipeline,
     pub atlas_size: u32,
@@ -534,24 +532,14 @@ impl TextRenderer {
         &self.text_renderer.vertex_buffer
     }
 
-    /// Get the atlas bind group for external rendering.
-    pub fn atlas_bind_group(&self) -> BindGroup {
-        self.text_renderer.atlas_bind_group.clone()
+    /// Get the bind group for external rendering.
+    pub fn bind_group(&self) -> BindGroup {
+        self.text_renderer.bind_group.clone()
     }
 
-    /// Get the atlas bind group for external rendering.
-    pub fn atlas_bind_group_layout(&self) -> BindGroupLayout {
-        self.text_renderer.atlas_bind_group_layout.clone()
-    }
-
-    /// Get the params bind group for external rendering.
-    pub fn params_bind_group(&self) -> BindGroup {
-        self.text_renderer.params_bind_group.clone()
-    }
-
-    /// Get the params bind group for external rendering.
-    pub fn params_bind_group_layout(&self) -> BindGroupLayout {
-        self.text_renderer.params_layout.clone()
+    /// Get the bind group layout for external rendering.
+    pub fn bind_group_layout(&self) -> BindGroupLayout {
+        self.text_renderer.bind_group_layout.clone()
     }
 
     /// Get the quads buffer for external rendering
@@ -589,8 +577,7 @@ const SOURCES: &[Source; 3] = &[
 impl ContextlessTextRenderer {
     pub fn render(&self, pass: &mut RenderPass<'_>) {
         pass.set_pipeline(&self.pipeline);
-        pass.set_bind_group(0, &self.atlas_bind_group, &[]);
-        pass.set_bind_group(1, &self.params_bind_group, &[]);
+        pass.set_bind_group(0, &self.bind_group, &[]);
         pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
 
         if self.z_range_filtering_enabled {
@@ -634,7 +621,7 @@ impl ContextlessTextRenderer {
             let new_size = u64::max(growth_size, current_growth);
             
             self.vertex_buffer = create_vertex_buffer(device, new_size);
-            self.recreate_atlas_bind_group(device);
+            self.recreate_bind_group(device);
         }
 
         // Write all quads to vertex buffer
@@ -652,8 +639,7 @@ impl ContextlessTextRenderer {
         }
 
         pass.set_pipeline(&self.pipeline);
-        pass.set_bind_group(0, &self.atlas_bind_group, &[]);
-        pass.set_bind_group(1, &self.params_bind_group, &[]);
+        pass.set_bind_group(0, &self.bind_group, &[]);
         pass.set_push_constants(wgpu::ShaderStages::VERTEX, 0, bytemuck::bytes_of(&z_range));
         pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
 

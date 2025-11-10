@@ -36,7 +36,7 @@ struct Params {
 // @group(0) @binding(3)
 // var<storage, read> _vertex_buffer: array<VertexInput>;
 
-@group(1) @binding(0) var<uniform> params: Params;
+@group(0) @binding(4) var<uniform> params: Params;
 
 fn srgb_to_linear(c: f32) -> f32 {
     if c <= 0.04045 {

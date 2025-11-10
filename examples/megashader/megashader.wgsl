@@ -42,12 +42,11 @@ struct VertexOutput {
 
 @group(0) @binding(0) var<storage, read> ellipse_storage: array<Ellipse>;
 
-@group(1) @binding(0)  var<uniform> params: Params;
-
-@group(2) @binding(0) var mask_atlas_texture: texture_2d_array<f32>;
-@group(2) @binding(1) var color_atlas_texture: texture_2d_array<f32>;
-@group(2) @binding(2) var atlas_sampler: sampler;
-@group(2) @binding(3) var<storage, read> text_storage: array<TextQuad>;
+@group(1) @binding(0) var mask_atlas_texture: texture_2d_array<f32>;
+@group(1) @binding(1) var color_atlas_texture: texture_2d_array<f32>;
+@group(1) @binding(2) var atlas_sampler: sampler;
+@group(1) @binding(3) var<storage, read> text_storage: array<TextQuad>;
+@group(1) @binding(4) var<uniform> params: Params;
 
 fn screen_to_clip(pos: vec2<f32>) -> vec2<f32> {
     var clip_pos = (pos / params.screen_resolution) * 2.0 - 1.0;
