@@ -72,10 +72,10 @@ impl State {
         ];
 
         let positions = [
-            (50.0, 50.0),
-            (200.0, 200.0),
-            (350.0, 350.0),
-            (500.0, 500.0),
+            (100.0 +  50.0, 100.0 + 50.0),
+            (100.0 + 200.0, 100.0 + 200.0),
+            (100.0 + 350.0, 100.0 + 350.0),
+            (100.0 + 500.0, 100.0 + 500.0),
         ];
 
         for (_i, (content, pos)) in texts.iter().zip(positions.iter()).enumerate() {
@@ -130,22 +130,23 @@ impl State {
 
                 // Define circle colors and positions
                 let circles = [
-                    (150.0, 150.0, 120.0, AlphaColor::from_rgba8(255, 100, 100, 120)), // Red
-                    (300.0, 300.0, 120.0, AlphaColor::from_rgba8(100, 255, 100, 120)), // Green
-                    (450.0, 450.0, 120.0, AlphaColor::from_rgba8(100, 100, 255, 120)), // Blue
-                    (600.0, 600.0, 120.0, AlphaColor::from_rgba8(255, 100, 255, 120)), // Magenta
+                    (150.0, 150.0, 120.0, AlphaColor::from_rgba8(255, 100, 100, 200)), // Red
+                    (300.0, 300.0, 120.0, AlphaColor::from_rgba8(100, 255, 100, 200)), // Green
+                    (450.0, 450.0, 120.0, AlphaColor::from_rgba8(100, 100, 255, 200)), // Blue
+                    (600.0, 600.0, 120.0, AlphaColor::from_rgba8(255, 100, 255, 200)), // Magenta
                 ];
 
                 // Draw circles and text alternating
-                for (_i, (cx, cy, radius, color)) in circles.iter().enumerate() {
+                for (i, (cx, cy, radius, color)) in circles.iter().enumerate() {
                     // Draw circle
                     let circle = Circle::new((*cx, *cy), *radius);
                     self.scene.set_paint(PaintType::Solid(*color));
                     self.scene.fill_path(&circle.to_path(0.1));
 
                     // Draw corresponding text box
-                    if _i < self.text_edit_handles.len() {
-                        self.text.get_text_edit_mut(&self.text_edit_handles[_i]).render_to_scene(&mut self.scene);
+                    if i < self.text_edit_handles.len() {
+                        let handle = &self.text_edit_handles[i];
+                        self.text.get_text_edit_mut(handle).render_to_scene(&mut self.scene);
                     }
                 }
 
