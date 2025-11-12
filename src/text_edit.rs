@@ -1533,6 +1533,7 @@ impl<'a> TextEditMut<'a> {
     }
 
     /// Render this text edit box to a `vello_hybrid` `Scene`.
+    #[cfg(feature = "vello_hybrid")]
     pub fn render_to_scene(&mut self, scene: &mut vello_hybrid::Scene) {
         use crate::AnyBox;
         use parley::PositionedLayoutItem;
@@ -1617,6 +1618,7 @@ impl<'a> TextEditMut<'a> {
 }
 
 /// Helper function to render a glyph run to a vello_hybrid Scene.
+#[cfg(feature = "vello_hybrid")]
 fn render_glyph_run_to_scene(
     ctx: &mut vello_hybrid::Scene,
     glyph_run: &GlyphRun<'_, ColorBrush>,
