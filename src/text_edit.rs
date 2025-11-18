@@ -221,29 +221,28 @@ impl<'a> TextEditMut<'a> {
         self.text_box.inner.accesskit_id
     }
 
-    pub(crate) fn handle_event_editable(&mut self, event: &WindowEvent, window: &Window, input_state: &TextInputState) {
+    pub(crate) fn handle_event_editable(&mut self, event: &WindowEvent, window: &Window, input_state: &TextInputState) -> bool {
         if self.text_box.hidden() {
-            return;
+            return false;
         }
-        
+
         // Capture initial state for comparison
         let initial_selection = self.text_box.selection();
         let initial_show_cursor = self.inner.show_cursor;
-        
+
         let mut scroll_to_cursor = false;
+        let mut consumed = false;
 
         if ! self.inner.showing_placeholder {
-            let did_scroll = self.text_box.handle_event_no_edit(event, input_state, true);
-            if did_scroll {
-                self.text_box.shared.scrolled = true;
-            }
+            consumed = self.text_box.handle_event_no_edit(event, input_state, true);
         }
 
         match event {
             WindowEvent::KeyboardInput { event, .. } if !self.is_composing() => {
                 if !event.state.is_pressed() {
-                    return;
+                    return consumed;
                 }
+                consumed = true;
                 #[allow(unused)]
                 let mods_state = input_state.modifiers.state();
                 let shift = mods_state.shift_key();
@@ -408,6 +407,7 @@ impl<'a> TextEditMut<'a> {
                 // todo, this is all wrong (should probably scroll), but nobody cares
                 use winit::event::TouchPhase::*;
                 if ! self.inner.showing_placeholder {
+                    consumed = true;
                     match phase {
                         Started => {
                             let cursor_pos = (
@@ -427,13 +427,15 @@ impl<'a> TextEditMut<'a> {
                         }
                         Ended => (),
                     }
-                } 
+                }
             }
             WindowEvent::Ime(Ime::Disabled) => {
+                consumed = true;
                 self.clear_compose();
                 self.text_box.shared.text_changed = true;
             }
             WindowEvent::Ime(Ime::Commit(text)) => {
+                consumed = true;
                 if self.inner.showing_placeholder {
                     self.clear_placeholder()
                 }
@@ -442,6 +444,7 @@ impl<'a> TextEditMut<'a> {
                 self.text_box.shared.text_changed = true;
             }
             WindowEvent::Ime(Ime::Preedit(text, cursor)) => {
+                consumed = true;
                 scroll_to_cursor = true;
                 self.text_box.shared.text_changed = true;
                 if self.inner.showing_placeholder {
@@ -471,6 +474,8 @@ impl<'a> TextEditMut<'a> {
                 self.text_box.shared.scrolled = true;
             }
         }
+
+        consumed
     }
 
     // #[cfg(feature = "accesskit")]

@@ -66,6 +66,7 @@ pub(crate) struct Shared {
     pub text_changed: bool,
     pub decorations_changed: bool,
     pub scrolled: bool,
+    // todo: wtf is this?
     pub event_consumed: bool,
     pub focused: Option<AnyBox>,
 
@@ -907,11 +908,12 @@ impl Text {
         });
     }
 
-    /// Handle window events for text widgets in a specific window.
+    /// Handle window events for all text areas in a specific window.
     /// 
-    /// This is the multi-window version of [`Text::handle_event()`]. 
-    /// Only text elements belonging to the specified window (or with no window restriction) will respond to events.
-    pub fn handle_event(&mut self, event: &WindowEvent, window: &Window) {
+    /// Returns `true` if the event was consumed by a text area.
+    pub fn handle_event(&mut self, event: &WindowEvent, window: &Window) -> bool {
+        let mut event_consumed = false
+        ;
         self.shared.current_event_number += 1;
         
         self.input_state.handle_event(event);
@@ -955,6 +957,7 @@ impl Text {
                 let new_focus = self.find_topmost_at_pos_for_window(self.input_state.mouse.cursor_pos, window.id());
                 if new_focus.is_some() {
                     self.shared.event_consumed = true;
+                    event_consumed = true;
                 }
                 self.refocus(new_focus);
                 self.handle_click_counting();
@@ -965,9 +968,9 @@ impl Text {
             let hovered = self.find_topmost_at_pos_for_window(self.input_state.mouse.cursor_pos, window.id());
             if let Some(hovered_widget) = hovered {
                 self.shared.event_consumed = true;
-                self.handle_hovered_event(hovered_widget, event, window);
+                let consumed = self.handle_hovered_event(hovered_widget, event, window);
+                event_consumed |= consumed;
             }
-            return;
         }
 
         if let Some(focused) = self.shared.focused {
@@ -991,7 +994,8 @@ impl Text {
 
             if focused_belongs_to_window {
                 self.shared.event_consumed = true;
-                self.handle_focused_event(focused, event, window);
+                let consumed = self.handle_focused_event(focused, event, window);
+                event_consumed |= consumed;
 
                 #[cfg(feature = "accessibility")] {   
                     // todo: not the best, this includes decoration changes and stuff.
@@ -1001,6 +1005,8 @@ impl Text {
                 }
             }
         }
+
+        return event_consumed;
     }
 
     fn find_topmost_at_pos_for_window(&mut self, cursor_pos: (f64, f64), window_id: WindowId) -> Option<AnyBox> {
@@ -1218,7 +1224,7 @@ impl Text {
         }
     }
     
-    fn handle_hovered_event(&mut self, hovered: AnyBox, event: &WindowEvent, window: &Window) {
+    fn handle_hovered_event(&mut self, hovered: AnyBox, event: &WindowEvent, window: &Window) -> bool {
         // scroll wheel event
         if let WindowEvent::MouseWheel { .. } = event {
             match hovered {
@@ -1230,21 +1236,25 @@ impl Text {
                         self.scrolled_moved_indices.push(AnyBox::TextEdit(i));
                         self.shared.scrolled = true;
                     }
+                    return did_scroll;
                 },
                 AnyBox::TextBox(_) => {}
             }
         }
+        false
     }
 
-    fn handle_focused_event(&mut self, focused: AnyBox, event: &WindowEvent, window: &Window) {
+    fn handle_focused_event(&mut self, focused: AnyBox, event: &WindowEvent, window: &Window) -> bool {
         match focused {
             AnyBox::TextEdit(i) => {
                 let handle = TextEditHandle { key: i };
                 let mut text_edit = get_full_text_edit_partial_borrows(&mut self.text_edits, &mut self.shared, &handle);
 
-                if !text_edit.inner.disabled {
-                    text_edit.handle_event_editable(event, window, &self.input_state);
-                }
+                let consumed = if !text_edit.inner.disabled {
+                    text_edit.handle_event_editable(event, window, &self.input_state)
+                } else {
+                    false
+                };
 
                 if self.shared.text_changed || self.shared.decorations_changed {
                     self.shared.reset_cursor_blink();
@@ -1252,18 +1262,20 @@ impl Text {
                 if !self.shared.text_changed && self.shared.scrolled {
                     self.scrolled_moved_indices.push(AnyBox::TextEdit(i));
                 }
+                consumed
             },
             AnyBox::TextBox(i) => {
                 let handle = TextBoxHandle { key: i };
                 let mut text_box = get_full_text_box_partial_borrows(&mut self.text_boxes, &mut self.shared, &handle);
 
-                text_box.handle_event(event, window, &self.input_state);
+                let consumed = text_box.handle_event(event, window, &self.input_state);
                 if self.shared.decorations_changed {
                     self.shared.decorations_changed = true;
                 }
                 if !self.shared.text_changed && self.shared.scrolled {
                     self.scrolled_moved_indices.push(AnyBox::TextBox(i));
                 }
+                consumed
             },
         }
     }

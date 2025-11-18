@@ -386,17 +386,14 @@ impl<'a> TextBoxMut<'a> {
         );
     }
 
-    pub(crate) fn handle_event(&mut self, event: &WindowEvent, _window: &Window, input_state: &TextInputState) {
+    pub(crate) fn handle_event(&mut self, event: &WindowEvent, _window: &Window, input_state: &TextInputState) -> bool {
         if self.inner.hidden {
-            return;
+            return false;
         }
-        
+
         let initial_selection = self.inner.selection.selection;
-        
-        let did_scroll = self.handle_event_no_edit(event, input_state, false);
-        if did_scroll {
-            self.shared.scrolled = true;
-        }
+
+        let mut consumed = self.handle_event_no_edit(event, input_state, false);
 
         // Handle mouse wheel scrolling for multi-line text boxes with auto_clip
         if let WindowEvent::MouseWheel { delta, .. } = event {
@@ -407,20 +404,21 @@ impl<'a> TextBoxMut<'a> {
                         winit::event::MouseScrollDelta::LineDelta(_x, y) => y * 30.0,
                         winit::event::MouseScrollDelta::PixelDelta(pos) => pos.y as f32,
                     };
-                    
+
                     if scroll_amount.abs() > 0.1 {
                         let old_scroll = self.inner.scroll_offset.1;
                         let new_scroll = old_scroll - scroll_amount;
-                        
+
                         self.refresh_layout();
                         let total_text_height = self.inner.layout.height();
                         let text_height = self.inner.height;
                         let max_scroll = (total_text_height - text_height).max(0.0).round();
                         let new_scroll = new_scroll.clamp(0.0, max_scroll).round();
-                        
+
                         if (new_scroll - old_scroll).abs() > 0.1 {
                             self.inner.scroll_offset.1 = new_scroll;
                             self.shared.scrolled = true;
+                            consumed = true;
                         }
                     }
                 }
@@ -430,9 +428,11 @@ impl<'a> TextBoxMut<'a> {
         if selection_decorations_changed(initial_selection, self.inner.selection.selection, false, false, false) {
             self.shared.decorations_changed = true;
         }
+
+        return consumed;
     }
 
-    /// The output bool says if the text box scrolled as a result of a selection drag.
+    /// The output bool says if the event was consumed by this text box.
     pub(crate) fn handle_event_no_edit(&mut self, event: &WindowEvent, input_state: &TextInputState, enable_auto_scroll: bool) -> bool {
         if self.inner.hidden {
             return false;
@@ -441,8 +441,8 @@ impl<'a> TextBoxMut<'a> {
             self.reset_selection();
             return false;
         }
-        
-        let mut did_scroll = false;
+
+        let mut consumed = false;
 
         match event {
             WindowEvent::CursorMoved { position, .. } => {
@@ -455,15 +455,16 @@ impl<'a> TextBoxMut<'a> {
                     let scroll_offset_y = self.inner.scroll_offset.1;
                     let max_advance = self.inner.max_advance;
                     let height = self.inner.height;
-                    
+
                     // Check for auto-scroll when dragging near borders (only for text edits)
                     let mut new_scroll_x = scroll_offset_x;
                     let mut new_scroll_y = scroll_offset_y;
-                    
+
                     if enable_auto_scroll {
                         let scroll_margin = 20.0; // Distance from border to trigger auto-scroll
                         let scroll_speed = 5.0; // Scroll speed in pixels
-                        
+                        let mut did_scroll = false;
+
                         // Check horizontal auto-scroll
                         if cursor_pos.0 - left < scroll_margin {
                             // Near left border - scroll left
@@ -480,7 +481,7 @@ impl<'a> TextBoxMut<'a> {
                                 did_scroll = true;
                             }
                         }
-                        
+
                         // Check vertical auto-scroll
                         if cursor_pos.1 - top < scroll_margin {
                             // Near top border - scroll up
@@ -501,9 +502,10 @@ impl<'a> TextBoxMut<'a> {
                         // Apply scroll if needed
                         if did_scroll {
                             self.set_scroll_offset((new_scroll_x, new_scroll_y));
+                            self.shared.scrolled = true;
                         }
                     }
-                    
+
                     let cursor_pos = (
                         cursor_pos.0 - left + new_scroll_x,
                         cursor_pos.1 - top + new_scroll_y,
@@ -513,6 +515,7 @@ impl<'a> TextBoxMut<'a> {
                         cursor_pos.0,
                         cursor_pos.1,
                     );
+                    consumed = true;
                 }
             }
             WindowEvent::MouseInput { state, button, .. } => {
@@ -541,12 +544,13 @@ impl<'a> TextBoxMut<'a> {
                                 }
                             }
                         }
+                        consumed = true;
                     }
                 }
             }
             WindowEvent::KeyboardInput { event, .. } => {
                 if !event.state.is_pressed() {
-                    return did_scroll;
+                    return consumed;
                 }
                 let mods_state = input_state.modifiers.state();
                 let shift = mods_state.shift_key();
@@ -564,6 +568,7 @@ impl<'a> TextBoxMut<'a> {
                             } else {
                                 self.inner.selection.select_left(&self.inner.layout);
                             }
+                            consumed = true;
                         }
                         Key::Named(NamedKey::ArrowRight) => {
                             if action_mod {
@@ -571,12 +576,15 @@ impl<'a> TextBoxMut<'a> {
                             } else {
                                 self.inner.selection.select_right(&self.inner.layout);
                             }
+                            consumed = true;
                         }
                         Key::Named(NamedKey::ArrowUp) => {
                             self.inner.selection.select_up(&self.inner.layout);
+                            consumed = true;
                         }
                         Key::Named(NamedKey::ArrowDown) => {
                             self.inner.selection.select_down(&self.inner.layout);
+                            consumed = true;
                         }
                         Key::Named(NamedKey::Home) => {
                             if action_mod {
@@ -584,6 +592,7 @@ impl<'a> TextBoxMut<'a> {
                             } else {
                                 self.inner.selection.select_to_line_start(&self.inner.layout);
                             }
+                            consumed = true;
                         }
                         Key::Named(NamedKey::End) => {
                             if action_mod {
@@ -591,6 +600,7 @@ impl<'a> TextBoxMut<'a> {
                             } else {
                                 self.inner.selection.select_to_line_end(&self.inner.layout);
                             }
+                            consumed = true;
                         }
                         _ => (),
                     }
@@ -606,9 +616,13 @@ impl<'a> TextBoxMut<'a> {
                                         if let Some(text) = self.selected_text() {
                                             cb.set_text(text.to_owned()).ok();
                                         }
-                                    })
+                                    });
+                                    consumed = true;
                                 }
-                                "a" => self.select_all(),
+                                "a" => {
+                                    self.select_all();
+                                    consumed = true;
+                                }
                                 _ => (),
                             }
                         }
@@ -618,8 +632,8 @@ impl<'a> TextBoxMut<'a> {
             }
             _ => {}
         }
-        
-        did_scroll
+
+        return consumed;
     }
 
     pub(crate) fn reset_selection(&mut self) {
