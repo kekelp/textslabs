@@ -1063,12 +1063,75 @@ impl<'a> TextBoxMut<'a> {
     pub fn set_focus(&mut self) {
         self.shared.focused = Some(AnyBox::TextBox(self.key));
     }
+
+    /// Render this text box to a `vello_hybrid` `Scene`.
+    #[cfg(feature = "vello_hybrid")]
+    pub fn render_to_scene(&mut self, scene: &mut vello_hybrid::Scene) {
+        use crate::AnyBox;
+        use parley::PositionedLayoutItem;
+        use peniko::color::AlphaColor;
+        use vello_common::{kurbo::{Rect, Shape}, paint::PaintType};
+
+        self.refresh_layout();
+
+        let (left, top) = self.position();
+        let (left, top) = (left as f32, top as f32);
+
+        // Account for scroll offset
+        let content_left = left - self.scroll_offset().0;
+        let content_top = top - self.scroll_offset().1;
+
+        // Set up clipping if a clip rect is defined
+        let clip_rect = self.effective_clip_rect();
+        if let Some(clip) = clip_rect {
+            let clip_x0 = content_left + clip.x0 as f32;
+            let clip_y0 = content_top + clip.y0 as f32;
+            let clip_x1 = content_left + clip.x1 as f32;
+            let clip_y1 = content_top + clip.y1 as f32;
+            let clip_rect = Rect::new(
+                clip_x0 as f64,
+                clip_y0 as f64,
+                clip_x1 as f64,
+                clip_y1 as f64,
+            );
+            scene.push_clip_layer(&clip_rect.to_path(0.1));
+        }
+
+        // Check if this text box is focused
+        let is_focused = match self.shared.focused {
+            Some(AnyBox::TextBox(f)) => f == self.key,
+            _ => false,
+        };
+
+        if is_focused {
+            // Render selection rectangles
+            let selection_color = AlphaColor::from_rgba8(0x33, 0x33, 0xff, 0xaa);
+            self.inner.selection.selection.geometry_with(&self.inner.layout, |rect, _line_i| {
+                let x = content_left + rect.x0 as f32;
+                let y = content_top + rect.y0 as f32;
+                let width = (rect.x1 - rect.x0) as f32;
+                let height = (rect.y1 - rect.y0) as f32;
+                let rect = Rect::new(x as f64, y as f64, (x + width) as f64, (y + height) as f64);
+                scene.set_paint(PaintType::Solid(selection_color));
+                scene.fill_rect(&rect);
+            });
+        }
+
+        // Render text
+        for line in self.inner.layout.lines() {
+            for item in line.items() {
+                if let PositionedLayoutItem::GlyphRun(glyph_run) = item {
+                    render_glyph_run_to_scene_textbox(scene, &glyph_run, content_left, content_top);
+                }
+            }
+        }
+
+        // Pop the clip layer if we pushed one
+        if clip_rect.is_some() {
+            scene.pop_layer();
+        }
+    }
 }
-
-
-
-
-
 
 
 pub use parley::BoundingBox;
@@ -1195,6 +1258,50 @@ impl Ext1 for TextBoxInner {
     }
 }
 
+/// Helper function to render a glyph run to a vello_hybrid Scene for TextBox.
+#[cfg(feature = "vello_hybrid")]
+fn render_glyph_run_to_scene_textbox(
+    ctx: &mut vello_hybrid::Scene,
+    glyph_run: &parley::GlyphRun<'_, ColorBrush>,
+    left: f32,
+    top: f32,
+) {
+    use peniko::color::AlphaColor;
+    use vello_common::{glyph::Glyph, paint::PaintType};
+
+    let mut run_x = glyph_run.offset();
+    let run_y = glyph_run.baseline();
+    let glyphs = glyph_run.glyphs().map(|glyph| {
+        let glyph_x = run_x + glyph.x + left;
+        let glyph_y = run_y - glyph.y + top;
+        run_x += glyph.advance;
+
+        Glyph {
+            id: glyph.id as u32,
+            x: glyph_x,
+            y: glyph_y,
+        }
+    });
+
+    let run = glyph_run.run();
+    let font = run.font();
+    let font_size = run.font_size();
+    let normalized_coords = bytemuck::cast_slice(run.normalized_coords());
+
+    let style = glyph_run.style();
+    let r = style.brush.0[0];
+    let g = style.brush.0[1];
+    let b = style.brush.0[2];
+    let a = style.brush.0[3];
+
+    ctx.set_paint(PaintType::Solid(AlphaColor::from_rgba8(r, g, b, a)));
+    ctx.glyph_run(font)
+        .font_size(font_size)
+        .normalized_coords(normalized_coords)
+        .hint(true)
+        .fill_glyphs(glyphs);
+}
+
 #[cfg(feature = "accessibility")]
 fn push_accesskit_update_text_box_partial_borrows(
     accesskit_id: Option<accesskit::NodeId>,
@@ -1219,7 +1326,7 @@ fn push_accesskit_update_text_box_partial_borrows(
         if let Some(ak_sel) = inner.selection.selection.to_access_selection(&inner.layout, &inner.layout_access) {
             node.set_text_selection(ak_sel);
         }
-        
+
         tree_update.nodes.push((id, node))
     }
 }

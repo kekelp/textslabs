@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [features]
-default = []
+default = ["vello_hybrid"]
 panic_on_handle_drop = []
 accessibility = ["dep:accesskit", "dep:accesskit_winit", "parley/accesskit"]
 vello_hybrid = ["dep:vello_hybrid", "dep:vello_common"]
@@ -35,8 +35,10 @@ peniko = "0.4.0"
 arboard = "3.5.0"
 slotmap = "1.0"
 smallvec = "1.13"
-vello_hybrid = { version = "0.0.4", optional = true }
-vello_common = { version = "0.0.4", optional = true }
+# vello_hybrid = { version = "0.0.4", optional = true }
+# vello_common = { version = "0.0.4", optional = true }
+vello_hybrid = { git = "https://github.com/linebender/vello", optional = true }
+vello_common = { git = "https://github.com/linebender/vello", optional = true }
 
 
 [dev-dependencies]
