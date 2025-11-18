@@ -20,7 +20,7 @@ opt-level = 3
 # parley = { path = "../../../clones/parley/parley" }
 # parley = { git = "https://github.com/kekelp/parley", rev = "c4b6da8" }
 parley = "0.6.0"
-wgpu = { version = "26", default-features = true }
+wgpu = { version = "27", default-features = true }
 etagere = "0.2.10"
 lru = { version = "0.12.1", default-features = false }
 rustc-hash = "2.0"
