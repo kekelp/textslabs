@@ -86,22 +86,22 @@ pub(crate) struct Shared {
 
     // Cursor blink state
     pub cursor_blink_start: Option<Instant>,
-    pub cursor_currently_blinked_out: bool,
+    pub cursor_blink_animation_currently_visible: bool,
     pub cursor_blink_waker: Option<CursorBlinkWaker>,
 }
 
 impl Shared {
-    pub(crate) fn cursor_blinked_out(&mut self, update: bool) -> bool {
+    pub(crate) fn update_blink_timer(&mut self) -> bool {
         if let Some(start_time) = self.cursor_blink_start {
             let elapsed = Instant::now().duration_since(start_time);
             let blink_period = Duration::from_millis(CURSOR_BLINK_TIME_MILLIS);
             let blinked_out = (elapsed.as_millis() / blink_period.as_millis()) % 2 == 0;
-            let changed = blinked_out != self.cursor_currently_blinked_out;
+            let changed = blinked_out != self.cursor_blink_animation_currently_visible;
+
+            self.cursor_blink_animation_currently_visible = blinked_out;
+
             if changed {
                 self.decorations_changed = true;
-            }
-            if update {
-                self.cursor_currently_blinked_out = blinked_out;
             }
             return blinked_out;
         } else {
@@ -368,7 +368,7 @@ impl Text {
                     focus: NodeId(0),
                 },
                 cursor_blink_start: None,
-                cursor_currently_blinked_out: false,
+                cursor_blink_animation_currently_visible: false,
                 cursor_blink_waker: None,
             },
         }
@@ -737,7 +737,7 @@ impl Text {
             }
         }
         
-        let show_cursor = self.shared.cursor_blinked_out(true);
+        let show_cursor = self.shared.cursor_blink_animation_currently_visible;
 
         if self.shared.text_changed {
             text_renderer.clear();
@@ -946,6 +946,8 @@ impl Text {
 
         // update smooth scrolling animations
         if let WindowEvent::RedrawRequested = event {
+            self.shared.update_blink_timer();
+
             let animation_updated = self.update_smooth_scrolling();
             if animation_updated {
                 self.shared.scrolled = true;
@@ -1256,7 +1258,7 @@ impl Text {
                     false
                 };
 
-                if self.shared.text_changed || self.shared.decorations_changed {
+                if self.shared.text_changed {
                     self.shared.reset_cursor_blink();
                 }
                 if !self.shared.text_changed && self.shared.scrolled {
@@ -1319,7 +1321,6 @@ impl Text {
     /// 
     /// Games and applications that rerender continuously can call `Window::request_redraw()` unconditionally after every `RedrawRequested` event, without checking this method.
     pub fn needs_rerender(&mut self) -> bool {
-        self.shared.cursor_blinked_out(false);
         return self.shared.text_changed || self.shared.decorations_changed || self.shared.scrolled || !self.scrolled_moved_indices.is_empty();
     }
 

@@ -1576,7 +1576,7 @@ impl<'a> TextEditMut<'a> {
             _ => false,
         };
 
-        let show_cursor = self.text_box.shared.cursor_blinked_out(true);
+        let show_cursor = self.text_box.shared.cursor_blink_animation_currently_visible;
 
         if is_focused {
             // Render selection rectangles
