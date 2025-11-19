@@ -66,8 +66,6 @@ pub(crate) struct Shared {
     pub text_changed: bool,
     pub decorations_changed: bool,
     pub scrolled: bool,
-    // todo: wtf is this?
-    pub event_consumed: bool,
     pub focused: Option<AnyBox>,
 
     pub windows: Vec<WindowInfo>,
@@ -352,7 +350,6 @@ impl Text {
                 text_changed: true,
                 decorations_changed: true,
                 scrolled: true,
-                event_consumed: true,
                 focused: None,
                 layout_cx: LayoutContext::new(),
                 font_cx: FontContext::new(),
@@ -840,7 +837,6 @@ impl Text {
 
             self.shared.text_changed = false;
             self.shared.decorations_changed = false;
-            self.shared.event_consumed = false;
             self.using_frame_based_visibility = false;
 
             // Reset all windows to unprepared for next frame
@@ -852,12 +848,14 @@ impl Text {
         }
     }
 
+    /// Reset internal change tracking.
+    /// 
+    /// This function must be called after rendering.
     pub fn clear_changes(&mut self) {
         self.clear_finished_scroll_animations();
 
         self.shared.text_changed = false;
         self.shared.decorations_changed = false;
-        self.shared.event_consumed = false;
         self.using_frame_based_visibility = false;
 
         // Reset all windows to unprepared for next frame
@@ -912,8 +910,8 @@ impl Text {
     /// 
     /// Returns `true` if the event was consumed by a text area.
     pub fn handle_event(&mut self, event: &WindowEvent, window: &Window) -> bool {
-        let mut event_consumed = false
-        ;
+        let mut event_consumed = false;
+
         self.shared.current_event_number += 1;
         
         self.input_state.handle_event(event);
@@ -956,9 +954,8 @@ impl Text {
 
         if let WindowEvent::MouseInput { state, button, .. } = event {
             if state.is_pressed() && *button == MouseButton::Left {
-                let new_focus = self.find_topmost_at_pos_for_window(self.input_state.mouse.cursor_pos, window.id());
+                let new_focus = self.find_topmost_selectable_at_pos_for_window(self.input_state.mouse.cursor_pos, window.id());
                 if new_focus.is_some() {
-                    self.shared.event_consumed = true;
                     event_consumed = true;
                 }
                 self.refocus(new_focus);
@@ -967,10 +964,9 @@ impl Text {
         }
 
         if let WindowEvent::MouseWheel { .. } = event {
-            let hovered = self.find_topmost_at_pos_for_window(self.input_state.mouse.cursor_pos, window.id());
+            let hovered = self.find_topmost_selectable_at_pos_for_window(self.input_state.mouse.cursor_pos, window.id());
             if let Some(hovered_widget) = hovered {
-                self.shared.event_consumed = true;
-                let consumed = self.handle_hovered_event(hovered_widget, event, window);
+                let consumed = self.handle_scroll_event(hovered_widget, event, window);
                 event_consumed |= consumed;
             }
         }
@@ -995,7 +991,6 @@ impl Text {
             };
 
             if focused_belongs_to_window {
-                self.shared.event_consumed = true;
                 let consumed = self.handle_focused_event(focused, event, window);
                 event_consumed |= consumed;
 
@@ -1011,11 +1006,12 @@ impl Text {
         return event_consumed;
     }
 
-    fn find_topmost_at_pos_for_window(&mut self, cursor_pos: (f64, f64), window_id: WindowId) -> Option<AnyBox> {
+    fn find_topmost_selectable_at_pos_for_window(&mut self, cursor_pos: (f64, f64), window_id: WindowId) -> Option<AnyBox> {
         self.mouse_hit_stack.clear();
 
         // Find all text widgets at this position that belong to this window
         for (i, (_text_edit, text_box)) in self.text_edits.iter_mut() {
+            if ! text_box.selectable { continue };
             if !text_box.hidden && text_box.last_frame_touched == self.current_visibility_frame && text_box.hit_full_rect(cursor_pos) {
                 // Only consider if this text edit belongs to this window (or has no window restriction)
                 if text_box.window_id.is_none() || text_box.window_id == Some(window_id) {
@@ -1024,6 +1020,7 @@ impl Text {
             }
         }
         for (i, text_box) in self.text_boxes.iter_mut() {
+            if ! text_box.selectable { continue };
             if !text_box.hidden && text_box.last_frame_touched == self.current_visibility_frame && text_box.hit_bounding_box(cursor_pos) {
                 // Only consider if this text box belongs to this window (or has no window restriction)
                 if text_box.window_id.is_none() || text_box.window_id == Some(window_id) {
@@ -1093,6 +1090,7 @@ impl Text {
     /// 
     /// If the text box is occluded, this function should still be called with `None`, so that other text boxes can defocus.
     pub fn handle_event_with_topmost(&mut self, event: &WindowEvent, window: &Window, topmost_text_box: Option<AnyBox>) {        
+        // todo: add "consumed" here 
         self.input_state.handle_event(event);
 
         // update smooth scrolling animations
@@ -1106,7 +1104,6 @@ impl Text {
         if let WindowEvent::MouseInput { state, button, .. } = event {
             if state.is_pressed() && *button == MouseButton::Left {
                 if topmost_text_box.is_some() {
-                    self.shared.event_consumed = true;
                 }
                 self.refocus(topmost_text_box);
                 self.handle_click_counting();
@@ -1115,13 +1112,11 @@ impl Text {
 
         if let WindowEvent::MouseWheel { .. } = event {
             if let Some(hovered_widget) = topmost_text_box {
-                self.shared.event_consumed = true;
-                self.handle_hovered_event(hovered_widget, event, window);
+                self.handle_scroll_event(hovered_widget, event, window);
             }
         }
 
         if let Some(focused) = self.shared.focused {
-            self.shared.event_consumed = true;
             self.handle_focused_event(focused, event, window);
         }
     }
@@ -1226,7 +1221,7 @@ impl Text {
         }
     }
     
-    fn handle_hovered_event(&mut self, hovered: AnyBox, event: &WindowEvent, window: &Window) -> bool {
+    fn handle_scroll_event(&mut self, hovered: AnyBox, event: &WindowEvent, window: &Window) -> bool {
         // scroll wheel event
         if let WindowEvent::MouseWheel { .. } = event {
             match hovered {
