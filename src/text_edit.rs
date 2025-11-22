@@ -1404,7 +1404,7 @@ impl<'a> TextEditMut<'a> {
                     return self.apply_horizontal_scroll((cursor_left).max(0.0));
                 } else if cursor_right > visible_end {
                     // Cursor right is too far right, scroll to show cursor fully at right edge
-                    return self.apply_horizontal_scroll(cursor_right - text_width);
+                    return self.apply_horizontal_scroll(CURSOR_WIDTH + cursor_right - text_width);
                 }
             } else {
                 // Vertical scrolling for multi-line edits
