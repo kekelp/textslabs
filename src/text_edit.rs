@@ -1598,9 +1598,9 @@ impl<'a> TextEditMut<'a> {
                 let cursor_rect = self.selection().focus().geometry(&self.layout(), cursor_width);
                 let x = content_left + cursor_rect.x0 as f32;
                 let y = content_top + cursor_rect.y0 as f32;
-                let width = (cursor_rect.x1 - cursor_rect.x0) as f32;
-                let height = (cursor_rect.y1 - cursor_rect.y0) as f32;
-                let rect = Rect::new(x as f64, y as f64, (x + width) as f64, (y + height) as f64);
+                let width = (cursor_rect.x1 - cursor_rect.x0).round() as f32;
+                let height = (cursor_rect.y1 - cursor_rect.y0).round() as f32;
+                let rect = Rect::new(x.round() as f64, y.round() as f64, (x + width).round() as f64, (y + height).round() as f64);
                 scene.set_paint(PaintType::Solid(cursor_color));
                 scene.fill_rect(&rect);
             }
