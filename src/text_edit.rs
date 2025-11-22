@@ -464,6 +464,7 @@ impl<'a> TextEditMut<'a> {
 
         if selection_decorations_changed(initial_selection, self.text_box.selection(), initial_show_cursor, self.inner.show_cursor, !self.inner.disabled) {
             self.text_box.shared.decorations_changed = true;
+            self.text_box.shared.reset_cursor_blink();
         }
 
         self.refresh_layout();
