@@ -230,7 +230,6 @@ impl<'a> TextEditMut<'a> {
         let initial_selection = self.text_box.selection();
         let initial_show_cursor = self.inner.show_cursor;
 
-        let mut scroll_to_cursor = false;
         let mut consumed = false;
 
         if ! self.inner.showing_placeholder {
@@ -292,7 +291,6 @@ impl<'a> TextEditMut<'a> {
                 match &event.logical_key {
                     Key::Named(NamedKey::ArrowLeft) => {
                         if !shift && ! self.inner.showing_placeholder {
-                            scroll_to_cursor = true;
                             if action_mod {
                                 self.text_box.move_word_left();
                             } else {
@@ -302,7 +300,6 @@ impl<'a> TextEditMut<'a> {
                     }
                     Key::Named(NamedKey::ArrowRight) => {
                         if !shift && ! self.inner.showing_placeholder {
-                            scroll_to_cursor = true;
                             if action_mod {
                                 self.text_box.move_word_right();
                             } else {
@@ -312,7 +309,6 @@ impl<'a> TextEditMut<'a> {
                     }
                     Key::Named(NamedKey::ArrowUp) => {
                         if !shift && ! self.inner.showing_placeholder {
-                            scroll_to_cursor = true;
                             if self.inner.single_line {
                                 self.text_box.move_to_text_start();
                             } else {
@@ -322,7 +318,6 @@ impl<'a> TextEditMut<'a> {
                     }
                     Key::Named(NamedKey::ArrowDown) => {
                         if !shift && ! self.inner.showing_placeholder {
-                            scroll_to_cursor = true;
                             if self.inner.single_line {
                                 self.text_box.move_to_text_end();
                             } else {
@@ -332,7 +327,6 @@ impl<'a> TextEditMut<'a> {
                     }
                     Key::Named(NamedKey::Home) => {
                         if !shift && ! self.inner.showing_placeholder {
-                            scroll_to_cursor = true;
                             if action_mod {
                                 self.text_box.move_to_text_start();
                             } else {
@@ -342,7 +336,6 @@ impl<'a> TextEditMut<'a> {
                     }
                     Key::Named(NamedKey::End) => {
                         if !shift && ! self.inner.showing_placeholder {
-                            scroll_to_cursor = true;
                             if action_mod {
                                 self.text_box.move_to_text_end();
                             } else {
@@ -352,7 +345,6 @@ impl<'a> TextEditMut<'a> {
                     }
                     Key::Named(NamedKey::Delete) => {
                         if ! self.inner.showing_placeholder {
-                            scroll_to_cursor = true;
                             if action_mod {
                                 self.delete_word();
                             } else {
@@ -363,7 +355,6 @@ impl<'a> TextEditMut<'a> {
                     }
                     Key::Named(NamedKey::Backspace) => {
                         if ! self.inner.showing_placeholder {
-                            scroll_to_cursor = true;
                             if action_mod {
                                 self.backdelete_word();
                             } else {
@@ -373,7 +364,6 @@ impl<'a> TextEditMut<'a> {
                         }
                     }
                     Key::Named(NamedKey::Enter) => {
-                        scroll_to_cursor = true;
                         let newline_mode_matches = match self.inner.newline_mode {
                             NewlineMode::Enter => !action_mod && !shift,
                             NewlineMode::ShiftEnter => shift && !action_mod,
@@ -439,13 +429,11 @@ impl<'a> TextEditMut<'a> {
                 if self.inner.showing_placeholder {
                     self.clear_placeholder()
                 }
-                scroll_to_cursor = true;
                 self.insert_or_replace_selection(&text);
                 self.text_box.shared.text_changed = true;
             }
             WindowEvent::Ime(Ime::Preedit(text, cursor)) => {
                 consumed = true;
-                scroll_to_cursor = true;
                 self.text_box.shared.text_changed = true;
                 if self.inner.showing_placeholder {
                     self.clear_placeholder()
@@ -462,14 +450,15 @@ impl<'a> TextEditMut<'a> {
 
         self.restore_placeholder_if_any();
 
-        if selection_decorations_changed(initial_selection, self.text_box.selection(), initial_show_cursor, self.inner.show_cursor, !self.inner.disabled) {
+        let decorations_changed = selection_decorations_changed(initial_selection, self.text_box.selection(), initial_show_cursor, self.inner.show_cursor, !self.inner.disabled);
+        if decorations_changed {
             self.text_box.shared.decorations_changed = true;
             self.text_box.shared.reset_cursor_blink();
         }
 
         self.refresh_layout();
 
-        if scroll_to_cursor || self.text_box.shared.text_changed  {
+        if decorations_changed || self.text_box.shared.text_changed  {
             let did_scroll = self.update_scroll_to_cursor();
             if did_scroll {
                 self.text_box.shared.scrolled = true;
@@ -1390,19 +1379,12 @@ impl<'a> TextEditMut<'a> {
                 let cursor_left = cursor_rect.x0 as f32;
                 let cursor_right = cursor_rect.x1 as f32;
                 let current_scroll = self.text_box.scroll_offset().0;
-                let total_text_width = self.text_box.inner.layout.full_width();
-                let max_scroll = (total_text_width - text_width).max(0.0).round() + CURSOR_WIDTH;
-                
-                // Sticky max scroll: if we're at max scroll, try to stay there
-                if current_scroll >= max_scroll {
-                    return self.apply_horizontal_scroll(max_scroll);
-                }
-                
+
                 let visible_start = current_scroll;
                 let visible_end = current_scroll + text_width;                
                 if cursor_left < visible_start {
                     // Cursor left is too far left, scroll to show cursor fully at left edge
-                    return self.apply_horizontal_scroll((cursor_left).max(0.0));
+                    return self.apply_horizontal_scroll((cursor_left - CURSOR_WIDTH).max(0.0));
                 } else if cursor_right > visible_end {
                     // Cursor right is too far right, scroll to show cursor fully at right edge
                     return self.apply_horizontal_scroll(CURSOR_WIDTH + cursor_right - text_width);
