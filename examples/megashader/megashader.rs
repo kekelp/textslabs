@@ -220,7 +220,7 @@ impl State {
     }
 
     // Partial borrows moment.
-    fn draw_text_edit(text_box: &TextEdit, shapes: &mut Vec<Shape>) {
+    fn draw_text_edit(text_box: &TextEditInner, shapes: &mut Vec<Shape>) {
         let QuadRanges { glyph_range, decorations_range } = text_box.quad_range();
         for q in (glyph_range.0)..(glyph_range.1) {
             shapes.push( Shape { shape_kind: TEXT, shape_offset: q as u32 } );

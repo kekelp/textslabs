@@ -61,7 +61,8 @@ pub struct TextBoxInner {
 
     /// Unsafe raw pointer to the shared state
     pub(crate) shared_backref: NonNull<Shared>,
-    /// Copy of the key that this textbox corresponds to.
+    /// Copy of the key that this textbox corresponds to. (or the parent text_edit_box! That's a bit messy).
+    /// todo: try to get rid of this.
     pub(crate) key: DefaultKey,
 }
 
@@ -170,24 +171,12 @@ impl TextBoxInner {
     }    
 }
 
-
-macro_rules! impl_for_textbox_and_textboxmut {
-    ($($items:tt)*) => {
-        impl<'a> TextBox<'a> {
-            $($items)*
-        }       
-        impl<'a> TextBoxMut<'a> {
-            $($items)*
-        }
-    };
-}
-
 #[cfg(feature = "accessibility")]
-impl_for_textbox_and_textboxmut! {
+impl TextBoxInner {
     pub fn accesskit_node(&self) -> Node {
         let mut node = Node::new(Role::Label);
         // let mut node = Node::new(Role::Paragraph);
-        let text_content = self.inner.text.to_string();
+        let text_content = self.text.to_string();
         node.set_value(text_content.clone());
         node.set_description(text_content);
         
@@ -195,8 +184,8 @@ impl_for_textbox_and_textboxmut! {
         let bounds = AccessRect::new(
             left,
             top,
-            left + self.inner.layout.width() as f64,
-            top + self.inner.layout.height() as f64
+            left + self.layout.width() as f64,
+            top + self.layout.height() as f64
         );
 
         node.set_bounds(bounds);
@@ -208,12 +197,15 @@ impl_for_textbox_and_textboxmut! {
 impl TextBoxInner {
     // SAFETY: only use if no mutable references created with shared_mut() are live.
     // When using the public API, this is automatically enforced, because you can only get references to text boxes with Text::get_text_box() and similar functions, which borrow the whole Text struct.
+    // In private functions, it should be easy enough. The idea is in the cases where there are multiple ways to get a mutable reference to Shared, there's always a single one that's "reasonable".
+    // - If we're in a method on Text, just use &mut self.shared. It would be unreasonable to go fetch it in text.text_boxes[17].shared.
+    // - If we're in a method on TextBox, use self.shared_mut().
+    // - If we're in a random free functions and the arguments are a random mixture of references to things that we don't remember the path to, just delete the whole function, and pass a single TextBox.
+    // Technically these functions should be marked as unsafe, but since they are private, we don't do it.
     pub(crate) fn shared_mut(&mut self) -> &mut Shared {
-        // Technically this whole function should be marked as unsafe, but since it's private, we don't do it.
         unsafe { self.shared_backref.as_mut() }
     }
     pub(crate) fn shared(&self) -> &Shared {
-        // Technically this whole function should be marked as unsafe, but since it's private, we don't do it.
         unsafe { self.shared_backref.as_ref() }
     }
 

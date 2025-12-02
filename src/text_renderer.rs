@@ -441,7 +441,7 @@ impl TextRenderer {
     }
 
     /// Prepare a text edit layout for rendering with scrolling and clipping support.
-    pub fn prepare_text_edit_layout(&mut self, text_edit: &mut TextEditMut) {
+    pub fn prepare_text_edit_layout(&mut self, text_edit: &mut TextEditInner) {
         if text_edit.hidden() {
             return;
         }
