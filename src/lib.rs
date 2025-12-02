@@ -1,4 +1,3 @@
-#![deny(unsafe_code)]
 #![warn(missing_docs)]
 
 #![allow(mismatched_lifetime_syntaxes)]

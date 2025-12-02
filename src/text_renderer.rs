@@ -416,7 +416,7 @@ impl TextRenderer {
     }
 
     /// Prepare a text box layout for rendering with scrolling and clipping support.
-    pub fn prepare_text_box_layout(&mut self, text_box: &mut TextBoxMut) {
+    pub fn prepare_text_box_layout(&mut self, text_box: &mut TextBoxInner) {
         if text_box.hidden() {
             return;
         }
@@ -432,12 +432,12 @@ impl TextRenderer {
 
         let start_index = self.text_renderer.quads.len();
 
-        self.text_renderer.prepare_layout(&text_box.inner.layout, &mut self.scale_cx, content_left, content_top, clip_rect, fade, text_box.inner.depth);
+        self.text_renderer.prepare_layout(&text_box.layout, &mut self.scale_cx, content_left, content_top, clip_rect, fade, text_box.depth);
         self.text_renderer.needs_gpu_sync = true;
         
         // Update quad storage with new ranges
         let scroll_offset = text_box.scroll_offset();
-        self.capture_quad_ranges_after(&mut text_box.inner.quad_storage, scroll_offset, start_index);
+        self.capture_quad_ranges_after(&mut text_box.quad_storage, scroll_offset, start_index);
     }
 
     /// Prepare a text edit layout for rendering with scrolling and clipping support.
@@ -458,16 +458,16 @@ impl TextRenderer {
 
         let start_index = self.text_renderer.quads.len();
 
-        self.text_renderer.prepare_layout(&text_edit.text_box.inner.layout, &mut self.scale_cx, content_left, content_top, clip_rect, fade, text_edit.text_box.inner.depth);
+        self.text_renderer.prepare_layout(&text_edit.text_box.layout, &mut self.scale_cx, content_left, content_top, clip_rect, fade, text_edit.text_box.depth);
         self.text_renderer.needs_gpu_sync = true;
         
         // Update quad storage with new ranges
         let scroll_offset = text_edit.scroll_offset();
-        self.capture_quad_ranges_after(&mut text_edit.text_box.inner.quad_storage, scroll_offset, start_index);
+        self.capture_quad_ranges_after(&mut text_edit.text_box.quad_storage, scroll_offset, start_index);
     }
 
     /// Prepare decorations (selection and cursor) for a text box.
-    pub fn prepare_text_box_decorations(&mut self, text_box: &TextBoxMut, show_cursor: bool) {
+    pub fn prepare_text_box_decorations(&mut self, text_box: &TextBoxInner, show_cursor: bool) {
         let (left, top) = text_box.position();
         let (left, top) = (left as f32, top as f32);
         let clip_rect = text_box.effective_clip_rect();
@@ -478,14 +478,14 @@ impl TextRenderer {
         let selection_color = 0x33_33_ff_aa;
         let cursor_color = 0xee_ee_ee_ff;
 
-        text_box.selection().geometry_with(&text_box.inner.layout, |rect, _line_i| {
+        text_box.selection().geometry_with(&text_box.layout, |rect, _line_i| {
             self.text_renderer.add_selection_rect(rect, content_left, content_top, selection_color, clip_rect);
         });
         
         let show_cursor = show_cursor && text_box.selection().is_collapsed();
         if show_cursor {
             let size = CURSOR_WIDTH;
-            let cursor_rect = text_box.selection().focus().geometry(&text_box.inner.layout, size);
+            let cursor_rect = text_box.selection().focus().geometry(&text_box.layout, size);
             self.text_renderer.add_selection_rect(cursor_rect, content_left, content_top, cursor_color, clip_rect);
         }
         self.text_renderer.needs_gpu_sync = true;

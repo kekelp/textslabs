@@ -405,7 +405,10 @@ impl Text {
         text_box.style_version = self.shared.styles[text_box.style.key].version;
         let key = self.text_boxes.insert(text_box);
         self.shared.text_changed = true;
-        TextBoxHandle { key }
+        let handle = TextBoxHandle { key };
+        // Fill in the local copy of the key.
+        self.get_text_box_mut(&handle).key = key;
+        return handle;
     }
 
     /// Add a text edit and return a handle.
@@ -437,7 +440,10 @@ impl Text {
         text_box.window_id = Some(window_id);
         let key = self.text_boxes.insert(text_box);
         self.shared.text_changed = true;
-        TextBoxHandle { key }
+        let handle = TextBoxHandle { key };
+        // Fill in the local copy of the key.
+        self.get_text_box_mut(&handle).key = key;
+        return handle;
     }
 
     /// Add a text edit for a specific window and return a handle.
@@ -476,22 +482,19 @@ impl Text {
     /// This is a fast lookup operation that does not require any hashing.
     pub fn get_text_edit(&mut self, handle: &TextEditHandle) -> TextEdit {
         let (text_edit_inner, text_box_inner) = self.text_edits.get_mut(handle.key).unwrap();
-        let text_box = TextBox { inner: text_box_inner, shared: &mut self.shared, key: handle.key };
-        TextEdit { inner: text_edit_inner, text_box }
+        TextEdit { inner: text_edit_inner, text_box: text_box_inner }
     }
 
     /// Returns a text edit if it exists, or `None` if it has been removed.
     pub fn try_get_text_edit(&mut self, handle: &ClonedTextEditHandle) -> Option<TextEdit> {
         let (text_edit_inner, text_box_inner) = self.text_edits.get_mut(handle.key)?;
-        let text_box = TextBox { inner: text_box_inner, shared: &mut self.shared, key: handle.key };
-        Some(TextEdit { inner: text_edit_inner, text_box })
+        Some(TextEdit { inner: text_edit_inner, text_box: text_box_inner })
     }
 
     /// Returns a mutable text edit if it exists, or `None` if it has been removed.
     pub fn try_get_text_edit_mut(&mut self, handle: &ClonedTextEditHandle) -> Option<TextEditMut> {
         let (text_edit_inner, text_box_inner) = self.text_edits.get_mut(handle.key)?;
-        let text_box = TextBoxMut { inner: text_box_inner, shared: &mut self.shared, key: handle.key };
-        Some(TextEditMut { inner: text_edit_inner, text_box })
+        Some(TextEditMut { inner: text_edit_inner, text_box: text_box_inner })
     }
 
     /// Adds a new text style and returns a handle to it.
@@ -767,20 +770,19 @@ impl Text {
             if self.shared.text_changed {
                 for (key, text_edit) in self.text_edits.iter_mut() {
                     let mut text_edit = get_full_text_edit_partial_borrows_but_for_iterating((&mut text_edit.0, &mut text_edit.1), &mut self.shared, key);
-                    if !text_edit.hidden() && text_edit.text_box.inner.last_frame_touched == current_frame {
+                    if !text_edit.hidden() && text_edit.text_box.last_frame_touched == current_frame {
                         // For multi-window, only render if this text edit belongs to this window (or has no window restriction)
-                        let should_render = text_edit.text_box.inner.window_id.is_none() || text_edit.text_box.inner.window_id == Some(window_id);
+                        let should_render = text_edit.text_box.window_id.is_none() || text_edit.text_box.window_id == Some(window_id);
                         if should_render {
                             text_renderer.prepare_text_edit_layout(&mut text_edit);
                         }
                     }
                 }
 
-                for (key, text_box) in self.text_boxes.iter_mut() {
-                    let mut text_box = get_full_text_box_partial_borrows_but_for_iterating(text_box, &mut self.shared, key);
-                    if !text_box.hidden() && text_box.inner.last_frame_touched == current_frame {
+                for (_key, mut text_box) in self.text_boxes.iter_mut() {
+                    if !text_box.hidden() && text_box.last_frame_touched == current_frame {
                         // For multi-window: Only render if this text box belongs to this window (or has no window restriction)
-                        let should_render = text_box.inner.window_id.is_none() || text_box.inner.window_id == Some(window_id);
+                        let should_render = text_box.window_id.is_none() || text_box.window_id == Some(window_id);
                         if should_render {
                             text_renderer.prepare_text_box_layout(&mut text_box);
                         }
@@ -822,7 +824,7 @@ impl Text {
                         AnyBox::TextBox(i) => {
                             let handle = TextBoxHandle { key: i };
                             let text_box = self.get_full_text_box(&handle);
-                            text_renderer.prepare_text_box_decorations(&text_box, false);
+                            text_renderer.prepare_text_box_decorations(&text_box.inner, false);
                         },
                     }
                 }
@@ -1224,7 +1226,7 @@ impl Text {
             AnyBox::TextBox(i) => {
                 let handle = TextBoxHandle { key: i };
                 let mut text_box = self.get_full_text_box(&handle);
-                text_box.reset_selection();
+                text_box.inner.reset_selection();
             },
         }
     }
@@ -1271,9 +1273,9 @@ impl Text {
             },
             AnyBox::TextBox(i) => {
                 let handle = TextBoxHandle { key: i };
-                let mut text_box = get_full_text_box_partial_borrows(&mut self.text_boxes, &mut self.shared, &handle);
+                let text_box = get_full_text_box_partial_borrows(&mut self.text_boxes, &mut self.shared, &handle);
 
-                let consumed = text_box.handle_event(event, window, &self.input_state);
+                let consumed = text_box.inner.handle_event(event, window, &self.input_state);
                 if self.shared.decorations_changed {
                     self.shared.decorations_changed = true;
                 }
@@ -1332,9 +1334,8 @@ impl Text {
     /// `handle` is the handle that was returned when first creating the text box with [`Text::add_text_box()`].
     /// 
     /// This is a fast lookup operation that does not require any hashing.
-    pub fn get_text_box_mut(&mut self, handle: &TextBoxHandle) -> TextBoxMut {
-        let text_box_inner = &mut self.text_boxes[handle.key];
-        TextBoxMut { inner: text_box_inner, shared: &mut self.shared, key: handle.key }
+    pub fn get_text_box_mut(&mut self, handle: &TextBoxHandle) -> &mut TextBoxInner {
+        return &mut self.text_boxes[handle.key];
     }
 
 
@@ -1343,9 +1344,8 @@ impl Text {
     /// `handle` is the handle that was returned when first creating the text box with [`Text::add_text_box()`].
     /// 
     /// This is a fast lookup operation that does not require any hashing.
-    pub fn get_text_box(&self, handle: &TextBoxHandle) -> TextBox {
-        let text_box_inner = &self.text_boxes[handle.key];
-        TextBox { inner: text_box_inner, shared: &self.shared, key: handle.key }
+    pub fn get_text_box(&self, handle: &TextBoxHandle) -> &TextBoxInner {
+        return &self.text_boxes[handle.key];
     }
 
     /// Returns a text box if it exists, or `None` if it has been removed.
@@ -1765,8 +1765,7 @@ pub(crate) fn get_full_text_edit_partial_borrows<'a>(
     i: &TextEditHandle,
 ) -> TextEditMut<'a> {
     let (text_edit_inner, text_box_inner) = text_edits.get_mut(i.key).unwrap();
-    let text_box = TextBoxMut { inner: text_box_inner, shared, key: i.key };
-    TextEditMut { inner: text_edit_inner, text_box }
+    TextEditMut { inner: text_edit_inner, text_box: text_box_inner }
 }
 
 pub(crate) fn get_full_text_edit_partial_borrows_but_for_iterating<'a>(
@@ -1775,8 +1774,7 @@ pub(crate) fn get_full_text_edit_partial_borrows_but_for_iterating<'a>(
     key: DefaultKey,
 ) -> TextEditMut<'a> {
     let (text_edit_inner, text_box_inner) = text_edit;
-    let text_box = TextBoxMut { inner: text_box_inner, shared, key };
-    TextEditMut { inner: text_edit_inner, text_box }
+    TextEditMut { inner: text_edit_inner, text_box: text_box_inner }
 }
 
 pub(crate) fn get_full_text_box_partial_borrows_but_for_iterating<'a>(

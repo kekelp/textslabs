@@ -12,11 +12,16 @@ use arboard::Clipboard;
 use parley::{Affinity, Alignment, Selection};
 
 use crate::*;
-use slotmap::DefaultKey;
+use slotmap::{DefaultKey, Key as SlotMapKeyTrait};
 
 const X_TOLERANCE: f64 = 35.0;
 
-pub(crate) struct TextBoxInner {
+/// A text box stored inside a [`Text`] struct.
+/// 
+/// This struct can't be created directly. Instead, use [`Text::add_text_box()`] to create one within [`Text`] and get a [`TextBoxHandle`] back.
+/// 
+/// Then, the handle can be used to get a `TextBoxMut` with [`Text::get_text_box_mut()`]
+pub struct TextBoxInner {
     pub(crate) text: Cow<'static, str>,
     pub(crate) style: StyleHandle,
     pub(crate) style_version: u64,
@@ -53,7 +58,11 @@ pub(crate) struct TextBoxInner {
     
     /// Tracks quad storage for fast scrolling
     pub(crate) quad_storage: QuadStorage,
-    pub(crate) shared_backref: NonNull<Shared> 
+
+    /// Unsafe raw pointer to the shared state
+    pub(crate) shared_backref: NonNull<Shared>,
+    /// Copy of the key that this textbox corresponds to.
+    pub(crate) key: DefaultKey,
 }
 
 /// A struct that refers to a text box stored inside a [`Text`] struct.
@@ -129,7 +138,14 @@ impl SelectionState {
 }
 
 impl TextBoxInner {
-    pub(crate) fn new(text: impl Into<Cow<'static, str>>, pos: (f64, f64), size: (f32, f32), depth: f32, default_style_key: DefaultKey, shared_backref: NonNull<Shared>) -> Self {
+    pub(crate) fn new(
+        text: impl Into<Cow<'static, str>>,
+        pos: (f64, f64),
+        size: (f32, f32),
+        depth: f32,
+        default_style_key: DefaultKey,
+        shared_backref: NonNull<Shared>,
+    ) -> Self {
         Self {
             text: text.into(),
             style_version: 0,
@@ -160,6 +176,7 @@ impl TextBoxInner {
             window_id: None,
             quad_storage: QuadStorage::default(),
             shared_backref,
+            key: DefaultKey::null() // Remember to fill it in later, I guess.
         }
     }
 
@@ -214,46 +231,58 @@ impl_for_textbox_and_textboxmut! {
     }
 }
 
-impl_for_textbox_and_textboxmut! {
+impl TextBoxInner {
+    // SAFETY: only use if no mutable references created with shared_mut() are live.
+    // When using the public API, this is automatically enforced, because you can only get references to text boxes with Text::get_text_box() and similar functions, which borrow the whole Text struct.
+    pub(crate) fn shared_mut(&mut self) -> &mut Shared {
+        // Technically this whole function should be marked as unsafe, but since it's private, we don't do it.
+        unsafe { self.shared_backref.as_mut() }
+    }
+    pub(crate) fn shared(&self) -> &Shared {
+        // Technically this whole function should be marked as unsafe, but since it's private, we don't do it.
+        unsafe { self.shared_backref.as_ref() }
+    }
+
+
     /// Returns a reference to the current style of the text box.
-    pub fn style(&'a self) -> &'a TextStyle2 {
-        &self.shared.styles[self.inner.style.key].text_style
+    pub fn style(&self) -> &TextStyle2 {
+        &self.shared().styles[self.style.key].text_style
     }
 
     /// Returns `true` if the text box is currently hidden.
     pub fn hidden(&self) -> bool {
-        self.inner.hidden
+        self.hidden
     }
 
     /// Returns the current depth (z) of the text box.
     pub fn depth(&self) -> f32 {
-        self.inner.depth
+        self.depth
     }
 
     /// Returns a reference to the text in the text nox. 
-    pub fn text(self) -> &'a str {
-        &self.inner.text
+    pub fn text(&self) -> &str {
+        &self.text
     }
 
     /// Returns the current position of the text box.
     pub fn position(&self) -> (f64, f64) {
-        (self.inner.left, self.inner.top)
+        (self.left, self.top)
     }
 
     /// Returns the current clip rect of the text box.
     pub fn clip_rect(&self) -> Option<parley::BoundingBox> {
-        self.inner.clip_rect
+        self.clip_rect
     }
     
     /// Returns `true` if the text box is set to use a fade effect when the contained text overflows its clip rect.
     pub fn fadeout_clipping(&self) -> bool {
-        self.inner.fadeout_clipping
+        self.fadeout_clipping
     }
 
     /// Returns the currently selected text, or `None` if no text is currently selected.
     pub fn selected_text(&self) -> Option<&str> {
-        if !self.inner.selection.selection.is_collapsed() {
-            self.inner.text.get(self.inner.selection.selection.text_range())
+        if !self.selection.selection.is_collapsed() {
+            self.text.get(self.selection.selection.text_range())
         } else {
             None
         }
@@ -261,22 +290,22 @@ impl_for_textbox_and_textboxmut! {
 
     /// Returns the current selection of the text box.
     pub fn selection(&self) -> Selection {
-        self.inner.selection.selection
+        self.selection.selection
     }
 
     /// Returns the current scroll offset of the text box.
     pub fn scroll_offset(&self) -> (f32, f32) {
-        self.inner.scroll_offset
+        self.scroll_offset
     }
 
     /// Returns `true` if the text in the text box is currently selectable.
     pub fn selectable(&self) -> bool {
-        self.inner.selectable
+        self.selectable
     }
 
     #[doc(hidden)] 
     pub fn can_hide(&self) -> bool {
-        self.inner.can_hide
+        self.can_hide
     }
 
     /// Returns the range of prepared quads in the [`TextRenderer`]'s buffer.
@@ -287,15 +316,15 @@ impl_for_textbox_and_textboxmut! {
     }
 
     pub(crate) fn quad_range_impl(&self, edit: bool) -> QuadRanges {
-        debug_assert!(self.inner.quad_storage.quad_range.is_some(), "Quad range called before this text box was prepared.");
-        let glyph_range = self.inner.quad_storage.quad_range.unwrap_or_else(|| (0,0));
-        let is_focused = match self.shared.focused {
+        debug_assert!(self.quad_storage.quad_range.is_some(), "Quad range called before this text box was prepared.");
+        let glyph_range = self.quad_storage.quad_range.unwrap_or_else(|| (0,0));
+        let is_focused = match self.shared().focused {
             Some(AnyBox::TextBox(f)) if !edit => f == self.key,
             Some(AnyBox::TextEdit(f)) if edit => f == self.key,
             _ => false,
         };
         let decorations_range = if is_focused {
-            self.shared.decorations_range
+            self.shared().decorations_range
         } else {
             (0,0)
         };
@@ -311,26 +340,25 @@ pub struct QuadRanges {
     pub decorations_range: (usize, usize),
 }
 
-impl<'a> TextBoxMut<'a> {
-
+impl TextBoxInner {
     pub(crate) fn effective_clip_rect(&self) -> Option<parley::BoundingBox> {
-        let auto_clip_rect = if self.inner.auto_clip {
+        let auto_clip_rect = if self.auto_clip {
             Some(parley::BoundingBox {
-                x0: self.inner.scroll_offset.0 as f64,
-                y0: self.inner.scroll_offset.1 as f64,
-                x1: (self.inner.scroll_offset.0 + self.inner.max_advance) as f64,
-                y1: (self.inner.scroll_offset.1 + self.inner.height) as f64,
+                x0: self.scroll_offset.0 as f64,
+                y0: self.scroll_offset.1 as f64,
+                x1: (self.scroll_offset.0 + self.max_advance) as f64,
+                y1: (self.scroll_offset.1 + self.height) as f64,
             })
         } else {
             None
         };
 
-        let clip_rect = self.inner.clip_rect.map(|explicit| {
+        let clip_rect = self.clip_rect.map(|explicit| {
             parley::BoundingBox {
-                x0: explicit.x0 + self.inner.scroll_offset.0 as f64,
-                y0: explicit.y0 + self.inner.scroll_offset.1 as f64,
-                x1: explicit.x1 + self.inner.scroll_offset.0 as f64,
-                y1: explicit.y1 + self.inner.scroll_offset.1 as f64,
+                x0: explicit.x0 + self.scroll_offset.0 as f64,
+                y0: explicit.y0 + self.scroll_offset.1 as f64,
+                x1: explicit.x1 + self.scroll_offset.0 as f64,
+                y1: explicit.y1 + self.scroll_offset.1 as f64,
             }
         });
 
@@ -356,14 +384,14 @@ impl<'a> TextBoxMut<'a> {
     #[cfg(feature = "accessibility")]
     /// Pushes an accessibility update for this text box.
     pub fn push_accesskit_update(&mut self, tree_update: &mut TreeUpdate) {
-        let accesskit_id = self.inner.accesskit_id;
+        let accesskit_id = self.accesskit_id;
         let node = self.accesskit_node();
         let (left, top) = self.pos();
         
         push_accesskit_update_text_box_partial_borrows(
             accesskit_id,
             node,
-            &mut self.inner,
+            &mut self,
             tree_update,
             left,
             top,
@@ -373,14 +401,14 @@ impl<'a> TextBoxMut<'a> {
 
     #[cfg(feature = "accessibility")]
     pub(crate) fn push_accesskit_update_to_self(&mut self) {
-        let accesskit_id = self.inner.accesskit_id;
+        let accesskit_id = self.accesskit_id;
         let node = self.accesskit_node();
         let (left, top) = self.pos();
         
         push_accesskit_update_text_box_partial_borrows(
             accesskit_id,
             node,
-            &mut self.inner,
+            &mut self,
             &mut self.shared.accesskit_tree_update,
             left,
             top,
@@ -389,17 +417,17 @@ impl<'a> TextBoxMut<'a> {
     }
 
     pub(crate) fn handle_event(&mut self, event: &WindowEvent, _window: &Window, input_state: &TextInputState) -> bool {
-        if self.inner.hidden {
+        if self.hidden {
             return false;
         }
 
-        let initial_selection = self.inner.selection.selection;
+        let initial_selection = self.selection.selection;
 
         let mut consumed = self.handle_event_no_edit(event, input_state, false);
 
         // Handle mouse wheel scrolling for multi-line text boxes with auto_clip
         if let WindowEvent::MouseWheel { delta, .. } = event {
-            if self.inner.auto_clip {
+            if self.auto_clip {
                 let cursor_pos = input_state.mouse.cursor_pos;
                 if self.hit_full_rect(cursor_pos) {
                     let scroll_amount = match delta {
@@ -408,18 +436,18 @@ impl<'a> TextBoxMut<'a> {
                     };
 
                     if scroll_amount.abs() > 0.1 {
-                        let old_scroll = self.inner.scroll_offset.1;
+                        let old_scroll = self.scroll_offset.1;
                         let new_scroll = old_scroll - scroll_amount;
 
                         self.refresh_layout();
-                        let total_text_height = self.inner.layout.height();
-                        let text_height = self.inner.height;
+                        let total_text_height = self.layout.height();
+                        let text_height = self.height;
                         let max_scroll = (total_text_height - text_height).max(0.0).round();
                         let new_scroll = new_scroll.clamp(0.0, max_scroll).round();
 
                         if (new_scroll - old_scroll).abs() > 0.1 {
-                            self.inner.scroll_offset.1 = new_scroll;
-                            self.shared.scrolled = true;
+                            self.scroll_offset.1 = new_scroll;
+                            self.shared_mut().scrolled = true;
                             consumed = true;
                         }
                     }
@@ -427,8 +455,8 @@ impl<'a> TextBoxMut<'a> {
             }
         }
 
-        if selection_decorations_changed(initial_selection, self.inner.selection.selection, false, false, false) {
-            self.shared.decorations_changed = true;
+        if selection_decorations_changed(initial_selection, self.selection.selection, false, false, false) {
+            self.shared_mut().decorations_changed = true;
         }
 
         return consumed;
@@ -436,10 +464,10 @@ impl<'a> TextBoxMut<'a> {
 
     /// The output bool says if the event was consumed by this text box.
     pub(crate) fn handle_event_no_edit(&mut self, event: &WindowEvent, input_state: &TextInputState, enable_auto_scroll: bool) -> bool {
-        if self.inner.hidden {
+        if self.hidden {
             return false;
         }
-        if !self.inner.selectable {
+        if !self.selectable {
             self.reset_selection();
             return false;
         }
@@ -451,12 +479,12 @@ impl<'a> TextBoxMut<'a> {
                 let cursor_pos = (position.x as f32, position.y as f32);
                 // macOS seems to generate a spurious move after selecting word?
                 if input_state.mouse.pointer_down {
-                    let left = self.inner.left as f32;
-                    let top = self.inner.top as f32;
-                    let scroll_offset_x = self.inner.scroll_offset.0;
-                    let scroll_offset_y = self.inner.scroll_offset.1;
-                    let max_advance = self.inner.max_advance;
-                    let height = self.inner.height;
+                    let left = self.left as f32;
+                    let top = self.top as f32;
+                    let scroll_offset_x = self.scroll_offset.0;
+                    let scroll_offset_y = self.scroll_offset.1;
+                    let max_advance = self.max_advance;
+                    let height = self.height;
 
                     // Check for auto-scroll when dragging near borders (only for text edits)
                     let mut new_scroll_x = scroll_offset_x;
@@ -476,7 +504,7 @@ impl<'a> TextBoxMut<'a> {
                             }
                         } else if cursor_pos.0 > (left + max_advance) - scroll_margin {
                             // Near right border - scroll right
-                            let total_text_width = self.inner.layout.full_width();
+                            let total_text_width = self.layout.full_width();
                             let max_scroll_x = (total_text_width - max_advance).max(0.0);
                             new_scroll_x = (scroll_offset_x + scroll_speed).min(max_scroll_x);
                             if new_scroll_x != scroll_offset_x {
@@ -493,7 +521,7 @@ impl<'a> TextBoxMut<'a> {
                             }
                         } else if cursor_pos.1 > (top + height) - scroll_margin {
                             // Near bottom border - scroll down
-                            let total_text_height = self.inner.layout.height();
+                            let total_text_height = self.layout.height();
                             let max_scroll_y = (total_text_height - height).max(0.0);
                             new_scroll_y = (scroll_offset_y + scroll_speed).min(max_scroll_y);
                             if new_scroll_y != scroll_offset_y {
@@ -504,7 +532,7 @@ impl<'a> TextBoxMut<'a> {
                         // Apply scroll if needed
                         if did_scroll {
                             self.set_scroll_offset((new_scroll_x, new_scroll_y));
-                            self.shared.scrolled = true;
+                            self.shared_mut().scrolled = true;
                         }
                     }
 
@@ -512,8 +540,8 @@ impl<'a> TextBoxMut<'a> {
                         cursor_pos.0 - left + new_scroll_x,
                         cursor_pos.1 - top + new_scroll_y,
                     );
-                    self.inner.selection.extend_selection_to_point(
-                        &self.inner.layout,
+                    self.selection.extend_selection_to_point(
+                        &self.layout,
                         cursor_pos.0,
                         cursor_pos.1,
                     );
@@ -524,25 +552,25 @@ impl<'a> TextBoxMut<'a> {
                 let shift = input_state.modifiers.state().shift_key();
                 if *button == winit::event::MouseButton::Left {
                     let cursor_pos = (
-                        input_state.mouse.cursor_pos.0 as f32 - self.inner.left as f32 + self.inner.scroll_offset.0,
-                        input_state.mouse.cursor_pos.1 as f32 - self.inner.top as f32 + self.inner.scroll_offset.1,
+                        input_state.mouse.cursor_pos.0 as f32 - self.left as f32 + self.scroll_offset.0,
+                        input_state.mouse.cursor_pos.1 as f32 - self.top as f32 + self.scroll_offset.1,
                     );
 
                     if state.is_pressed() {
                         let click_count = input_state.mouse.click_count;
                         match click_count {
-                            2 => self.inner.selection.select_word_at_point(&self.inner.layout, cursor_pos.0, cursor_pos.1),
-                            3 => self.inner.selection.select_line_at_point(&self.inner.layout, cursor_pos.0, cursor_pos.1),
+                            2 => self.selection.select_word_at_point(&self.layout, cursor_pos.0, cursor_pos.1),
+                            3 => self.selection.select_line_at_point(&self.layout, cursor_pos.0, cursor_pos.1),
                             _ => {
                                 if shift {
-                                    self.inner.selection.shift_click_extension(
-                                        &self.inner.layout,
+                                    self.selection.shift_click_extension(
+                                        &self.layout,
                                         cursor_pos.0,
                                         cursor_pos.1,
                                     )
                                 } else {
-                                    self.inner.selection.move_to_point(&self.inner.layout, cursor_pos.0, cursor_pos.1);
-                                    self.shared.reset_cursor_blink();
+                                    self.selection.move_to_point(&self.layout, cursor_pos.0, cursor_pos.1);
+                                    self.shared_mut().reset_cursor_blink();
                                 }
                             }
                         }
@@ -566,41 +594,41 @@ impl<'a> TextBoxMut<'a> {
                     match &event.logical_key {
                         Key::Named(NamedKey::ArrowLeft) => {
                             if action_mod {
-                                self.inner.selection.select_word_left(&self.inner.layout);
+                                self.selection.select_word_left(&self.layout);
                             } else {
-                                self.inner.selection.select_left(&self.inner.layout);
+                                self.selection.select_left(&self.layout);
                             }
                             consumed = true;
                         }
                         Key::Named(NamedKey::ArrowRight) => {
                             if action_mod {
-                                self.inner.selection.select_word_right(&self.inner.layout);
+                                self.selection.select_word_right(&self.layout);
                             } else {
-                                self.inner.selection.select_right(&self.inner.layout);
+                                self.selection.select_right(&self.layout);
                             }
                             consumed = true;
                         }
                         Key::Named(NamedKey::ArrowUp) => {
-                            self.inner.selection.select_up(&self.inner.layout);
+                            self.selection.select_up(&self.layout);
                             consumed = true;
                         }
                         Key::Named(NamedKey::ArrowDown) => {
-                            self.inner.selection.select_down(&self.inner.layout);
+                            self.selection.select_down(&self.layout);
                             consumed = true;
                         }
                         Key::Named(NamedKey::Home) => {
                             if action_mod {
-                                self.inner.selection.select_to_text_start(&self.inner.layout);
+                                self.selection.select_to_text_start(&self.layout);
                             } else {
-                                self.inner.selection.select_to_line_start(&self.inner.layout);
+                                self.selection.select_to_line_start(&self.layout);
                             }
                             consumed = true;
                         }
                         Key::Named(NamedKey::End) => {
                             if action_mod {
-                                self.inner.selection.select_to_text_end(&self.inner.layout);
+                                self.selection.select_to_text_end(&self.layout);
                             } else {
-                                self.inner.selection.select_to_line_end(&self.inner.layout);
+                                self.selection.select_to_line_end(&self.layout);
                             }
                             consumed = true;
                         }
@@ -639,7 +667,7 @@ impl<'a> TextBoxMut<'a> {
     }
 
     pub(crate) fn reset_selection(&mut self) {
-        self.set_selection(self.inner.selection.selection.collapse());
+        self.set_selection(self.selection.selection.collapse());
     }
 
     /// Returns a mutable reference to the text content.
@@ -648,9 +676,9 @@ impl<'a> TextBoxMut<'a> {
     /// 
     /// To manipulate the text as a `String`, call `Cow::to_mut()` on the result, or use [`Self::text_mut_string()`]
     pub fn text_mut(&mut self) -> &mut Cow<'static, str> {
-        self.inner.needs_relayout = true;
-        self.shared.text_changed = true;
-        &mut self.inner.text
+        self.needs_relayout = true;
+        self.shared_mut().text_changed = true;
+        &mut self.text
     }
 
     /// Returns a mutable reference to the text content as a `String`. If the text was a borrowed `&str`, it will be cloned.
@@ -663,88 +691,83 @@ impl<'a> TextBoxMut<'a> {
     #[cfg(feature = "accessibility")]
     /// Sets the accessibility node ID for this text box.
     pub fn set_accesskit_id(&mut self, accesskit_id: NodeId) {
-        self.inner.accesskit_id = Some(accesskit_id);
+        self.accesskit_id = Some(accesskit_id);
     }
 
     #[cfg(feature = "accessibility")]
     /// Returns the accessibility node ID for this text box.
     pub fn accesskit_id(&self) -> Option<NodeId> {
-        self.inner.accesskit_id
+        self.accesskit_id
     }
 
     /// Sets the position of the text box.
     pub fn set_pos(&mut self, pos: (f64, f64)) {
-        (self.inner.left, self.inner.top) = pos;
-        self.shared.text_changed = true;
+        (self.left, self.top) = pos;
+        self.shared_mut().text_changed = true;
     }
 
     /// Hides or unhides the text box.
     pub(crate) fn set_hidden(&mut self, hidden: bool) {
-        if self.inner.hidden != hidden {
-            self.inner.hidden = hidden;
+        if self.hidden != hidden {
+            self.hidden = hidden;
 
             if hidden {
                 self.reset_selection();
             }
         }
-        self.shared.text_changed = true;
+        self.shared_mut().text_changed = true;
     }
 
     /// Sets the depth (z-order) of the text box.
     pub fn set_depth(&mut self, depth: f32) {
-        self.inner.depth = depth;
-        self.shared.text_changed = true;
+        self.depth = depth;
+        self.shared_mut().text_changed = true;
     }
 
     /// Sets the clipping rectangle for the text box.
     pub fn set_clip_rect(&mut self, clip_rect: Option<parley::BoundingBox>) {
-        self.inner.clip_rect = clip_rect;
-        self.shared.text_changed = true;
+        self.clip_rect = clip_rect;
+        self.shared_mut().text_changed = true;
     }
 
     /// Sets whether the text is rendered with an alpha fade when it overflows the clip rectangle.
     pub fn set_fadeout_clipping(&mut self, fadeout_clipping: bool) {
-        self.inner.fadeout_clipping = fadeout_clipping;
-        self.shared.text_changed = true;
+        self.fadeout_clipping = fadeout_clipping;
+        self.shared_mut().text_changed = true;
     }
 
     /// Sets the scroll offset for the text box.
     pub fn set_scroll_offset(&mut self, offset: (f32, f32)) {
-        self.inner.scroll_offset = offset;
-        self.shared.text_changed = true;
+        self.scroll_offset = offset;
+        self.shared_mut().text_changed = true;
     }
 
     /// Sets the style for the text box.
     pub fn set_style(&mut self, style: &StyleHandle) {
-        self.inner.style = style.sneak_clone();
-        self.inner.style_version = self.style_version();
-        self.inner.needs_relayout = true;
-        self.shared.text_changed = true;
+        self.style = style.sneak_clone();
+        self.style_version = self.style_version();
+        self.needs_relayout = true;
+        self.shared_mut().text_changed = true;
     }
 
     pub(crate) fn style_version(&self) -> u64 {
-        self.shared.styles[self.inner.style.key].version
+        self.shared().styles[self.style.key].version
     }
 
     pub(crate) fn style_version_changed(&self) -> bool {
-        self.style_version() != self.inner.style_version
-    }
-
-    #[must_use]
-    pub(crate) fn hit_full_rect(&self, cursor_pos: (f64, f64)) -> bool {
-        self.inner.hit_full_rect(cursor_pos)
+        self.style_version() != self.style_version
     }
 
     pub(crate) fn text_inner(&self) -> &str {
-        &self.inner.text
+        &self.text
     }
 
     pub(crate) fn get_scale_factor(&self) -> f64 {
-        let scale_factor = if let Some(window_id) = self.inner.window_id {           
-            self.shared.windows.iter().find(|info| info.window_id == window_id)
+        let scale_factor = if let Some(window_id) = self.window_id {           
+            self.shared().windows.iter().find(|info| info.window_id == window_id)
                 .map(|info| info.scale_factor).unwrap_or(1.0)
         } else {
-            self.shared.windows.first().map(|w| w.scale_factor).unwrap_or(1.0)
+            self.shared().windows.first().map(|w| w.scale_factor).unwrap_or(1.0)
         };
 
         scale_factor
@@ -757,11 +780,13 @@ impl<'a> TextBoxMut<'a> {
     ) {
         let scale_factor = self.get_scale_factor();
         
-        // partial_borrows
-        let style = &mut &self.shared.styles[self.inner.style.key].text_style;
+        let k = self.style.key;
+        // even sketchier partial borrow moment. self.shared_mut() borrows the whole self
+        let shared = unsafe { self.shared_backref.as_mut() };
+        let style = &mut shared.styles[k].text_style;
         
-        let layout_cx = &mut self.shared.layout_cx;
-        let font_cx = &mut self.shared.font_cx;
+        let layout_cx = &mut shared.layout_cx;
+        let font_cx = &mut shared.font_cx;
         
         let mut builder = layout_cx.tree_builder(font_cx, scale_factor as f32, true, style);
 
@@ -771,26 +796,26 @@ impl<'a> TextBoxMut<'a> {
             ]);
         }
 
-        builder.push_text(&self.inner.text);
+        builder.push_text(&self.text);
 
         let (mut layout, _) = builder.build();
 
         if ! single_line {
-            layout.break_all_lines(Some(self.inner.max_advance));
+            layout.break_all_lines(Some(self.max_advance));
             layout.align(
-                Some(self.inner.max_advance),
-                self.inner.alignment,
+                Some(self.max_advance),
+                self.alignment,
                 AlignmentOptions::default(),
             );
         } else {
             layout.break_all_lines(None);
         }
 
-        self.inner.layout = layout;
-        self.inner.needs_relayout = false;
+        self.layout = layout;
+        self.needs_relayout = false;
         
         // todo: does this do anything?
-        self.inner.selection.selection = self.inner.selection.selection.refresh(&self.inner.layout);
+        self.selection.selection = self.selection.selection.refresh(&self.layout);
     }
 
 
@@ -803,33 +828,33 @@ impl<'a> TextBoxMut<'a> {
 
     /// Sets the text to a static string reference.
     pub fn set_static(&mut self, text: &'static str) {
-        self.inner.needs_relayout = true;
-        self.inner.text = Cow::Borrowed(text);
+        self.needs_relayout = true;
+        self.text = Cow::Borrowed(text);
     }
 
     /// Sets the size of the text box.
     pub fn set_size(&mut self, size: (f32, f32)) {
-        let relayout = (self.inner.width != size.0) || (self.inner.height != size.1) || (self.inner.max_advance != size.0);
-        self.inner.width = size.0;
-        self.inner.height = size.1;
-        self.inner.max_advance = size.0;
+        let relayout = (self.width != size.0) || (self.height != size.1) || (self.max_advance != size.0);
+        self.width = size.0;
+        self.height = size.1;
+        self.max_advance = size.0;
         if relayout {
-            self.inner.needs_relayout = true;
+            self.needs_relayout = true;
         }
     }
 
     /// Sets the text alignment.
     pub fn set_alignment(&mut self, alignment: Alignment) {
-        self.inner.alignment = alignment;
-        self.inner.needs_relayout = true;
-        self.shared.text_changed = true;
+        self.alignment = alignment;
+        self.needs_relayout = true;
+        self.shared_mut().text_changed = true;
     }
 
     /// Sets the scale factor for the text.
     pub fn set_scale(&mut self, scale: f32) {
-        self.inner.scale = scale;
-        self.inner.needs_relayout = true;
-        self.shared.text_changed = true;
+        self.scale = scale;
+        self.needs_relayout = true;
+        self.shared_mut().text_changed = true;
     }
 
     // #[cfg(feature = "accesskit")]
@@ -849,10 +874,10 @@ impl<'a> TextBoxMut<'a> {
     //     x_offset: f64,
     //     y_offset: f64,
     // ) -> Option<()> {
-    //     if self.inner.needs_relayout {
+    //     if self.needs_relayout {
     //         return None;
     //     }
-    //     self.inner.accessibility_unchecked(update, node, next_node_id, x_offset, y_offset);
+    //     self.accessibility_unchecked(update, node, next_node_id, x_offset, y_offset);
     //     Some(())
     // }
 
@@ -863,24 +888,24 @@ impl<'a> TextBoxMut<'a> {
         #[allow(clippy::print_stderr)] // reason = "unreachable debug code"
         if false {
             let focus = new_sel.focus();
-            let cluster = focus.logical_clusters(&self.inner.layout);
+            let cluster = focus.logical_clusters(&self.layout);
             let dbg = (
-                cluster[0].as_ref().map(|c| &self.inner.text[c.text_range()]),
+                cluster[0].as_ref().map(|c| &self.text[c.text_range()]),
                 focus.index(),
                 focus.affinity(),
-                cluster[1].as_ref().map(|c| &self.inner.text[c.text_range()]),
+                cluster[1].as_ref().map(|c| &self.text[c.text_range()]),
             );
             eprint!("{dbg:?}");
-            let cluster = focus.visual_clusters(&self.inner.layout);
+            let cluster = focus.visual_clusters(&self.layout);
             let dbg = (
-                cluster[0].as_ref().map(|c| &self.inner.text[c.text_range()]),
+                cluster[0].as_ref().map(|c| &self.text[c.text_range()]),
                 cluster[0]
                     .as_ref()
                     .map(|c| if c.is_word_boundary() { " W" } else { "" })
                     .unwrap_or_default(),
                 focus.index(),
                 focus.affinity(),
-                cluster[1].as_ref().map(|c| &self.inner.text[c.text_range()]),
+                cluster[1].as_ref().map(|c| &self.text[c.text_range()]),
                 cluster[1]
                     .as_ref()
                     .map(|c| if c.is_word_boundary() { " W" } else { "" })
@@ -888,7 +913,7 @@ impl<'a> TextBoxMut<'a> {
             );
             eprintln!(" | visual: {dbg:?}");
         }
-        self.inner.selection.selection = new_sel;
+        self.selection.selection = new_sel;
     }
 
     // #[cfg(feature = "accesskit")]
@@ -907,19 +932,19 @@ impl<'a> TextBoxMut<'a> {
     //     x_offset: f64,
     //     y_offset: f64,
     // ) {
-    //     self.inner.layout_access.build_nodes(
-    //         &self.inner.text,
-    //         &self.inner.layout,
+    //     self.layout_access.build_nodes(
+    //         &self.text,
+    //         &self.layout,
     //         update,
     //         node,
     //         next_node_id,
     //         x_offset,
     //         y_offset,
     //     );
-    //     if self.inner.show_cursor {
+    //     if self.show_cursor {
     //         if let Some(selection) = self
     //             .selection
-    //             .to_access_selection(&self.inner.layout, &self.inner.layout_access)
+    //             .to_access_selection(&self.layout, &self.layout_access)
     //         {
     //             node.set_text_selection(selection);
     //         }
@@ -932,67 +957,67 @@ impl<'a> TextBoxMut<'a> {
 
     /// Move the cursor to the cluster boundary nearest this point in the layout.
     pub(crate) fn move_to_point(&mut self, x: f32, y: f32) {
-        self.set_selection(Selection::from_point(&self.inner.layout, x, y));
+        self.set_selection(Selection::from_point(&self.layout, x, y));
     }
 
     /// Move the cursor to the start of the text.
     pub(crate) fn move_to_text_start(&mut self) {
         self.set_selection(
-            self.inner.selection
+            self.selection
                 .selection
-                .move_lines(&self.inner.layout, isize::MIN, false),
+                .move_lines(&self.layout, isize::MIN, false),
         );
     }
 
     /// Move the cursor to the start of the physical line.
     pub(crate) fn move_to_line_start(&mut self) {
-        self.set_selection(self.inner.selection.selection.line_start(&self.inner.layout, false));
+        self.set_selection(self.selection.selection.line_start(&self.layout, false));
     }
 
     /// Move the cursor to the end of the text.
     pub(crate) fn move_to_text_end(&mut self) {
         self.set_selection(
-            self.inner.selection
+            self.selection
                 .selection
-                .move_lines(&self.inner.layout, isize::MAX, false),
+                .move_lines(&self.layout, isize::MAX, false),
         );
     }
 
     /// Move the cursor to the end of the physical line.
     pub(crate) fn move_to_line_end(&mut self) {
-        self.set_selection(self.inner.selection.selection.line_end(&self.inner.layout, false));
+        self.set_selection(self.selection.selection.line_end(&self.layout, false));
     }
 
     /// Move up to the closest physical cluster boundary on the previous line, preserving the horizontal position for repeated movements.
     pub(crate) fn move_up(&mut self) {
-        self.set_selection(self.inner.selection.selection.previous_line(&self.inner.layout, false));
+        self.set_selection(self.selection.selection.previous_line(&self.layout, false));
     }
 
     /// Move down to the closest physical cluster boundary on the next line, preserving the horizontal position for repeated movements.
     pub(crate) fn move_down(&mut self) {
-        self.set_selection(self.inner.selection.selection.next_line(&self.inner.layout, false));
+        self.set_selection(self.selection.selection.next_line(&self.layout, false));
     }
 
     /// Move to the next cluster left in visual order.
     pub(crate) fn move_left(&mut self) {
         self.set_selection(
-            self.inner.selection
+            self.selection
                 .selection
-                .previous_visual(&self.inner.layout, false),
+                .previous_visual(&self.layout, false),
         );
     }
 
     /// Move to the next cluster right in visual order.
     pub(crate) fn move_right(&mut self) {
-        self.set_selection(self.inner.selection.selection.next_visual(&self.inner.layout, false));
+        self.set_selection(self.selection.selection.next_visual(&self.layout, false));
     }
 
     /// Move to the next word boundary left.
     pub(crate) fn move_word_left(&mut self) {
         self.set_selection(
-            self.inner.selection
+            self.selection
                 .selection
-                .previous_visual_word(&self.inner.layout, false),
+                .previous_visual_word(&self.layout, false),
         );
     }
 
@@ -1000,17 +1025,17 @@ impl<'a> TextBoxMut<'a> {
     /// Move to the next word boundary right.
     pub(crate) fn move_word_right(&mut self) {
         self.set_selection(
-            self.inner.selection
+            self.selection
                 .selection
-                .next_visual_word(&self.inner.layout, false),
+                .next_visual_word(&self.layout, false),
         );
     }
 
     /// Select the whole text.
     pub(crate) fn select_all(&mut self) {
         self.set_selection(
-            Selection::from_byte_index(&self.inner.layout, 0_usize, Affinity::default()).move_lines(
-                &self.inner.layout,
+            Selection::from_byte_index(&self.layout, 0_usize, Affinity::default()).move_lines(
+                &self.layout,
                 isize::MAX,
                 true,
             ),
@@ -1019,24 +1044,24 @@ impl<'a> TextBoxMut<'a> {
 
     /// Collapse selection into caret.
     pub(crate) fn collapse_selection(&mut self) {
-        self.set_selection(self.inner.selection.selection.collapse());
+        self.set_selection(self.selection.selection.collapse());
     }
 
     /// Move the selection focus point to the cluster boundary closest to point.
     pub(crate) fn extend_selection_to_point(&mut self, x: f32, y: f32) {
-        self.inner.selection.extend_selection_to_point(&self.inner.layout, x, y);
+        self.selection.extend_selection_to_point(&self.layout, x, y);
     }
 
     /// Returns the layout, refreshing it if needed.
     pub fn layout(&mut self) -> &Layout<ColorBrush> {
         self.refresh_layout();
-        &self.inner.layout
+        &self.layout
     }
 
     pub(crate) fn refresh_layout(&mut self) {
-        if self.inner.needs_relayout || self.style_version_changed() {
+        if self.needs_relayout || self.style_version_changed() {
             if self.style_version_changed() {
-                self.inner.style_version = self.style_version();
+                self.style_version = self.style_version();
             }
             self.rebuild_layout(None, false);
         }
@@ -1044,7 +1069,7 @@ impl<'a> TextBoxMut<'a> {
 
     /// Sets whether the text is selectable.
     pub fn set_selectable(&mut self, selectable: bool) {
-        self.inner.selectable = selectable;
+        self.selectable = selectable;
     }
     
     #[cfg(feature = "accessibility")]
@@ -1053,8 +1078,8 @@ impl<'a> TextBoxMut<'a> {
         self.refresh_layout();
         if let Some(selection) = Selection::from_access_selection(
             selection,
-            &self.inner.layout,
-            &self.inner.layout_access,
+            &self.layout,
+            &self.layout_access,
         ) {
             self.set_selection(selection);
         }
@@ -1062,7 +1087,7 @@ impl<'a> TextBoxMut<'a> {
 
     /// Sets focus to this text box.
     pub fn set_focus(&mut self) {
-        self.shared.focused = Some(AnyBox::TextBox(self.key));
+        self.shared_mut().focused = Some(AnyBox::TextBox(self.key));
     }
 
     /// Render this text box to a `vello_hybrid` `Scene`.
@@ -1099,7 +1124,7 @@ impl<'a> TextBoxMut<'a> {
         }
 
         // Check if this text box is focused
-        let is_focused = match self.shared.focused {
+        let is_focused = match self.shared_mut().focused {
             Some(AnyBox::TextBox(f)) => f == self.key,
             _ => false,
         };
@@ -1107,7 +1132,7 @@ impl<'a> TextBoxMut<'a> {
         if is_focused {
             // Render selection rectangles
             let selection_color = AlphaColor::from_rgba8(0x33, 0x33, 0xff, 0xaa);
-            self.inner.selection.selection.geometry_with(&self.inner.layout, |rect, _line_i| {
+            self.selection.selection.geometry_with(&self.layout, |rect, _line_i| {
                 let x = content_left + rect.x0 as f32;
                 let y = content_top + rect.y0 as f32;
                 let width = (rect.x1 - rect.x0) as f32;
@@ -1119,7 +1144,7 @@ impl<'a> TextBoxMut<'a> {
         }
 
         // Render text
-        for line in self.inner.layout.lines() {
+        for line in self.layout.lines() {
             for item in line.items() {
                 if let PositionedLayoutItem::GlyphRun(glyph_run) = item {
                     render_glyph_run_to_scene_textbox(scene, &glyph_run, content_left, content_top);
@@ -1140,18 +1165,18 @@ pub use parley::BoundingBox;
 pub(crate) trait Ext1 {
     fn hit_bounding_box(&mut self, cursor_pos: (f64, f64)) -> bool;
 }
-impl<'a> Ext1 for TextBox<'a> {
+impl Ext1 for TextBoxInner {
     fn hit_bounding_box(&mut self, cursor_pos: (f64, f64)) -> bool {
         let offset = (
-            cursor_pos.0 as f64 - self.inner.left,
-            cursor_pos.1 as f64 - self.inner.top,
+            cursor_pos.0 as f64 - self.left,
+            cursor_pos.1 as f64 - self.top,
         );
 
-        assert!(!self.inner.needs_relayout);
+        assert!(!self.needs_relayout);
         let hit = offset.0 > -X_TOLERANCE
-            && offset.0 < self.inner.layout.full_width() as f64 + X_TOLERANCE
+            && offset.0 < self.layout.full_width() as f64 + X_TOLERANCE
             && offset.1 > 0.0
-            && offset.1 < self.inner.layout.height() as f64;
+            && offset.1 < self.layout.height() as f64;
 
         return hit;
     }
@@ -1239,23 +1264,6 @@ impl SelectionState {
     /// Move the selection focus point to the next word boundary right.
     pub(crate) fn select_word_right(&mut self, layout: &Layout<ColorBrush>) {
         self.selection = self.selection.next_visual_word(layout, true);
-    }
-}
-
-impl Ext1 for TextBoxInner {
-    fn hit_bounding_box(&mut self, cursor_pos: (f64, f64)) -> bool {
-        let offset = (
-            cursor_pos.0 as f64 - self.left,
-            cursor_pos.1 as f64 - self.top,
-        );
-
-        assert!(!self.needs_relayout);
-        let hit = offset.0 > -X_TOLERANCE
-            && offset.0 < self.layout.full_width() as f64 + X_TOLERANCE
-            && offset.1 > 0.0
-            && offset.1 < self.layout.height() as f64;
-
-        return hit;
     }
 }
 
