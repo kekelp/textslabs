@@ -181,8 +181,8 @@ pub struct TextEditStyle {
 impl Default for TextEditStyle {
     fn default() -> Self {
         Self {
-            disabled_text_color: ColorBrush([128, 128, 128, 255]), // Gray
-            placeholder_text_color: ColorBrush([160, 160, 160, 255]), // Lighter gray
+            disabled_text_color: ColorBrush([128, 128, 128, 255]),
+            placeholder_text_color: ColorBrush([80, 255, 80, 255]),
         }
     }
 }
