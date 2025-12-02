@@ -1,7 +1,5 @@
 #![warn(missing_docs)]
 
-#![allow(mismatched_lifetime_syntaxes)]
-
 //! `textslabs` is an experimental high level text library, with the goal to allow any winit/wgpu program to have full-featured text and text editing with minimal integration effort.
 //! 
 //! 

@@ -37,8 +37,8 @@ pub(crate) struct StyleInner {
 /// 
 /// For rendering, a [`TextRenderer`] is also needed.
 pub struct Text {
-    pub(crate) text_boxes: SlotMap<DefaultKey, TextBoxInner>,
-    pub(crate) text_edits: SlotMap<DefaultKey, TextEditInner>,
+    pub(crate) text_boxes: SlotMap<DefaultKey, TextBox>,
+    pub(crate) text_edits: SlotMap<DefaultKey, TextEdit>,
 
     // Box to have a stable address
     pub(crate) shared: Box<Shared>,
@@ -400,7 +400,7 @@ impl Text {
     #[must_use]
     pub fn add_text_box(&mut self, text: impl Into<Cow<'static, str>>, pos: (f64, f64), size: (f32, f32), depth: f32) -> TextBoxHandle {
         let shared_backref: NonNull<Shared> = NonNull::new(self.shared.deref_mut()).unwrap();
-        let mut text_box = TextBoxInner::new(text, pos, size, depth, self.shared.default_style_key, shared_backref);
+        let mut text_box = TextBox::new(text, pos, size, depth, self.shared.default_style_key, shared_backref);
         text_box.last_frame_touched = self.current_visibility_frame;
         text_box.style_version = self.shared.styles[text_box.style.key].version;
         let key = self.text_boxes.insert(text_box);
@@ -419,7 +419,7 @@ impl Text {
     #[must_use]
     pub fn add_text_edit(&mut self, text: String, pos: (f64, f64), size: (f32, f32), depth: f32) -> TextEditHandle {
         let shared_backref: NonNull<Shared> = NonNull::new(self.shared.deref_mut()).unwrap();
-        let mut text_edit= TextEditInner::new(text, pos, size, depth, self.shared.default_style_key, shared_backref);
+        let mut text_edit= TextEdit::new(text, pos, size, depth, self.shared.default_style_key, shared_backref);
         text_edit.text_box.last_frame_touched = self.current_visibility_frame;
         text_edit.text_box.style_version = self.shared.styles[text_edit.text_box.style.key].version;
         let key = self.text_edits.insert(text_edit);
@@ -437,7 +437,7 @@ impl Text {
     #[must_use]
     pub fn add_text_box_for_window(&mut self, text: impl Into<Cow<'static, str>>, pos: (f64, f64), size: (f32, f32), depth: f32, window_id: WindowId) -> TextBoxHandle {
         let shared_backref: NonNull<Shared> = NonNull::new(self.shared.deref_mut()).unwrap();
-        let mut text_box = TextBoxInner::new(text, pos, size, depth, self.shared.default_style_key, shared_backref);
+        let mut text_box = TextBox::new(text, pos, size, depth, self.shared.default_style_key, shared_backref);
         text_box.last_frame_touched = self.current_visibility_frame;
         text_box.style_version = self.shared.styles[text_box.style.key].version;
         text_box.window_id = Some(window_id);
@@ -456,7 +456,7 @@ impl Text {
     #[must_use]
     pub fn add_text_edit_for_window(&mut self, text: String, pos: (f64, f64), size: (f32, f32), depth: f32, window_id: WindowId) -> TextEditHandle {
         let shared_backref: NonNull<Shared> = NonNull::new(self.shared.deref_mut()).unwrap();
-        let mut text_edit = TextEditInner::new(text, pos, size, depth, self.shared.default_style_key, shared_backref);
+        let mut text_edit = TextEdit::new(text, pos, size, depth, self.shared.default_style_key, shared_backref);
         text_edit.text_box.last_frame_touched = self.current_visibility_frame;
         // todo: isn't this always the default style key? 
         text_edit.text_box.style_version = self.shared.styles[text_edit.text_box.style.key].version;
@@ -477,7 +477,7 @@ impl Text {
     /// `handle` is the handle that was returned when first creating the text edit with [`Text::add_text_edit()`] or similar functions.
     ///    
     /// This is a fast lookup operation that does not require any hashing.
-    pub fn get_text_edit_mut(&mut self, handle: &TextEditHandle) -> &mut TextEditInner {
+    pub fn get_text_edit_mut(&mut self, handle: &TextEditHandle) -> &mut TextEdit {
         return &mut self.text_edits[handle.key];
     }
 
@@ -486,17 +486,17 @@ impl Text {
     /// `handle` is the handle that was returned when first creating the text edit with [`Text::add_text_edit()`] or similar functions.
     ///    
     /// This is a fast lookup operation that does not require any hashing.
-    pub fn get_text_edit(&mut self, handle: &TextEditHandle) -> &TextEditInner {
+    pub fn get_text_edit(&mut self, handle: &TextEditHandle) -> &TextEdit {
         return &self.text_edits[handle.key];
     }
 
     /// Returns a text edit if it exists, or `None` if it has been removed.
-    pub fn try_get_text_edit(&self, handle: &ClonedTextEditHandle) -> Option<&TextEditInner> {
+    pub fn try_get_text_edit(&self, handle: &ClonedTextEditHandle) -> Option<&TextEdit> {
         return self.text_edits.get(handle.key);
     }
 
     /// Returns a mutable text edit if it exists, or `None` if it has been removed.
-    pub fn try_get_text_edit_mut(&mut self, handle: &ClonedTextEditHandle) -> Option<&mut TextEditInner> {
+    pub fn try_get_text_edit_mut(&mut self, handle: &ClonedTextEditHandle) -> Option<&mut TextEdit> {
         return self.text_edits.get_mut(handle.key);
     }
 
@@ -1331,7 +1331,7 @@ impl Text {
     /// `handle` is the handle that was returned when first creating the text box with [`Text::add_text_box()`].
     /// 
     /// This is a fast lookup operation that does not require any hashing.
-    pub fn get_text_box_mut(&mut self, handle: &TextBoxHandle) -> &mut TextBoxInner {
+    pub fn get_text_box_mut(&mut self, handle: &TextBoxHandle) -> &mut TextBox {
         return &mut self.text_boxes[handle.key];
     }
 
@@ -1341,17 +1341,17 @@ impl Text {
     /// `handle` is the handle that was returned when first creating the text box with [`Text::add_text_box()`].
     /// 
     /// This is a fast lookup operation that does not require any hashing.
-    pub fn get_text_box(&self, handle: &TextBoxHandle) -> &TextBoxInner {
+    pub fn get_text_box(&self, handle: &TextBoxHandle) -> &TextBox {
         return &self.text_boxes[handle.key];
     }
 
     /// Returns a text box if it exists, or `None` if it has been removed.
-    pub fn try_get_text_box(&self, handle: &ClonedTextBoxHandle) -> Option<&TextBoxInner> {
+    pub fn try_get_text_box(&self, handle: &ClonedTextBoxHandle) -> Option<&TextBox> {
         return self.text_boxes.get(handle.key);
     }
 
     /// Returns a mutable text box if it exists, or `None` if it has been removed.
-    pub fn try_get_text_box_mut(&mut self, handle: &ClonedTextBoxHandle) -> Option<&mut TextBoxInner> {
+    pub fn try_get_text_box_mut(&mut self, handle: &ClonedTextBoxHandle) -> Option<&mut TextBox> {
         return self.text_boxes.get_mut(handle.key);
     }
 
@@ -1473,7 +1473,7 @@ impl Text {
                         if (clamped_target - current_scroll).abs() > 0.1 {
                             if should_use_animation(delta, shift_held) {
                                 let animation_duration = std::time::Duration::from_millis(200);
-                                self.add_scroll_animation(handle.clone(), current_scroll, clamped_target, animation_duration, ScrollDirection::Horizontal);
+                                self.add_scroll_animation(handle, current_scroll, clamped_target, animation_duration, ScrollDirection::Horizontal);
                             } else {
                                 te.text_box.scroll_offset.0 = clamped_target;
                             }
@@ -1499,7 +1499,7 @@ impl Text {
                         if (clamped_target - current_scroll).abs() > 0.1 {
                             if should_use_animation(delta, true) {
                                 let animation_duration = std::time::Duration::from_millis(200);
-                                self.add_scroll_animation(handle.clone(), current_scroll, clamped_target, animation_duration, ScrollDirection::Vertical);
+                                self.add_scroll_animation(handle, current_scroll, clamped_target, animation_duration, ScrollDirection::Vertical);
                             } else {
                                 te.text_box.scroll_offset.1 = clamped_target;
                             }

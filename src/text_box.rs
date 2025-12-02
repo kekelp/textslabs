@@ -21,7 +21,7 @@ const X_TOLERANCE: f64 = 35.0;
 /// This struct can't be created directly. Instead, use [`Text::add_text_box()`] to create one within [`Text`] and get a [`TextBoxHandle`] back.
 /// 
 /// Then, the handle can be used to get a `TextBoxMut` with [`Text::get_text_box_mut()`]
-pub struct TextBoxInner {
+pub struct TextBox {
     pub(crate) text: Cow<'static, str>,
     pub(crate) style: StyleHandle,
     pub(crate) style_version: u64,
@@ -112,7 +112,7 @@ impl SelectionState {
     }
 }
 
-impl TextBoxInner {
+impl TextBox {
     pub(crate) fn new(
         text: impl Into<Cow<'static, str>>,
         pos: (f64, f64),
@@ -172,7 +172,7 @@ impl TextBoxInner {
 }
 
 #[cfg(feature = "accessibility")]
-impl TextBoxInner {
+impl TextBox {
     pub fn accesskit_node(&self) -> Node {
         let mut node = Node::new(Role::Label);
         // let mut node = Node::new(Role::Paragraph);
@@ -194,7 +194,7 @@ impl TextBoxInner {
     }
 }
 
-impl TextBoxInner {
+impl TextBox {
     // SAFETY: only use if no mutable references created with shared_mut() are live.
     // When using the public API, this is automatically enforced, because you can only get references to text boxes with Text::get_text_box() and similar functions, which borrow the whole Text struct.
     // In private functions, it should be easy enough. The idea is in the cases where there are multiple ways to get a mutable reference to Shared, there's always a single one that's "reasonable".
@@ -306,7 +306,7 @@ pub struct QuadRanges {
     pub decorations_range: (usize, usize),
 }
 
-impl TextBoxInner {
+impl TextBox {
     pub(crate) fn effective_clip_rect(&self) -> Option<parley::BoundingBox> {
         let auto_clip_rect = if self.auto_clip {
             Some(parley::BoundingBox {
@@ -1131,7 +1131,7 @@ pub use parley::BoundingBox;
 pub(crate) trait Ext1 {
     fn hit_bounding_box(&mut self, cursor_pos: (f64, f64)) -> bool;
 }
-impl Ext1 for TextBoxInner {
+impl Ext1 for TextBox {
     fn hit_bounding_box(&mut self, cursor_pos: (f64, f64)) -> bool {
         let offset = (
             cursor_pos.0 as f64 - self.left,
@@ -1281,7 +1281,7 @@ fn render_glyph_run_to_scene_textbox(
 fn push_accesskit_update_text_box_partial_borrows(
     accesskit_id: Option<accesskit::NodeId>,
     mut node: accesskit::Node,
-    inner: &mut TextBoxInner,
+    inner: &mut TextBox,
     tree_update: &mut accesskit::TreeUpdate,
     left: f64,
     top: f64,

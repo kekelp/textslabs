@@ -110,7 +110,7 @@ pub(crate) fn selection_decorations_changed(initial_selection: Selection, new_se
 /// This struct can't be created directly. Instead, use [`Text::add_text_edit()`] or similar functions to create one within [`Text`] and get a [`TextEditHandle`] back.
 /// 
 /// Then, the handle can be used to get a reference to the `TextEdit` with [`Text::get_text_edit()`] or [`Text::get_text_edit_mut()`].
-pub struct TextEditInner {
+pub struct TextEdit {
     pub(crate) compose: Option<Range<usize>>,
     pub(crate) show_cursor: bool,
     pub(crate) start_time: Option<Instant>,
@@ -121,7 +121,7 @@ pub struct TextEditInner {
     pub(crate) disabled: bool,
     pub(crate) showing_placeholder: bool,
     pub(crate) placeholder_text: Option<Cow<'static, str>>,
-    pub(crate) text_box: TextBoxInner,
+    pub(crate) text_box: TextBox,
 }
 
 #[derive(Debug, Clone)]
@@ -140,9 +140,9 @@ pub(crate) enum ScrollDirection {
     Vertical,
 }
 
-impl TextEditInner {
-    pub fn new(text: String, pos: (f64, f64), size: (f32, f32), depth: f32, default_style_key: DefaultKey, shared_backref: NonNull<Shared>) -> Self {
-        let mut text_box = TextBoxInner::new(text, pos, size, depth, default_style_key, shared_backref);
+impl TextEdit {
+    pub(crate) fn new(text: String, pos: (f64, f64), size: (f32, f32), depth: f32, default_style_key: DefaultKey, shared_backref: NonNull<Shared>) -> Self {
+        let mut text_box = TextBox::new(text, pos, size, depth, default_style_key, shared_backref);
         text_box.auto_clip = true;
         return Self {
             compose: Default::default(),
@@ -181,7 +181,7 @@ impl ScrollAnimation {
     }
 }
 
-impl TextEditInner {
+impl TextEdit {
     /// Sets whether the text edit is single-line or multi-line.
     pub fn set_single_line(&mut self, single_line: bool) {
         if self.single_line != single_line {
@@ -1174,7 +1174,7 @@ impl_for_textedit_and_texteditmut! {
     }
 }
 
-impl TextEditInner {
+impl TextEdit {
     /// Returns a reference to the text edit style of the text edit box.
     pub fn text_edit_style(&self) -> &TextEditStyle {
         &self.text_box.shared().styles[self.text_box.style.key].text_edit_style
@@ -1274,7 +1274,7 @@ impl TextEditInner {
     }
 }
 
-impl TextEditInner {
+impl TextEdit {
     pub(crate) fn style_version(&self) -> u64 {
         self.text_box.shared().styles[self.text_box.style.key].version
     }
@@ -1632,7 +1632,7 @@ pub(crate) fn should_use_animation(delta: &winit::event::MouseScrollDelta, verti
 fn push_accesskit_update_textedit_partial_borrows(
     accesskit_id: Option<accesskit::NodeId>,
     mut node: accesskit::Node,
-    inner: &mut text_box::TextBoxInner,
+    inner: &mut text_box::TextBox,
     tree_update: &mut accesskit::TreeUpdate,
     left: f64,
     top: f64,

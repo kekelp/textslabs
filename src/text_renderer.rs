@@ -416,7 +416,7 @@ impl TextRenderer {
     }
 
     /// Prepare a text box layout for rendering with scrolling and clipping support.
-    pub fn prepare_text_box_layout(&mut self, text_box: &mut TextBoxInner) {
+    pub fn prepare_text_box_layout(&mut self, text_box: &mut TextBox) {
         if text_box.hidden() {
             return;
         }
@@ -441,7 +441,7 @@ impl TextRenderer {
     }
 
     /// Prepare a text edit layout for rendering with scrolling and clipping support.
-    pub fn prepare_text_edit_layout(&mut self, text_edit: &mut TextEditInner) {
+    pub fn prepare_text_edit_layout(&mut self, text_edit: &mut TextEdit) {
         if text_edit.hidden() {
             return;
         }
@@ -467,7 +467,7 @@ impl TextRenderer {
     }
 
     /// Prepare decorations (selection and cursor) for a text box.
-    pub fn prepare_text_box_decorations(&mut self, text_box: &TextBoxInner, show_cursor: bool) {
+    pub fn prepare_text_box_decorations(&mut self, text_box: &TextBox, show_cursor: bool) {
         let (left, top) = text_box.position();
         let (left, top) = (left as f32, top as f32);
         let clip_rect = text_box.effective_clip_rect();
