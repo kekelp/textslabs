@@ -1,4 +1,4 @@
-use std::cell::RefCell;
+use std::{cell::RefCell, ptr::NonNull};
 
 #[cfg(feature = "accessibility")]
 use accesskit::{Node, NodeId, Rect as AccessRect, Role, TreeUpdate};
@@ -53,6 +53,7 @@ pub(crate) struct TextBoxInner {
     
     /// Tracks quad storage for fast scrolling
     pub(crate) quad_storage: QuadStorage,
+    pub(crate) shared_backref: NonNull<Shared> 
 }
 
 /// A struct that refers to a text box stored inside a [`Text`] struct.
@@ -128,7 +129,7 @@ impl SelectionState {
 }
 
 impl TextBoxInner {
-    pub(crate) fn new(text: impl Into<Cow<'static, str>>, pos: (f64, f64), size: (f32, f32), depth: f32, default_style_key: DefaultKey) -> Self {
+    pub(crate) fn new(text: impl Into<Cow<'static, str>>, pos: (f64, f64), size: (f32, f32), depth: f32, default_style_key: DefaultKey, shared_backref: NonNull<Shared>) -> Self {
         Self {
             text: text.into(),
             style_version: 0,
@@ -158,6 +159,7 @@ impl TextBoxInner {
             can_hide: false,
             window_id: None,
             quad_storage: QuadStorage::default(),
+            shared_backref,
         }
     }
 
@@ -928,7 +930,6 @@ impl<'a> TextBoxMut<'a> {
     // }
 
 
-    // --- MARK: Cursor Movement ---
     /// Move the cursor to the cluster boundary nearest this point in the layout.
     pub(crate) fn move_to_point(&mut self, x: f32, y: f32) {
         self.set_selection(Selection::from_point(&self.inner.layout, x, y));

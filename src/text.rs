@@ -4,6 +4,8 @@ use accesskit::{NodeId, TreeUpdate};
 use slotmap::{SlotMap, DefaultKey};
 #[cfg(feature = "accessibility")]
 use std::collections::HashMap;
+use std::ops::DerefMut;
+use std::ptr::NonNull;
 use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
@@ -38,7 +40,8 @@ pub struct Text {
     pub(crate) text_boxes: SlotMap<DefaultKey, TextBoxInner>,
     pub(crate) text_edits: SlotMap<DefaultKey, (TextEditInner, TextBoxInner)>,
 
-    pub(crate) shared: Shared,
+    // Box to have a stable address
+    pub(crate) shared: Box<Shared>,
 
     pub(crate) style_version_id_counter: u64,
 
@@ -145,7 +148,7 @@ impl FocusChange {
 /// Obtained when creating a text edit box with [`Text::add_text_edit()`].
 /// 
 /// Use with [`Text::get_text_edit()`] to get a reference to the corresponding [`TextEdit`]. 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct TextEditHandle {
     pub(crate) key: DefaultKey,
 }
@@ -189,7 +192,7 @@ impl TextBoxHandle {
 
 impl TextEditHandle {
     /// Get a non-unique handle cloned handle from this handle.
-    pub fn to_cloned(self) -> ClonedTextEditHandle {
+    pub fn to_cloned(&self) -> ClonedTextEditHandle {
         ClonedTextEditHandle { key: self.key }
     }
 }
@@ -228,7 +231,6 @@ pub struct StyleHandle {
     pub(crate) key: DefaultKey,
 }
 impl StyleHandle {
-    #[allow(dead_code)]
     pub(crate) fn sneak_clone(&self) -> Self {
         Self { key: self.key }
     }
@@ -342,7 +344,7 @@ impl Text {
             #[cfg(feature = "accessibility")]
             accesskit_id_to_text_handle_map: HashMap::with_capacity(50),
             
-            shared: Shared {
+            shared: Box::new(Shared {
                 windows: Vec::with_capacity(1),
                 decorations_range: (0, 0),
                 styles,
@@ -367,7 +369,7 @@ impl Text {
                 cursor_blink_start: None,
                 cursor_blink_animation_currently_visible: false,
                 cursor_blink_waker: None,
-            },
+            }),
         }
     }
 
@@ -397,7 +399,8 @@ impl Text {
     /// `text` can be a `String`, a `&'static str`, or a `Cow<'static, str>`.
     #[must_use]
     pub fn add_text_box(&mut self, text: impl Into<Cow<'static, str>>, pos: (f64, f64), size: (f32, f32), depth: f32) -> TextBoxHandle {
-        let mut text_box = TextBoxInner::new(text, pos, size, depth, self.shared.default_style_key);
+        let shared_backref: NonNull<Shared> = NonNull::new(self.shared.deref_mut()).unwrap();
+        let mut text_box = TextBoxInner::new(text, pos, size, depth, self.shared.default_style_key, shared_backref);
         text_box.last_frame_touched = self.current_visibility_frame;
         text_box.style_version = self.shared.styles[text_box.style.key].version;
         let key = self.text_boxes.insert(text_box);
@@ -412,7 +415,8 @@ impl Text {
     /// The [`TextEdit`] must be manually removed by calling [`Text::remove_text_edit()`].
     #[must_use]
     pub fn add_text_edit(&mut self, text: String, pos: (f64, f64), size: (f32, f32), depth: f32) -> TextEditHandle {
-        let (text_edit, mut text_box) = TextEditInner::new(text, pos, size, depth, self.shared.default_style_key);
+        let shared_backref: NonNull<Shared> = NonNull::new(self.shared.deref_mut()).unwrap();
+        let (text_edit, mut text_box) = TextEditInner::new(text, pos, size, depth, self.shared.default_style_key, shared_backref);
         text_box.last_frame_touched = self.current_visibility_frame;
         text_box.style_version = self.shared.styles[text_box.style.key].version;
         let key = self.text_edits.insert((text_edit, text_box));
@@ -426,7 +430,8 @@ impl Text {
     /// Only use this when you have multiple windows and want to restrict this text box to a specific window.
     #[must_use]
     pub fn add_text_box_for_window(&mut self, text: impl Into<Cow<'static, str>>, pos: (f64, f64), size: (f32, f32), depth: f32, window_id: WindowId) -> TextBoxHandle {
-        let mut text_box = TextBoxInner::new(text, pos, size, depth, self.shared.default_style_key);
+        let shared_backref: NonNull<Shared> = NonNull::new(self.shared.deref_mut()).unwrap();
+        let mut text_box = TextBoxInner::new(text, pos, size, depth, self.shared.default_style_key, shared_backref);
         text_box.last_frame_touched = self.current_visibility_frame;
         text_box.style_version = self.shared.styles[text_box.style.key].version;
         text_box.window_id = Some(window_id);
@@ -441,7 +446,8 @@ impl Text {
     /// Only use this when you have multiple windows and want to restrict this text edit to a specific window.
     #[must_use]
     pub fn add_text_edit_for_window(&mut self, text: String, pos: (f64, f64), size: (f32, f32), depth: f32, window_id: WindowId) -> TextEditHandle {
-        let (text_edit, mut text_box) = TextEditInner::new(text, pos, size, depth, self.shared.default_style_key);
+        let shared_backref: NonNull<Shared> = NonNull::new(self.shared.deref_mut()).unwrap();
+        let (text_edit, mut text_box) = TextEditInner::new(text, pos, size, depth, self.shared.default_style_key, shared_backref);
         text_box.last_frame_touched = self.current_visibility_frame;
         text_box.style_version = self.shared.styles[text_box.style.key].version;
         text_box.window_id = Some(window_id);
@@ -532,9 +538,10 @@ impl Text {
 
     /// Returns a mutable reference to the default text style.
     pub fn get_default_text_style_mut(&mut self) -> &mut TextStyle2 {
-        self.shared.styles[self.shared.default_style_key].version = self.new_style_version();
+        let default_style_key = self.shared.default_style_key;
+        self.shared.styles[default_style_key].version = self.new_style_version();
         self.shared.text_changed = true;
-        &mut self.shared.styles[self.shared.default_style_key].text_style
+        &mut self.shared.styles[default_style_key].text_style
     }
 
     /// Returns a reference to the default text edit style.
@@ -544,9 +551,10 @@ impl Text {
 
     /// Returns a mutable reference to the default text edit style.
     pub fn get_default_text_edit_style_mut(&mut self) -> &mut TextEditStyle {
-        self.shared.styles[self.shared.default_style_key].version = self.new_style_version();
+        let default_style_key = self.shared.default_style_key;
+        self.shared.styles[default_style_key].version = self.new_style_version();
         self.shared.text_changed = true;
-        &mut self.shared.styles[self.shared.default_style_key].text_edit_style
+        &mut self.shared.styles[default_style_key].text_edit_style
     }
 
     /// Returns the original default text style.
@@ -1361,7 +1369,7 @@ impl Text {
     }
 
     /// Add a scroll animation for a text edit
-    pub(crate) fn add_scroll_animation(&mut self, handle: TextEditHandle, start_offset: f32, target_offset: f32, duration: std::time::Duration, direction: ScrollDirection) {
+    pub(crate) fn add_scroll_animation(&mut self, handle: &TextEditHandle, start_offset: f32, target_offset: f32, duration: std::time::Duration, direction: ScrollDirection) {
         // Remove any existing animation for this handle and direction
         self.scroll_animations.retain(|anim| !(anim.handle.key == handle.key && anim.direction == direction));
         self.shared.scrolled = true;
@@ -1372,7 +1380,7 @@ impl Text {
             start_time: std::time::Instant::now(),
             duration,
             direction,
-            handle,
+            handle: handle.to_cloned(),
         };
         
         self.scroll_animations.push(animation);
@@ -1411,9 +1419,7 @@ impl Text {
         let mut i = 0;
         while i < self.scroll_animations.len() {
             let animation = &self.scroll_animations[i];
-            let handle = animation.handle.clone();
-            
-            if let Some((_text_edit_inner, text_box_inner)) = self.text_edits.get_mut(handle.key) {
+            if let Some((_text_edit_inner, text_box_inner)) = self.text_edits.get_mut(animation.handle.key) {
                 let current_offset = animation.get_current_offset();
                 
                 match animation.direction {

@@ -1,5 +1,5 @@
 use std::{
-    fmt::Display, ops::Range, time::{Duration, Instant}
+    fmt::Display, ops::Range, ptr::NonNull, time::{Duration, Instant}
 };
 
 use parley::*;
@@ -130,7 +130,7 @@ pub(crate) struct ScrollAnimation {
     pub start_time: Instant,
     pub duration: Duration,
     pub direction: ScrollDirection,
-    pub handle: TextEditHandle,
+    pub handle: ClonedTextEditHandle,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -140,8 +140,8 @@ pub(crate) enum ScrollDirection {
 }
 
 impl TextEditInner {
-    pub fn new(text: String, pos: (f64, f64), size: (f32, f32), depth: f32, default_style_key: DefaultKey) -> (Self, TextBoxInner) {
-        let mut text_box = TextBoxInner::new(text, pos, size, depth, default_style_key);
+    pub fn new(text: String, pos: (f64, f64), size: (f32, f32), depth: f32, default_style_key: DefaultKey, shared_backref: NonNull<Shared>) -> (Self, TextBoxInner) {
+        let mut text_box = TextBoxInner::new(text, pos, size, depth, default_style_key, shared_backref);
         text_box.auto_clip = true;
         let text_edit = Self {
             compose: Default::default(),
@@ -655,7 +655,6 @@ impl<'a> TextEditMut<'a> {
         }
     }
 
-    // --- MARK: IME ---
     /// Set the IME preedit composing text.
     ///
     /// This starts composing. Composing is reset by calling [`clear_compose`](Self::clear_compose).
@@ -741,7 +740,6 @@ impl<'a> TextEditMut<'a> {
     //     }
     // }
 
-    // // --- MARK: Rendering ---
     // #[cfg(feature = "accesskit")]
     // /// Perform an accessibility update.
     // pub(crate) fn accessibility(
