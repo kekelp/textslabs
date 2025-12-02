@@ -37,7 +37,7 @@ pub struct TextBox {
     pub(crate) top: f64,
     pub(crate) max_advance: f32,
     pub(crate) depth: f32,
-    pub(crate) selection: SelectionState,
+    pub(crate) selection: Selection,
     pub(crate) width: f32,
     pub(crate) height: f32, 
     pub(crate) alignment: Alignment,
@@ -92,23 +92,6 @@ pub(crate) fn original_default_style() -> TextStyle2 {
         font_size: 24.0,
         overflow_wrap: OverflowWrap::Anywhere,
         ..Default::default()
-    } 
-}
-
-
-// todo: this struct is now useless.
-pub(crate) struct SelectionState {
-    pub selection: Selection,
-}
-impl SelectionState {
-    pub(crate) fn new() -> Self {
-        Self {
-            selection: Default::default(),
-        }
-    }
-
-    fn shift_click_extension(&mut self, layout: &Layout<ColorBrush>, x: f32, y: f32) {
-        self.selection = self.selection.shift_click_extension(layout, x, y);
     }
 }
 
@@ -136,7 +119,7 @@ impl TextBox {
             max_advance: size.0,
             height: size.1,
             depth,
-            selection: SelectionState::new(),
+            selection: Selection::default(),
             style: StyleHandle { key: default_style_key },
             width: size.0, 
             alignment: Default::default(),
@@ -247,8 +230,8 @@ impl TextBox {
 
     /// Returns the currently selected text, or `None` if no text is currently selected.
     pub fn selected_text(&self) -> Option<&str> {
-        if !self.selection.selection.is_collapsed() {
-            self.text.get(self.selection.selection.text_range())
+        if !self.selection.is_collapsed() {
+            self.text.get(self.selection.text_range())
         } else {
             None
         }
@@ -256,7 +239,7 @@ impl TextBox {
 
     /// Returns the current selection of the text box.
     pub fn selection(&self) -> Selection {
-        self.selection.selection
+        self.selection
     }
 
     /// Returns the current scroll offset of the text box.
@@ -387,7 +370,7 @@ impl TextBox {
             return false;
         }
 
-        let initial_selection = self.selection.selection;
+        let initial_selection = self.selection;
 
         let mut consumed = self.handle_event_no_edit(event, input_state, false);
 
@@ -421,7 +404,7 @@ impl TextBox {
             }
         }
 
-        if selection_decorations_changed(initial_selection, self.selection.selection, false, false, false) {
+        if selection_decorations_changed(initial_selection, self.selection, false, false, false) {
             self.shared_mut().decorations_changed = true;
         }
 
@@ -529,10 +512,8 @@ impl TextBox {
                             3 => self.selection.select_line_at_point(&self.layout, cursor_pos.0, cursor_pos.1),
                             _ => {
                                 if shift {
-                                    self.selection.shift_click_extension(
-                                        &self.layout,
-                                        cursor_pos.0,
-                                        cursor_pos.1,
+                                    self.set_selection(
+                                        self.selection.shift_click_extension(&self.layout, cursor_pos.0, cursor_pos.1)
                                     )
                                 } else {
                                     self.selection.move_to_point(&self.layout, cursor_pos.0, cursor_pos.1);
@@ -633,7 +614,7 @@ impl TextBox {
     }
 
     pub(crate) fn reset_selection(&mut self) {
-        self.set_selection(self.selection.selection.collapse());
+        self.set_selection(self.selection.collapse());
     }
 
     /// Returns a mutable reference to the text content.
@@ -781,7 +762,7 @@ impl TextBox {
         self.needs_relayout = false;
         
         // todo: does this do anything?
-        self.selection.selection = self.selection.selection.refresh(&self.layout);
+        self.selection = self.selection.refresh(&self.layout);
     }
 
 
@@ -879,7 +860,7 @@ impl TextBox {
             );
             eprintln!(" | visual: {dbg:?}");
         }
-        self.selection.selection = new_sel;
+        self.selection = new_sel;
     }
 
     // #[cfg(feature = "accesskit")]
@@ -929,61 +910,54 @@ impl TextBox {
     /// Move the cursor to the start of the text.
     pub(crate) fn move_to_text_start(&mut self) {
         self.set_selection(
-            self.selection
-                .selection
-                .move_lines(&self.layout, isize::MIN, false),
+            self.selection.move_lines(&self.layout, isize::MIN, false),
         );
     }
 
     /// Move the cursor to the start of the physical line.
     pub(crate) fn move_to_line_start(&mut self) {
-        self.set_selection(self.selection.selection.line_start(&self.layout, false));
+        self.set_selection(self.selection.line_start(&self.layout, false));
     }
 
     /// Move the cursor to the end of the text.
     pub(crate) fn move_to_text_end(&mut self) {
         self.set_selection(
             self.selection
-                .selection
                 .move_lines(&self.layout, isize::MAX, false),
         );
     }
 
     /// Move the cursor to the end of the physical line.
     pub(crate) fn move_to_line_end(&mut self) {
-        self.set_selection(self.selection.selection.line_end(&self.layout, false));
+        self.set_selection(self.selection.line_end(&self.layout, false));
     }
 
     /// Move up to the closest physical cluster boundary on the previous line, preserving the horizontal position for repeated movements.
     pub(crate) fn move_up(&mut self) {
-        self.set_selection(self.selection.selection.previous_line(&self.layout, false));
+        self.set_selection(self.selection.previous_line(&self.layout, false));
     }
 
     /// Move down to the closest physical cluster boundary on the next line, preserving the horizontal position for repeated movements.
     pub(crate) fn move_down(&mut self) {
-        self.set_selection(self.selection.selection.next_line(&self.layout, false));
+        self.set_selection(self.selection.next_line(&self.layout, false));
     }
 
     /// Move to the next cluster left in visual order.
     pub(crate) fn move_left(&mut self) {
         self.set_selection(
-            self.selection
-                .selection
-                .previous_visual(&self.layout, false),
+            self.selection.previous_visual(&self.layout, false),
         );
     }
 
     /// Move to the next cluster right in visual order.
     pub(crate) fn move_right(&mut self) {
-        self.set_selection(self.selection.selection.next_visual(&self.layout, false));
+        self.set_selection(self.selection.next_visual(&self.layout, false));
     }
 
     /// Move to the next word boundary left.
     pub(crate) fn move_word_left(&mut self) {
         self.set_selection(
-            self.selection
-                .selection
-                .previous_visual_word(&self.layout, false),
+            self.selection.previous_visual_word(&self.layout, false),
         );
     }
 
@@ -991,9 +965,7 @@ impl TextBox {
     /// Move to the next word boundary right.
     pub(crate) fn move_word_right(&mut self) {
         self.set_selection(
-            self.selection
-                .selection
-                .next_visual_word(&self.layout, false),
+            self.selection.next_visual_word(&self.layout, false),
         );
     }
 
@@ -1010,7 +982,7 @@ impl TextBox {
 
     /// Collapse selection into caret.
     pub(crate) fn collapse_selection(&mut self) {
-        self.set_selection(self.selection.selection.collapse());
+        self.set_selection(self.selection.collapse());
     }
 
     /// Move the selection focus point to the cluster boundary closest to point.
@@ -1098,7 +1070,7 @@ impl TextBox {
         if is_focused {
             // Render selection rectangles
             let selection_color = AlphaColor::from_rgba8(0x33, 0x33, 0xff, 0xaa);
-            self.selection.selection.geometry_with(&self.layout, |rect, _line_i| {
+            self.selection.geometry_with(&self.layout, |rect, _line_i| {
                 let x = content_left + rect.x0 as f32;
                 let y = content_top + rect.y0 as f32;
                 let width = (rect.x1 - rect.x0) as f32;
@@ -1148,90 +1120,82 @@ impl Ext1 for TextBox {
     }
 }
 
-impl SelectionState {
 
-    /// Move the cursor to the cluster boundary nearest this point in the layout.
-    pub(crate) fn move_to_point(&mut self, layout: &Layout<ColorBrush>, x: f32, y: f32) {
-        self.set_selection(Selection::from_point(layout, x, y));
+trait SelectionExt {
+    fn move_to_point(&mut self, layout: &Layout<ColorBrush>, x: f32, y: f32);
+    fn select_word_at_point(&mut self, layout: &Layout<ColorBrush>, x: f32, y: f32);
+    fn select_line_at_point(&mut self, layout: &Layout<ColorBrush>, x: f32, y: f32);
+    fn extend_selection_to_point(&mut self, layout: &Layout<ColorBrush>, x: f32, y: f32);
+    fn select_to_text_start(&mut self, layout: &Layout<ColorBrush>);
+    fn select_to_line_start(&mut self, layout: &Layout<ColorBrush>);
+    fn select_to_text_end(&mut self, layout: &Layout<ColorBrush>);
+    fn select_to_line_end(&mut self, layout: &Layout<ColorBrush>);
+    fn select_up(&mut self, layout: &Layout<ColorBrush>);
+    fn select_down(&mut self, layout: &Layout<ColorBrush>);
+    fn select_left(&mut self, layout: &Layout<ColorBrush>);
+    fn select_right(&mut self, layout: &Layout<ColorBrush>);
+    fn select_word_left(&mut self, layout: &Layout<ColorBrush>);
+    fn select_word_right(&mut self, layout: &Layout<ColorBrush>);
+}
+
+impl SelectionExt for Selection {
+    fn move_to_point(&mut self, layout: &Layout<ColorBrush>, x: f32, y: f32) {
+        *self = Selection::from_point(layout, x, y);
     }
 
-    pub(crate) fn select_word_at_point(&mut self, layout: &Layout<ColorBrush>, x: f32, y: f32) {
-        self.set_selection(Selection::word_from_point(layout, x, y));
+    fn select_word_at_point(&mut self, layout: &Layout<ColorBrush>, x: f32, y: f32) {
+        *self = Selection::word_from_point(layout, x, y);
     }
 
-    /// Select the physical line at the point.
-    pub(crate) fn select_line_at_point(&mut self, layout: &Layout<ColorBrush>, x: f32, y: f32) {
-        let line = Selection::line_from_point(layout, x, y);
-        self.set_selection(line);
+    fn select_line_at_point(&mut self, layout: &Layout<ColorBrush>, x: f32, y: f32) {
+        *self = Selection::line_from_point(layout, x, y);
     }
 
-    /// Move the selection focus point to the cluster boundary closest to point.
-    pub(crate) fn extend_selection_to_point(
-        &mut self,
-        layout: &Layout<ColorBrush>,
-        x: f32,
-        y: f32,
-    ) {
-        self.set_selection(
-            self.selection.extend_to_point(layout, x, y),
-        );
+    fn extend_selection_to_point(&mut self, layout: &Layout<ColorBrush>, x: f32, y: f32) {
+        *self = self.extend_to_point(layout, x, y);
     }
 
-    /// Update the selection, and nudge the `Generation` if something other than `h_pos` changed.
-    pub(crate) fn set_selection(&mut self, new_sel: Selection) {
-        self.selection = new_sel;
+    fn select_to_text_start(&mut self, layout: &Layout<ColorBrush>) {
+        *self = self.move_lines(layout, isize::MIN, true);
     }
 
-    /// Move the selection focus point to the start of the buffer.
-    pub(crate) fn select_to_text_start(&mut self, layout: &Layout<ColorBrush>) {
-        self.selection = self.selection.move_lines(layout, isize::MIN, true);
+    fn select_to_line_start(&mut self, layout: &Layout<ColorBrush>) {
+        *self = self.line_start(layout, true);
     }
 
-    /// Move the selection focus point to the start of the physical line.
-    pub(crate) fn select_to_line_start(&mut self, layout: &Layout<ColorBrush>) {
-        self.selection = self.selection.line_start(layout, true);
+    fn select_to_text_end(&mut self, layout: &Layout<ColorBrush>) {
+        *self = self.move_lines(layout, isize::MAX, true);
     }
 
-    /// Move the selection focus point to the end of the buffer.
-    pub(crate) fn select_to_text_end(&mut self, layout: &Layout<ColorBrush>) {
-        self.selection = self.selection.move_lines(layout, isize::MAX, true);
+    fn select_to_line_end(&mut self, layout: &Layout<ColorBrush>) {
+        *self = self.line_end(layout, true);
     }
 
-    /// Move the selection focus point to the end of the physical line.
-    pub(crate) fn select_to_line_end(&mut self, layout: &Layout<ColorBrush>) {
-        self.selection = self.selection.line_end(layout, true);
+    fn select_up(&mut self, layout: &Layout<ColorBrush>) {
+        *self = self.previous_line(layout, true);
     }
 
-    /// Move the selection focus point up to the nearest cluster boundary on the previous line, preserving the horizontal position for repeated movements.
-    pub(crate) fn select_up(&mut self, layout: &Layout<ColorBrush>) {
-        self.selection = self.selection.previous_line(layout, true);
+    fn select_down(&mut self, layout: &Layout<ColorBrush>) {
+        *self = self.next_line(layout, true);
     }
 
-    /// Move the selection focus point down to the nearest cluster boundary on the next line, preserving the horizontal position for repeated movements.
-    pub(crate) fn select_down(&mut self, layout: &Layout<ColorBrush>) {
-        self.selection = self.selection.next_line(layout, true);
+    fn select_left(&mut self, layout: &Layout<ColorBrush>) {
+        *self = self.previous_visual(layout, true);
     }
 
-    /// Move the selection focus point to the next cluster left in visual order.
-    pub(crate) fn select_left(&mut self, layout: &Layout<ColorBrush>) {
-        self.selection = self.selection.previous_visual(layout, true);
+    fn select_right(&mut self, layout: &Layout<ColorBrush>) {
+        *self = self.next_visual(layout, true);
     }
 
-    /// Move the selection focus point to the next cluster right in visual order.
-    pub(crate) fn select_right(&mut self, layout: &Layout<ColorBrush>) {
-        self.selection = self.selection.next_visual(layout, true);
+    fn select_word_left(&mut self, layout: &Layout<ColorBrush>) {
+        *self = self.previous_visual_word(layout, true);
     }
 
-    /// Move the selection focus point to the next word boundary left.
-    pub(crate) fn select_word_left(&mut self, layout: &Layout<ColorBrush>) {
-        self.selection = self.selection.previous_visual_word(layout, true);
-    }
-
-    /// Move the selection focus point to the next word boundary right.
-    pub(crate) fn select_word_right(&mut self, layout: &Layout<ColorBrush>) {
-        self.selection = self.selection.next_visual_word(layout, true);
+    fn select_word_right(&mut self, layout: &Layout<ColorBrush>) {
+        *self = self.next_visual_word(layout, true);
     }
 }
+
 
 /// Helper function to render a glyph run to a vello_hybrid Scene for TextBox.
 #[cfg(feature = "vello_hybrid")]
@@ -1298,7 +1262,7 @@ fn push_accesskit_update_text_box_partial_borrows(
             top,
         );
 
-        if let Some(ak_sel) = inner.selection.selection.to_access_selection(&inner.layout, &inner.layout_access) {
+        if let Some(ak_sel) = inner.selection.to_access_selection(&inner.layout, &inner.layout_access) {
             node.set_text_selection(ak_sel);
         }
 

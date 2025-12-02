@@ -722,7 +722,7 @@ impl TextEdit {
             };
 
             self.refresh_layout();
-            self.text_box.selection.selection = Cursor::from_byte_index(&self.text_box.layout, index, affinity).into();
+            self.text_box.selection = Cursor::from_byte_index(&self.text_box.layout, index, affinity).into();
             self.text_box.shared_mut().text_changed = true;
         }
     }
@@ -803,7 +803,7 @@ impl TextEdit {
             let end = op.range_to_clear.start + op.text_to_restore.len();
 
             self.refresh_layout();
-            self.text_box.selection.selection = Cursor::from_byte_index(&self.text_box.layout, end, Affinity::Upstream).into();
+            self.text_box.selection = Cursor::from_byte_index(&self.text_box.layout, end, Affinity::Upstream).into();
             
             if self.single_line {
                 self.remove_newlines();
@@ -837,7 +837,7 @@ impl TextEdit {
 
         // With the new setup, we can do refresh_layout here and use the checked from_byte_index functions. However, the check is still completely useless, all it does is turn a potential explicit panic into a silent failure.
         self.refresh_layout();
-        self.text_box.selection.selection = Cursor::from_byte_index(&self.text_box.layout, index, affinity).into();
+        self.text_box.selection = Cursor::from_byte_index(&self.text_box.layout, index, affinity).into();
     }
 
     /// Returns the layout, refreshing it if needed.
@@ -1649,7 +1649,7 @@ fn push_accesskit_update_textedit_partial_borrows(
             top,
         );
 
-        if let Some(ak_sel) = inner.selection.selection.to_access_selection(&inner.layout, &inner.layout_access) {
+        if let Some(ak_sel) = inner.selection.to_access_selection(&inner.layout, &inner.layout_access) {
             node.set_text_selection(ak_sel);
         }
         
