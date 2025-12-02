@@ -65,32 +65,6 @@ pub struct TextBoxInner {
     pub(crate) key: DefaultKey,
 }
 
-/// A struct that refers to a text box stored inside a [`Text`] struct.
-/// 
-/// This struct can't be created directly. Instead, use [`Text::add_text_box()`] to create one within [`Text`] and get a [`TextBoxHandle`] back.
-/// 
-/// Then, the handle can be used to get a `TextBoxMut` with [`Text::get_text_box_mut()`].
-pub struct TextBoxMut<'a> {
-    pub(crate) inner: &'a mut TextBoxInner,
-    pub(crate) shared: &'a mut Shared,
-    // This key is only useful for set_focus. Yikes!
-    pub(crate) key: DefaultKey,
-}
-
-/// A struct that refers to a text box stored inside a [`Text`] struct.
-/// 
-/// This struct can't be created directly. Instead, use [`Text::add_text_box()`] to create one within [`Text`] and get a [`TextBoxHandle`] back.
-/// 
-/// Then, the handle can be used to get a `TextBox` with [`Text::get_text_box()`].
-#[derive(Clone, Copy)]
-pub struct TextBox<'a> {
-    pub(crate) inner: &'a TextBoxInner,
-    pub(crate) shared: &'a Shared,
-    // This key is only useful for checking the box is focused.
-    pub(crate) key: DefaultKey,
-}
-
-
 /// Remembers the location of the glyph quads corresponding to the text in this text box, in order to allow fast scrolling without relayouting.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct QuadStorage {

@@ -222,7 +222,7 @@ impl<'a> TextEditMut<'a> {
     }
 
     pub(crate) fn handle_event_editable(&mut self, event: &WindowEvent, window: &Window, input_state: &TextInputState) -> bool {
-        if self.text_box.hidden() {
+        if self.text_box.hidden() || self.disabled() {
             return false;
         }
 

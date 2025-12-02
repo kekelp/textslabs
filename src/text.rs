@@ -818,13 +818,13 @@ impl Text {
                     match focused {
                         AnyBox::TextEdit(i) => {
                             let handle = TextEditHandle { key: i };
-                            let text_edit = self.get_full_text_edit(&handle);
+                            let text_edit = self.get_text_edit(&handle);
                             text_renderer.prepare_text_box_decorations(&text_edit.text_box, show_cursor);
                         },
                         AnyBox::TextBox(i) => {
                             let handle = TextBoxHandle { key: i };
-                            let text_box = self.get_full_text_box(&handle);
-                            text_renderer.prepare_text_box_decorations(&text_box.inner, false);
+                            let text_box = self.get_text_box(&handle);
+                            text_renderer.prepare_text_box_decorations(&text_box, false);
                         },
                     }
                 }
@@ -1219,14 +1219,13 @@ impl Text {
         match old_focus {
             AnyBox::TextEdit(i) => {
                 let handle = TextEditHandle { key: i };
-                let mut text_edit = self.get_full_text_edit(&handle);
+                let text_edit = self.get_text_edit_mut(&handle);
                 text_edit.text_box.reset_selection();
                 text_edit.inner.show_cursor = false;
             },
             AnyBox::TextBox(i) => {
                 let handle = TextBoxHandle { key: i };
-                let mut text_box = self.get_full_text_box(&handle);
-                text_box.inner.reset_selection();
+                self.get_text_box_mut(&handle).reset_selection();
             },
         }
     }
@@ -1252,16 +1251,13 @@ impl Text {
     }
 
     fn handle_focused_event(&mut self, focused: AnyBox, event: &WindowEvent, window: &Window) -> bool {
+        // todo: copying this for now, but maybe it can go into Shared
+        let input_state = self.input_state.clone();
+
         match focused {
             AnyBox::TextEdit(i) => {
                 let handle = TextEditHandle { key: i };
-                let mut text_edit = get_full_text_edit_partial_borrows(&mut self.text_edits, &mut self.shared, &handle);
-
-                let consumed = if !text_edit.inner.disabled {
-                    text_edit.handle_event_editable(event, window, &self.input_state)
-                } else {
-                    false
-                };
+                let consumed = self.get_text_edit_mut(&handle).handle_event_editable(event, window, &input_state);
 
                 if self.shared.text_changed {
                     self.shared.reset_cursor_blink();
@@ -1273,9 +1269,8 @@ impl Text {
             },
             AnyBox::TextBox(i) => {
                 let handle = TextBoxHandle { key: i };
-                let text_box = get_full_text_box_partial_borrows(&mut self.text_boxes, &mut self.shared, &handle);
+                let consumed = self.get_text_box_mut(&handle).handle_event(event, window, &input_state);
 
-                let consumed = text_box.inner.handle_event(event, window, &self.input_state);
                 if self.shared.decorations_changed {
                     self.shared.decorations_changed = true;
                 }
@@ -1296,7 +1291,7 @@ impl Text {
         if disabled {
             if let Some(AnyBox::TextEdit(e)) = self.shared.focused {
                 if e == handle.key {
-                    self.get_full_text_edit(&handle).text_box.reset_selection();
+                    self.get_text_edit_mut(&handle).text_box.reset_selection();
                     self.shared.focused = None;
                 }
             }
@@ -1349,22 +1344,16 @@ impl Text {
     }
 
     /// Returns a text box if it exists, or `None` if it has been removed.
-    pub fn try_get_text_box(&self, handle: &ClonedTextBoxHandle) -> Option<TextBox> {
-        let text_box_inner = self.text_boxes.get(handle.key)?;
-        Some(TextBox { inner: text_box_inner, shared: &self.shared, key: handle.key })
+    pub fn try_get_text_box(&self, handle: &ClonedTextBoxHandle) -> Option<&TextBoxInner> {
+        return self.text_boxes.get(handle.key);
     }
 
     /// Returns a mutable text box if it exists, or `None` if it has been removed.
-    pub fn try_get_text_box_mut(&mut self, handle: &ClonedTextBoxHandle) -> Option<TextBoxMut> {
-        let text_box_inner = self.text_boxes.get_mut(handle.key)?;
-        Some(TextBoxMut { inner: text_box_inner, shared: &mut self.shared, key: handle.key })
+    pub fn try_get_text_box_mut(&mut self, handle: &ClonedTextBoxHandle) -> Option<&mut TextBoxInner> {
+        return self.text_boxes.get_mut(handle.key);
     }
 
-    pub(crate) fn get_full_text_box(&mut self, i: &TextBoxHandle) -> TextBoxMut<'_> {
-        get_full_text_box_partial_borrows(&mut self.text_boxes, &mut self.shared, i)
-    }
-
-    pub(crate) fn get_full_text_edit(&mut self, i: &TextEditHandle) -> TextEditMut<'_> {
+        pub(crate) fn get_full_text_edit(&mut self, i: &TextEditHandle) -> TextEditMut<'_> {
         get_full_text_edit_partial_borrows(&mut self.text_edits, &mut self.shared, i)
     }
 
@@ -1750,15 +1739,6 @@ impl Text {
     }
 }
 
-pub(crate) fn get_full_text_box_partial_borrows<'a>(
-    text_boxes: &'a mut SlotMap<DefaultKey, TextBoxInner>,
-    shared: &'a mut Shared,
-    i: &TextBoxHandle,
-) -> TextBoxMut<'a> {
-    let text_box_inner = &mut text_boxes[i.key];
-    TextBoxMut { inner: text_box_inner, shared, key: i.key }
-}
-
 pub(crate) fn get_full_text_edit_partial_borrows<'a>(
     text_edits: &'a mut SlotMap<DefaultKey, (TextEditInner, TextBoxInner)>,
     shared: &'a mut Shared,
@@ -1775,14 +1755,6 @@ pub(crate) fn get_full_text_edit_partial_borrows_but_for_iterating<'a>(
 ) -> TextEditMut<'a> {
     let (text_edit_inner, text_box_inner) = text_edit;
     TextEditMut { inner: text_edit_inner, text_box: text_box_inner }
-}
-
-pub(crate) fn get_full_text_box_partial_borrows_but_for_iterating<'a>(
-    text_box_inner: &'a mut TextBoxInner,
-    shared: &'a mut Shared,
-    key: DefaultKey,
-) -> TextBoxMut<'a> {
-    TextBoxMut { inner: text_box_inner, shared, key }
 }
 
 fn move_quads_for_scroll(text_renderer: &mut TextRenderer, quad_storage: &mut QuadStorage, current_offset: (f32, f32)) -> bool {
