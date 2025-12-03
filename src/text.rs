@@ -128,6 +128,13 @@ impl Shared {
             }
         }
     }
+    
+    pub(crate) fn stop_cursor_blink(&mut self) {
+        self.cursor_blink_start = None;
+        if let Some(timer) = &self.cursor_blink_waker {
+            timer.stop_waker();
+        }
+    }
 }
 
 #[cfg(feature = "accessibility")]

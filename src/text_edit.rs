@@ -109,7 +109,7 @@ pub(crate) fn selection_decorations_changed(initial_selection: Selection, new_se
 /// 
 /// This struct can't be created directly. Instead, use [`Text::add_text_edit()`] or similar functions to create one within [`Text`] and get a [`TextEditHandle`] back.
 /// 
-/// Then, the handle can be used to get a reference to the `TextEdit` with [`Text::get_text_edit()`] or [`Text::get_text_edit_mut()`].
+/// Then, pass the handle to [`Text::get_text_edit_mut()`] to get a reference to it.
 pub struct TextEdit {
     pub(crate) compose: Option<Range<usize>>,
     pub(crate) show_cursor: bool,
@@ -453,7 +453,12 @@ impl TextEdit {
         let decorations_changed = selection_decorations_changed(initial_selection, self.text_box.selection(), initial_show_cursor, self.show_cursor, !self.disabled);
         if decorations_changed {
             self.text_box.shared_mut().decorations_changed = true;
-            self.text_box.shared_mut().reset_cursor_blink();
+
+            if self.text_box.selection.is_collapsed() {
+                self.text_box.shared_mut().reset_cursor_blink();
+            } else {
+                self.text_box.shared_mut().stop_cursor_blink()
+            }
         }
 
         self.refresh_layout();

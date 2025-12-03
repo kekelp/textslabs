@@ -20,7 +20,7 @@ const X_TOLERANCE: f64 = 35.0;
 /// 
 /// This struct can't be created directly. Instead, use [`Text::add_text_box()`] to create one within [`Text`] and get a [`TextBoxHandle`] back.
 /// 
-/// Then, the handle can be used to get a `TextBoxMut` with [`Text::get_text_box_mut()`]
+/// Then, pass the handle to [`Text::get_text_box_mut()`] to get a reference to it.
 pub struct TextBox {
     pub(crate) text: Cow<'static, str>,
     pub(crate) style: StyleHandle,
@@ -183,7 +183,7 @@ impl TextBox {
     // In private functions, it should be easy enough. The idea is in the cases where there are multiple ways to get a mutable reference to Shared, there's always a single one that's "reasonable".
     // - If we're in a method on Text, just use &mut self.shared. It would be unreasonable to go fetch it in text.text_boxes[17].shared.
     // - If we're in a method on TextBox, use self.shared_mut().
-    // - If we're in a random free functions and the arguments are a random mixture of references to things that we don't remember the path to, just delete the whole function, and pass a single TextBox.
+    // - If we're in a random free function and the arguments are a random mixture of references to things that we don't remember the path to, just delete the whole function, rewrite it passing a single TextBox, and get the Shared from there.
     // Technically these functions should be marked as unsafe, but since they are private, we don't do it.
     pub(crate) fn shared_mut(&mut self) -> &mut Shared {
         unsafe { self.shared_backref.as_mut() }
