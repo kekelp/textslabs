@@ -1543,8 +1543,19 @@ impl TextEdit {
                 scene.set_paint(PaintType::Solid(selection_color));
                 scene.fill_rect(&rect);
             });
+        }
 
-            // Render cursor
+        // Render text
+        for line in self.layout().lines() {
+            for item in line.items() {
+                if let PositionedLayoutItem::GlyphRun(glyph_run) = item {
+                    render_glyph_run_to_scene(scene, &glyph_run, content_left, content_top);
+                }
+            }
+        }
+
+        // Render cursor
+        if is_focused {
             if show_cursor && self.selection().is_collapsed() {
                 let cursor_color = AlphaColor::from_rgba8(0xee, 0xee, 0xee, 0xff);
                 let cursor_width = CURSOR_WIDTH;
@@ -1556,15 +1567,6 @@ impl TextEdit {
                 let rect = Rect::new(x.round() as f64, y.round() as f64, (x + width).round() as f64, (y + height).round() as f64);
                 scene.set_paint(PaintType::Solid(cursor_color));
                 scene.fill_rect(&rect);
-            }
-        }
-
-        // Render text
-        for line in self.layout().lines() {
-            for item in line.items() {
-                if let PositionedLayoutItem::GlyphRun(glyph_run) = item {
-                    render_glyph_run_to_scene(scene, &glyph_run, content_left, content_top);
-                }
             }
         }
 
