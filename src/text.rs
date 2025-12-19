@@ -118,21 +118,21 @@ impl Shared {
             self.decorations_changed = true;
 
             if let Some(timer) = &self.cursor_blink_waker {
-                timer.start_waker();
+                timer.start();
             }
 
         } else {   
             self.cursor_blink_start = None;
-            if let Some(timer) = &self.cursor_blink_waker {
-                timer.stop_waker();
+            if let Some(waker) = &self.cursor_blink_waker {
+                waker.stop();
             }
         }
     }
     
     pub(crate) fn stop_cursor_blink(&mut self) {
         self.cursor_blink_start = None;
-        if let Some(timer) = &self.cursor_blink_waker {
-            timer.stop_waker();
+        if let Some(waker) = &self.cursor_blink_waker {
+            waker.stop();
         }
     }
 }
@@ -947,6 +947,18 @@ impl Text {
                 });
             }
         }
+        
+        if let WindowEvent::Focused(focused) = event {
+            if *focused {
+                // self.shared.cursor_blink_animation_currently_visible = true;
+                self.shared.reset_cursor_blink();
+            } else {
+                self.shared.cursor_blink_animation_currently_visible = false;
+                self.shared.decorations_changed = true;
+                self.shared.stop_cursor_blink();
+            }
+        }
+
         if let WindowEvent::CloseRequested | WindowEvent::Destroyed = event {
             self.shared.windows.retain(|info| info.window_id != window.id());
         }
@@ -1828,11 +1840,11 @@ impl CursorBlinkWaker {
         }
     }
         
-    fn start_waker(&self) {
+    fn start(&self) {
         let _ = self.command_sender.send(WakerCommand::Start);
     }
     
-    fn stop_waker(&self) {
+    fn stop(&self) {
         let _ = self.command_sender.send(WakerCommand::Stop);
     }
 }
