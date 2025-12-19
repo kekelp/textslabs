@@ -1242,7 +1242,7 @@ impl Text {
                 let handle = TextEditHandle { key: i };
                 let text_edit = self.get_text_edit_mut(&handle);
                 text_edit.text_box.reset_selection();
-                text_edit.show_cursor = false;
+                self.shared.cursor_blink_animation_currently_visible = false;
             },
             AnyBox::TextBox(i) => {
                 let handle = TextBoxHandle { key: i };

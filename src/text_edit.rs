@@ -112,7 +112,6 @@ pub(crate) fn selection_decorations_changed(initial_selection: Selection, new_se
 /// Then, pass the handle to [`Text::get_text_edit_mut()`] to get a reference to it.
 pub struct TextEdit {
     pub(crate) compose: Option<Range<usize>>,
-    pub(crate) show_cursor: bool,
     pub(crate) start_time: Option<Instant>,
     pub(crate) blink_period: Duration,
     pub(crate) history: TextEditHistory,
@@ -146,7 +145,6 @@ impl TextEdit {
         text_box.auto_clip = true;
         return Self {
             compose: Default::default(),
-            show_cursor: true,
             start_time: Default::default(),
             blink_period: Default::default(),
             history: TextEditHistory::new(),
@@ -228,7 +226,7 @@ impl TextEdit {
 
         // Capture initial state for comparison
         let initial_selection = self.text_box.selection();
-        let initial_show_cursor = self.show_cursor;
+        let initial_show_cursor = self.text_box.shared().cursor_blink_animation_currently_visible;
 
         let mut consumed = false;
 
@@ -450,7 +448,8 @@ impl TextEdit {
 
         self.restore_placeholder_if_any();
 
-        let decorations_changed = selection_decorations_changed(initial_selection, self.text_box.selection(), initial_show_cursor, self.show_cursor, !self.disabled);
+        let new_show_cursor = self.text_box.shared().cursor_blink_animation_currently_visible;
+        let decorations_changed = selection_decorations_changed(initial_selection, self.text_box.selection(), initial_show_cursor, new_show_cursor, !self.disabled);
         if decorations_changed {
             self.text_box.shared_mut().decorations_changed = true;
 
@@ -694,7 +693,7 @@ impl TextEdit {
             selection_start
         };
         self.compose = Some(start..start + text.len());
-        self.show_cursor = cursor.is_some();
+        self.text_box.shared_mut().cursor_blink_animation_currently_visible = cursor.is_some();
 
         // Select the location indicated by the IME. If `cursor` is none, collapse the selection to
         // a caret at the start of the preedit text.
@@ -718,7 +717,7 @@ impl TextEdit {
     pub(crate) fn clear_compose(&mut self) {
         if let Some(preedit_range) = self.compose.take() {
             self.text_box.text_mut_string().replace_range(preedit_range.clone(), "");
-            self.show_cursor = true;
+            self.text_box.shared_mut().cursor_blink_animation_currently_visible = true;
 
             let (index, affinity) = if preedit_range.start >= self.text_box.text_inner().len() {
                 (self.text_box.text_inner().len(), Affinity::Upstream)
@@ -1407,7 +1406,7 @@ impl TextEdit {
     
     /// Returns the cursor geometry if visible.
     pub fn cursor_geometry(&mut self, size: f32) -> Option<parley::BoundingBox> {
-        if !self.show_cursor {
+        if ! self.text_box.shared_mut().cursor_blink_animation_currently_visible {
             return None;
         }
         
