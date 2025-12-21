@@ -35,7 +35,7 @@ const BIND_GROUP_LAYOUT_DESC: BindGroupLayoutDescriptor = wgpu::BindGroupLayoutD
         // Experimentally bind the vertex buffer as well
         wgpu::BindGroupLayoutEntry {
             binding: 3,
-            visibility: wgpu::ShaderStages::VERTEX,
+            visibility: ShaderStages::VERTEX.union(ShaderStages::FRAGMENT),
             ty: wgpu::BindingType::Buffer {
                 ty: wgpu::BufferBindingType::Storage { read_only: true },
                 has_dynamic_offset: false,
