@@ -37,7 +37,7 @@ pub(crate) struct ContextlessTextRenderer {
     pub(crate) mask_atlas_pages: Vec<AtlasPage<GrayImage>>,
     pub(crate) color_atlas_pages: Vec<AtlasPage<RgbaImage>>,
 
-    pub(crate) quads: Vec<Quad>,
+    pub(crate) quads: Vec<GlyphQuad>,
     
     // Combined texture arrays and single bind group
     pub(crate) mask_texture_array: Texture,
@@ -129,7 +129,7 @@ impl ContextlessTextRenderer {
             }
         }
 
-        let quad = Quad {
+        let quad = GlyphQuad {
             pos_packed: pack_i32_pair_as_u16(x0, y0),
             clip_rect_packed: [pack_i16_pair(0, 0), pack_i16_pair(32767, 32767)], // No clipping for decorations
             dim_packed: pack_u16_pair((x1 - x0) as u32, (y1 - y0) as u32),
@@ -191,7 +191,7 @@ fn quantize<const N: u8>(pos: f32) -> (i32, f32, SubpixelBin::<N>) {
 #[allow(missing_docs)]
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Zeroable, Pod)]
-pub struct Quad {
+pub struct GlyphQuad {
     pub clip_rect_packed: [u32; 2],       // 8 bytes - pack i16 pairs into u32s
     pub pos_packed: u32,                  // 4 bytes - pack x,y as u16,u16
     pub dim_packed: u32,                  // 4 bytes - pack width,height as u16,u16  
@@ -201,7 +201,7 @@ pub struct Quad {
     pub flags_and_page: u32,              // 4 bytes - flags (24 bits) + page_index (8 bits)
 }
 
-impl Quad {
+impl GlyphQuad {
     /// Adjust the position by the given delta, returning false if overflow would occur
     pub fn adjust_position(&mut self, delta_x: i32, delta_y: i32) -> bool {
         let (x, y) = unpack_pos_as_i32(self.pos_packed);
@@ -268,7 +268,7 @@ fn unpack_page_index_rust(flags_and_page: u32) -> u32 {
 }
 
 
-fn make_quad(glyph: &GlyphWithContext, stored_glyph: &StoredGlyph, depth: f32) -> Quad {
+fn make_quad(glyph: &GlyphWithContext, stored_glyph: &StoredGlyph, depth: f32) -> GlyphQuad {
     let y = glyph.quantized_pos_y - stored_glyph.placement_top as i32;
     let x = glyph.quantized_pos_x + stored_glyph.placement_left as i32;
 
@@ -280,7 +280,7 @@ fn make_quad(glyph: &GlyphWithContext, stored_glyph: &StoredGlyph, depth: f32) -
         Content::Color => (0xff_ff_ff_ff, CONTENT_TYPE_COLOR),
         Content::SubpixelMask => unreachable!(),
     };
-    return Quad {
+    return GlyphQuad {
         pos_packed: pack_i32_pair_as_u16(x, y),
         clip_rect_packed: [pack_i16_pair(0, 0), pack_i16_pair(32767, 32767)], // No clipping (will be set later)
         dim_packed: pack_u16_pair(size_x as u32, size_y as u32),
@@ -291,7 +291,7 @@ fn make_quad(glyph: &GlyphWithContext, stored_glyph: &StoredGlyph, depth: f32) -
     };
 }
 
-fn clip_quad(quad: Quad, left: f32, top: f32, clip_rect: Option<parley::BoundingBox>, fade: bool) -> Option<Quad> {
+fn clip_quad(quad: GlyphQuad, left: f32, top: f32, clip_rect: Option<parley::BoundingBox>, fade: bool) -> Option<GlyphQuad> {
     let mut quad = quad;
 
     if let Some(clip) = clip_rect {
@@ -543,7 +543,7 @@ impl TextRenderer {
     }
 
     /// Get the quads buffer for external rendering
-    pub fn quads(&self) -> &[Quad] {
+    pub fn quads(&self) -> &[GlyphQuad] {
         &self.text_renderer.quads
     }
 
@@ -611,7 +611,7 @@ impl ContextlessTextRenderer {
         }
 
         // Calculate total number of quads
-        let required_size = (self.quads.len() * std::mem::size_of::<Quad>()) as u64;
+        let required_size = (self.quads.len() * std::mem::size_of::<GlyphQuad>()) as u64;
         
         // Grow shared vertex buffer if needed
         if self.vertex_buffer.size() < required_size {
@@ -891,7 +891,7 @@ impl ContextlessTextRenderer {
     // }
 
     /// Rasterizes the glyph in a texture atlas and returns a Quad that can be used to render it, or None if the glyph was just empty (like a space).
-    fn prepare_glyph(&mut self, glyph: &GlyphWithContext, scaler: &mut Scaler, depth: f32) -> Option<(Quad, StoredGlyph)> {
+    fn prepare_glyph(&mut self, glyph: &GlyphWithContext, scaler: &mut Scaler, depth: f32) -> Option<(GlyphQuad, StoredGlyph)> {
         let (content, placement) = self._render_glyph(&glyph, scaler);
         let size = placement.size();
         
@@ -945,7 +945,7 @@ impl ContextlessTextRenderer {
             placement: &Placement,
             content_type: Content,
             depth: f32,
-        ) -> Option<(Quad, StoredGlyph)> {
+        ) -> Option<(GlyphQuad, StoredGlyph)> {
         self.copy_glyph_to_atlas(size, alloc, page, content_type);
         let stored_glyph = StoredGlyph::create(alloc, placement, page, self.frame, content_type);
         self.glyph_cache.push(glyph.key(), Some(stored_glyph));

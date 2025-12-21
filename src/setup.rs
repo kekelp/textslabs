@@ -164,7 +164,7 @@ impl ContextlessTextRenderer {
         });
 
         let vertex_buffer_layout = wgpu::VertexBufferLayout {
-            array_stride: std::mem::size_of::<Quad>() as wgpu::BufferAddress,
+            array_stride: std::mem::size_of::<GlyphQuad>() as wgpu::BufferAddress,
             step_mode: wgpu::VertexStepMode::Instance,
             attributes: &wgpu::vertex_attr_array![
                 0 => Uint32x2,    // clip_rect_packed
