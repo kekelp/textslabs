@@ -62,17 +62,14 @@ const BIND_GROUP_LAYOUT_DESC: BindGroupLayoutDescriptor = wgpu::BindGroupLayoutD
 pub struct TextRendererParams {
     /// Size of texture atlas pages used for glyph caching.
     pub atlas_page_size: AtlasPageSize,
-    /// Enable z-range filtering using push constants. Required for render_z_range().
-    pub enable_z_range_filtering: bool,
 }
 impl Default for TextRendererParams {
     fn default() -> Self {
         // 2048 is guaranteed to work everywhere that webgpu supports, and it seems both small enough that it's fine to allocate it upfront even if a smaller one would have been fine, and big enough that even on gpus that could hold 8k textures, I don't feel too bad about using multiple 2k pages instead of a single big 8k one
         // Ideally you'd still with small pages and grow them until the max texture dim, but having cache eviction, multiple pages, AND page growing seems a bit too much for now
         let atlas_page_size = AtlasPageSize::DownlevelWrbgl2Max; // 2048
-        Self { 
+        Self {
             atlas_page_size,
-            enable_z_range_filtering: false,
         }
     }
 }
@@ -110,29 +107,6 @@ pub(crate) fn create_vertex_buffer(device: &Device, size: u64) -> Buffer {
     })
 }
 
-fn generate_shader_source(enable_z_range_filtering: bool) -> ShaderSource<'static> {
-    if enable_z_range_filtering {
-        let base_shader = include_str!("shader.wgsl");
-        let push_constants_template = include_str!("push_constants.wgsl");
-        let z_range_filter_template = include_str!("z_range_filter.wgsl");
-        
-        // Add push constants after params declaration
-        let shader_with_push_constants = base_shader.replace(
-            "@group(0) @binding(4)\nvar<uniform> params: Params;",
-            &format!("@group(0) @binding(4)\nvar<uniform> params: Params;\n\n{}", push_constants_template)
-        );
-        
-        // Replace the vertex shader function with the z-range filtering version
-        let final_shader = shader_with_push_constants.replace(
-            "@vertex\nfn vs_main(input: VertexInput) -> VertexOutput {\n    var vert_output: VertexOutput;",
-            z_range_filter_template
-        );
-        
-        ShaderSource::Wgsl(Cow::Owned(final_shader))
-    } else {
-        ShaderSource::Wgsl(Cow::Borrowed(include_str!("shader.wgsl")))
-    }
-}
 
 impl ContextlessTextRenderer {
     pub fn new_with_params(
@@ -157,10 +131,9 @@ impl ContextlessTextRenderer {
             ..Default::default()
         });
 
-        let shader_source = generate_shader_source(params.enable_z_range_filtering);
         let shader = device.create_shader_module(ShaderModuleDescriptor {
             label: Some("textslabs shader"),
-            source: shader_source,
+            source: ShaderSource::Wgsl(Cow::Borrowed(include_str!("shader.wgsl"))),
         });
 
         let vertex_buffer_layout = wgpu::VertexBufferLayout {
@@ -205,19 +178,10 @@ impl ContextlessTextRenderer {
             packer: BucketedAtlasAllocator::new(size2(atlas_size as i32, atlas_size as i32)),
         }];
 
-        let push_constant_ranges = if params.enable_z_range_filtering {
-            vec![wgpu::PushConstantRange {
-                stages: wgpu::ShaderStages::VERTEX,
-                range: 0..8, // vec2<f32> = 8 bytes
-            }]
-        } else {
-            vec![]
-        };
-
         let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: None,
             bind_group_layouts: &[&bind_group_layout],
-            push_constant_ranges: &push_constant_ranges,
+            push_constant_ranges: &[],
         });
 
         let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
@@ -289,7 +253,6 @@ impl ContextlessTextRenderer {
             params_buffer,
             glyph_cache,
             last_frame_evicted: 0,
-            z_range_filtering_enabled: params.enable_z_range_filtering,
             // cached_scaler: None,
             vertex_buffer,
             needs_gpu_sync: true,

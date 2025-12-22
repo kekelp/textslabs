@@ -51,8 +51,7 @@ pub(crate) struct ContextlessTextRenderer {
 
     pub pipeline: RenderPipeline,
     pub atlas_size: u32,
-    pub z_range_filtering_enabled: bool,
-    
+
     // pub(crate) cached_scaler: Option<CachedScaler>,
     
     pub(crate) vertex_buffer: Buffer,
@@ -501,18 +500,6 @@ impl TextRenderer {
         self.text_renderer.render(pass);
     }
 
-    /// Render the prepared text within the specified z-range.
-    /// 
-    /// This function uses `wgpu`'s push constants, and can only be used if the `TextRenderer` was created with the `enable_z_range_filtering = true` option in [`TextRendererParams`].
-    /// 
-    /// Note that push constants are a native-only feature that may not be available in some `wgpu` backends. See the `wgpu` documentation for more information.
-    /// 
-    /// # Panics
-    /// 
-    /// Panics if the `TextRenderer` was not created with `enable_z_range_filtering = true`.
-    pub fn render_z_range(&self, pass: &mut RenderPass<'_>, z_range: [f32; 2]) {
-        self.text_renderer.render_z_range(pass, z_range);
-    }
     
     /// Capture quad ranges after text rendering and populate QuadStorage
     fn capture_quad_ranges_after(&mut self, quad_storage: &mut QuadStorage, current_offset: (f32, f32), start_index: usize) {
@@ -580,10 +567,6 @@ impl ContextlessTextRenderer {
         pass.set_bind_group(0, &self.bind_group, &[]);
         pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
 
-        if self.z_range_filtering_enabled {
-            pass.set_push_constants(wgpu::ShaderStages::VERTEX, 0, bytemuck::bytes_of(&[f32::MAX, f32::MIN]));
-        }
-
         // Calculate total instance count
         let total_instances = self.quads.len();
 
@@ -633,24 +616,6 @@ impl ContextlessTextRenderer {
         self.needs_gpu_sync = false;
     }
 
-    pub fn render_z_range(&self, pass: &mut RenderPass<'_>, z_range: [f32; 2]) {
-        if !self.z_range_filtering_enabled {
-            panic!("Z-range filtering was not enabled when creating this TextRenderer. Set TextRendererParams::enable_z_range_filtering = true");
-        }
-
-        pass.set_pipeline(&self.pipeline);
-        pass.set_bind_group(0, &self.bind_group, &[]);
-        pass.set_push_constants(wgpu::ShaderStages::VERTEX, 0, bytemuck::bytes_of(&z_range));
-        pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-
-        // Calculate total instance count
-        let total_instances = self.quads.len();
-
-        if total_instances > 0 {
-            // Single draw call for all instances
-            pass.draw(0..4, 0..(total_instances as u32));
-        }
-    }
 
     pub fn update_resolution(&mut self, width: f32, height: f32) {
         self.params.screen_resolution_width = width;

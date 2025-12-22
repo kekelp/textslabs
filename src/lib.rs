@@ -110,25 +110,13 @@
 //! 
 //! 1) Use a shader that can render both text glyphs and any other elements (rectangles, shapes, bezier paths, etc.), and render everything in one draw call. Then, the GPU will draw the elements in the order they appear in the buffer with perfect blending, all automatically.
 //! 2) Use "batching": do separate draw calls for the first contiguous range of text glyphs, then switch the pipeline and do another draw call for a range of other elements, etc.
-//! 3) Use a slightly different form of batching where the draw call still goes through all the quads, but specifies a depth range. The shader then filters out all quads outside of the range.
-//! 
-//! #### Megashader
 //! 
 //! The `megashader.rs` example shows how this library can be used as part of a render pipeline implementing the first strategy.
 //! 
 //! I tried my hardest to do this in an "extensible" way while keeping all text-related code as a separate module, but the results were limited due to the heavy limitations of the `wgsl` shading language. I will give it another try if I can ever get `slang` shaders to work.
 //! 
-//! #### Batching
-//! 
+//!
 //! "Regular" batching is currently not implemented.
-//! 
-//! #### Z-range batching
-//! 
-//! The third strategy is implemented by [`TextRenderer::render_z_range()`], an experimental function that renders only the text boxes in a given range of depth values. This uses push constants and a filter in the shader to select different ranges in different draw calls, but in the same render pass, without having to rearrange or reupload the data. See the `z_range.rs` example in the repository to see how this works. 
-//! 
-//! This strategy is the simplest way to integrate a handful of truly custom rendered elements, but it's probably not great for a general-purpose renderer that can end up having to draw a lot of text boxes and shapes all interleaved.
-//!  
-//! Note that push constants are a native-only feature that may not be available in some `wgpu` backends. See the `wgpu` documentation for more information.
 //! 
 //! 
 //! 
