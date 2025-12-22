@@ -1,119 +1,156 @@
-// Clipped quad vertex function (from keru_renderer/quad.slang)
-void clipped_quad_vertex(
-    float2 top_left,
-    float2 size,
-    float2 x_clip,
-    float2 y_clip,
+struct GlyphQuad {
+    uint2 clip_rect_packed;
+    uint pos_packed;
+    uint dim_packed;
+    uint uv_origin_packed;
+    uint color;
+    float depth;
+    uint flags_and_page;
+}
+
+struct TextSlabs {
+    Texture2DArray<float4> mask_atlas_texture;
+    Texture2DArray<float4> color_atlas_texture;
+    SamplerState atlas_sampler;
+    StructuredBuffer<GlyphQuad> quads;
+}
+
+ParameterBlock<TextSlabs> textslabs;
+
+float2 split_i16(uint u) {
+    int a = int(u & 0x0000ffffu);
+    int b = int((u & 0xffff0000u) >> 16u);
+    // Convert from u16 bit pattern to i16 values
+    int a_i16 = (a >= 32768) ? (a - 65536) : a;
+    int b_i16 = (b >= 32768) ? (b - 65536) : b;
+    return float2(float(a_i16), float(b_i16));
+}
+
+float2 split(uint u) {
+    return float2(
+        float(u & 0x0000ffffu),
+        float((u & 0xffff0000u) >> 16u)
+    );
+}
+
+float4 unpack_color_u32(uint color) {
+    return float4(
+        float((color & 0xff000000u) >> 24u) / 255.0,
+        float((color & 0x00ff0000u) >> 16u) / 255.0,
+        float((color & 0x0000ff00u) >> 8u) / 255.0,
+        float((color & 0x000000ffu)) / 255.0
+    );
+}
+
+uint unpack_page_index(uint flags_and_page) {
+    return (flags_and_page >> 24u) & 0xFFu;
+}
+
+uint get_content_type(uint flags_and_page) {
+    return flags_and_page & 0x0Fu;
+}
+
+struct ClipResult {
+    float2 position;
+    float2 uv_offset;
+    float2 dimensions;
+}
+
+ClipResult apply_clipping(
+    float2 quad_pos,
+    float2 quad_dim,
+    float4 clip_rect,
+    float2 coords
+) {
+    float4 quad_bounds = float4(
+        quad_pos.x,
+        quad_pos.y,
+        quad_pos.x + quad_dim.x,
+        quad_pos.y + quad_dim.y
+    );
+
+    float4 clipped_bounds = float4(
+        max(quad_bounds.x, clip_rect.x),
+        max(quad_bounds.y, clip_rect.y),
+        max(max(quad_bounds.x, clip_rect.x), min(quad_bounds.z, clip_rect.z)),
+        max(max(quad_bounds.y, clip_rect.y), min(quad_bounds.w, clip_rect.w))
+    );
+
+    float2 uv_offset = clipped_bounds.xy - quad_bounds.xy;
+    float2 clipped_dim = clipped_bounds.zw - clipped_bounds.xy;
+
+    ClipResult result;
+    result.position = clipped_bounds.xy + clipped_dim * coords;
+    result.uv_offset = uv_offset;
+    result.dimensions = clipped_dim;
+    return result;
+}
+
+void text_vertex(
+    uint instanceIndex,
     uint vertexIndex,
     float2 resolution,
     out float4 position,
     out float2 uv,
 ) {
+    GlyphQuad quad = textslabs.quads[instanceIndex];
+
     float2 uv01 = float2(
         vertexIndex & 1u,
         vertexIndex >> 1u & 1u
     );
 
-    // Calculate original quad position
-    float2 quad_min = top_left;
-    float2 quad_max = top_left + size;
+    float2 quad_pos = split_i16(quad.pos_packed);
+    float2 dim = split(quad.dim_packed);
 
-    // Construct clip min and max from x_clip and y_clip
-    float2 clip_min = float2(x_clip.x, y_clip.x);
-    float2 clip_max = float2(x_clip.y, y_clip.y);
+    // Apply clipping
+    float2 clip_xy = split_i16(quad.clip_rect_packed.x);
+    float2 clip_wh = split_i16(quad.clip_rect_packed.y);
+    float4 clip_rect = float4(clip_xy.x, clip_xy.y, clip_wh.x, clip_wh.y);
 
-    // Clip the quad
-    float2 clipped_min = max(quad_min, clip_min);
-    float2 clipped_max = min(quad_max, clip_max);
-
-    // Calculate the clipped position for this vertex
-    float2 p = clipped_min + uv01 * (clipped_max - clipped_min);
+    ClipResult clip_result = apply_clipping(quad_pos, dim, clip_rect, uv01);
 
     // Convert to NDC
-    float2 ndc = (p / resolution) * 2.0 - 1.0;
+    float2 ndc = (clip_result.position / resolution) * 2.0 - 1.0;
+    position = float4(ndc.x, -ndc.y, 0.0, 1.0);
 
-    position = float4(ndc.x, -ndc.y, 0.0, 1.0); // flip y
-    uv = (p - quad_min) / size;
+    // Calculate UV coordinates for texture atlas
+    float2 uv_origin = split(quad.uv_origin_packed);
+    uint atlas_width, atlas_height, atlas_elements;
+    textslabs.mask_atlas_texture.GetDimensions(atlas_width, atlas_height, atlas_elements);
+    float2 atlas_size = float2(float(atlas_width), float(atlas_height));
+    uv = (uv_origin + clip_result.uv_offset + clip_result.dimensions * uv01) / atlas_size;
 }
 
-struct TextGlyphData {
-    float2 top_left;
-    float2 size;
-    float2 uv_origin;
-    float3 color;
-    float alpha;
-    float2 x_clip;
-    float2 y_clip;
-    uint page_index;
-    float _padding1;
-    float _padding2;
-    float _padding3;
+float4 text_fragment_pure(GlyphQuad quad, float2 uv): SV_Target {
+    
+    float4 color = unpack_color_u32(quad.color);
+    uint page_index = unpack_page_index(quad.flags_and_page);
+    uint content_type = get_content_type(quad.flags_and_page);
+
+    if (content_type == 1) {
+        // Color bitmap text
+        float4 tex_color = textslabs.color_atlas_texture.SampleLevel(
+            textslabs.atlas_sampler,
+            float3(uv, float(page_index)),
+            0.0
+        );
+        return float4(color.rgb * tex_color.rgb, color.a * tex_color.a);
+    } else if (content_type == 0) {
+        // Mask text
+        float glyph_alpha = textslabs.mask_atlas_texture.SampleLevel(
+            textslabs.atlas_sampler,
+            float3(uv, float(page_index)),
+            0.0
+        ).r;
+        return float4(color.rgb, color.a * glyph_alpha);
+    } else {
+        // Solid rectangles for selection and cursor
+        return color;
+    }
 }
 
-struct TextGlyphs {
-    StructuredBuffer<TextGlyphData> buffer;
-}
-
-struct Globals {
-    float2 resolution;
-    float atlas_size;
-    float _padding;
-}
-
-ParameterBlock<TextGlyphs> text_glyphs;
-ParameterBlock<Globals> globals;
-
-// Texture atlas and sampler for glyph masks
-Texture2DArray<float> mask_atlas;
-SamplerState atlas_sampler;
-
-struct VertexOutput {
-    float4 position: SV_Position;
-    float2 atlas_uv: TEXCOORD0;
-    uint page_index: TEXCOORD1;
-    uint primitive_index: TEXCOORD2;
-}
-
-[shader("vertex")]
-VertexOutput text_vertex(
-    uint instanceIndex: SV_InstanceID,
-    uint vertexIndex: SV_VertexID
-) {
-    VertexOutput output;
-    var glyph: TextGlyphData = text_glyphs.buffer[instanceIndex];
-
-    float2 uv;
-    // Use the standard clipped quad vertex function for positioning
-    clipped_quad_vertex(
-        glyph.top_left,
-        glyph.size,
-        glyph.x_clip,
-        glyph.y_clip,
-        vertexIndex,
-        globals.resolution,
-        output.position,
-        uv
-    );
-
-    // Calculate atlas UV coordinates
-    output.atlas_uv = (glyph.uv_origin + uv * glyph.size) / globals.atlas_size;
-    output.page_index = glyph.page_index;
-    output.primitive_index = instanceIndex;
-
-    return output;
-}
-
-[shader("fragment")]
-float4 text_fragment(VertexOutput input): SV_Target {
-    var glyph: TextGlyphData = text_glyphs.buffer[input.primitive_index];
-
-    // Sample the glyph alpha from the mask atlas
-    float glyph_alpha = mask_atlas.SampleLevel(
-        atlas_sampler,
-        float3(input.atlas_uv, float(input.page_index)),
-        0.0
-    ).r;
-
-    // Return the text color with the glyph alpha
-    return float4(glyph.color, glyph.alpha * glyph_alpha);
+float4 text_fragment(uint primitiveIndex, float2 uv): SV_Target {
+    GlyphQuad quad = textslabs.quads[primitiveIndex];
+    return text_fragment_pure(quad, uv);
 }
