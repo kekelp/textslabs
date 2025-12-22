@@ -8,11 +8,18 @@ struct GlyphQuad {
     uint flags_and_page;
 }
 
+struct Params {
+    float2 resolution;
+    uint srgb;
+    uint _padding;
+}
+
 struct TextSlabs {
     Texture2DArray<float4> mask_atlas_texture;
     Texture2DArray<float4> color_atlas_texture;
     SamplerState atlas_sampler;
     StructuredBuffer<GlyphQuad> quads;
+    ConstantBuffer<Params> params;
 }
 
 ParameterBlock<TextSlabs> textslabs;

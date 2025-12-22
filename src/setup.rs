@@ -131,9 +131,17 @@ impl ContextlessTextRenderer {
             ..Default::default()
         });
 
-        let shader = device.create_shader_module(ShaderModuleDescriptor {
-            label: Some("textslabs shader"),
-            source: ShaderSource::Wgsl(Cow::Borrowed(include_str!("shader.wgsl"))),
+        let vertex_spirv = include_bytes!("../slangc_output/text.vert.spv");
+        let fragment_spirv = include_bytes!("../slangc_output/text.frag.spv");
+
+        let vertex_shader = device.create_shader_module(ShaderModuleDescriptor {
+            label: Some("textslabs vertex shader"),
+            source: wgpu::util::make_spirv(vertex_spirv),
+        });
+
+        let fragment_shader = device.create_shader_module(ShaderModuleDescriptor {
+            label: Some("textslabs fragment shader"),
+            source: wgpu::util::make_spirv(fragment_spirv),
         });
 
         let vertex_buffer_layout = wgpu::VertexBufferLayout {
@@ -188,14 +196,14 @@ impl ContextlessTextRenderer {
             label: Some("textslabs pipeline"),
             layout: Some(&pipeline_layout),
             vertex: VertexState {
-                module: &shader,
-                entry_point: Some("vs_main"),
+                module: &vertex_shader,
+                entry_point: Some("main"),
                 buffers: &[vertex_buffer_layout],
                 compilation_options: PipelineCompilationOptions::default(),
             },
             fragment: Some(FragmentState {
-                module: &shader,
-                entry_point: Some("fs_main"),
+                module: &fragment_shader,
+                entry_point: Some("main"),
                 targets: &[Some(ColorTargetState {
                     format,
                     blend: Some(BlendState::ALPHA_BLENDING),
