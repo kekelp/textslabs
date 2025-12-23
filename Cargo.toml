@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [features]
-default = ["vello_hybrid"]
+default = []
 panic_on_handle_drop = []
 accessibility = ["dep:accesskit", "dep:accesskit_winit", "parley/accesskit"]
 vello_hybrid = ["dep:vello_hybrid", "dep:vello_common"]

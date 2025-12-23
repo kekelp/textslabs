@@ -392,6 +392,11 @@ impl TextRenderer {
         Self::new_with_params(device, queue, format, None, TextRendererParams::default())
     }
 
+    /// Returns the source of the composable text shader.
+    pub fn composable_shader_source() -> &'static str {
+        include_str!("text.slang")
+    }
+
     /// Update the screen resolution for text rendering
     pub fn update_resolution(&mut self, width: f32, height: f32) {
         self.text_renderer.update_resolution(width, height);
