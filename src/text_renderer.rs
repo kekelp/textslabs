@@ -509,13 +509,7 @@ impl TextRenderer {
     /// Capture quad ranges after text rendering and populate QuadStorage
     fn capture_quad_ranges_after(&mut self, quad_storage: &mut QuadStorage, current_offset: (f32, f32), start_index: usize) {
         let end_index = self.text_renderer.quads.len();
-        // Store the range if any quads were added
-        quad_storage.quad_range = if end_index > start_index {
-            Some((start_index, end_index))
-        } else {
-            None
-        };
-        
+        quad_storage.quad_range = Some((start_index, end_index));        
         quad_storage.last_offset = current_offset;
     }
 
