@@ -232,6 +232,7 @@ impl ContextlessTextRenderer {
             atlas_size,
             &mask_atlas_pages,
             &color_atlas_pages,
+            uniform_params.srgb != 0,
         );
 
         let bind_group = create_bind_group(
@@ -277,6 +278,7 @@ impl ContextlessTextRenderer {
             self.atlas_size,
             &self.mask_atlas_pages,
             &self.color_atlas_pages,
+            self.params.srgb != 0
         );
 
         self.mask_texture_array = mask_texture_array;
@@ -407,6 +409,7 @@ fn rebuild_texture_arrays(
     atlas_size: u32,
     mask_atlas_pages: &[AtlasPage<GrayImage>],
     color_atlas_pages: &[AtlasPage<RgbaImage>],
+    surface_is_srgb: bool,
 ) -> (wgpu::Texture, wgpu::Texture) {
     // Create mask texture array
     let mask_tex = device.create_texture(&wgpu::TextureDescriptor {
@@ -446,6 +449,12 @@ fn rebuild_texture_arrays(
         );
     }
 
+    let color_texture_format = if surface_is_srgb {
+        wgpu::TextureFormat::Rgba8UnormSrgb
+    } else {
+        wgpu::TextureFormat::Rgba8Unorm
+    };
+
     // Create color texture array
     let color_tex = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("color atlas array"),
@@ -457,7 +466,7 @@ fn rebuild_texture_arrays(
         mip_level_count: 1,
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
-        format: wgpu::TextureFormat::Rgba8Unorm,
+        format: color_texture_format,
         usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
         view_formats: &[],
     });
