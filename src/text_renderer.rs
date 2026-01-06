@@ -394,7 +394,7 @@ impl TextRenderer {
 
     /// Returns the source of the composable text shader.
     pub fn composable_shader_source() -> &'static str {
-        include_str!("text.slang")
+        include_str!("shaders/textslabs.slang")
     }
 
     /// Update the screen resolution for text rendering

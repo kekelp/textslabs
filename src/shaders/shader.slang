@@ -1,4 +1,4 @@
-import text;
+import textslabs;
 
 struct VertexOutput {
     GlyphQuad quad;

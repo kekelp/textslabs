@@ -50,10 +50,6 @@ path = "examples/accessibility.rs"
 required-features = ["accessibility"]
 
 [[example]]
-name = "megashader"
-path = "examples/megashader/megashader.rs"
-
-[[example]]
 name = "vello_hybrid"
 path = "examples/vello_hybrid.rs"
 required-features = ["vello_hybrid"]
