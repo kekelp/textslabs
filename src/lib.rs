@@ -196,4 +196,4 @@ use swash::{FontRef, GlyphId};
 use wgpu::{MultisampleState, Texture, TextureFormat};
 use swash::zeno::Placement;
 
-pub use parley::{FontWeight, FontStyle, LineHeight, FontStack, Alignment, AlignmentOptions, OverflowWrap};
+pub use parley;

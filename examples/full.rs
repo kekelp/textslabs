@@ -1,5 +1,5 @@
-use parley::{FontFamily, FontStack, TextStyle};
 use textslabs::*;
+use textslabs::parley::*;
 use std::{borrow::Cow, sync::Arc};
 use wgpu::*;
 use winit::{
