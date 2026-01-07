@@ -695,12 +695,7 @@ impl ContextlessTextRenderer {
         //     });
         // }
 
-        let mut scaler = scale_cx
-            .builder(font_ref)
-            .size(font_size)
-            .hint(true)
-            .normalized_coords(run.normalized_coords())
-            .build();
+        let mut scaler: Option<Scaler> = None;
 
         for glyph in glyph_run.glyphs() {
             let glyph_ctx = GlyphWithContext::new(glyph, run_x, run_y, font_key, font_size, style.brush);
@@ -713,7 +708,18 @@ impl ContextlessTextRenderer {
                     }
                 }
             } else {
-                if let Some((quad, _stored_glyph)) = self.prepare_glyph(&glyph_ctx, &mut scaler, depth) {
+                // Lazily initialize to skip the cost when all glyphs are cached.
+                if scaler.is_none() {
+                    scaler = Some(
+                        scale_cx
+                            .builder(font_ref)
+                            .size(font_size)
+                            .hint(true)
+                            .normalized_coords(run.normalized_coords())
+                            .build()
+                    );
+                }
+                if let Some((quad, _stored_glyph)) = self.prepare_glyph(&glyph_ctx, scaler.as_mut().unwrap(), depth) {
                     if let Some(clipped_quad) = clip_quad(quad, left, top, clip_rect, fade) {
                         self.quads.push(clipped_quad);
                     }
@@ -966,8 +972,8 @@ struct GlyphWithContext {
 
 impl GlyphWithContext {
     fn new(glyph: Glyph, run_x: f32, run_y: f32, font_key: u64, font_size: f32, color: ColorBrush) -> Self {
-        let glyph_x = (run_x).round() + glyph.x;
-        let glyph_y = (run_y).round() - glyph.y;
+        let glyph_x = run_x + glyph.x;
+        let glyph_y = run_y - glyph.y;
 
         let (quantized_pos_x, frac_pos_x, subpixel_bin_x) = quantize(glyph_x);
         let (quantized_pos_y, frac_pos_y, subpixel_bin_y) = quantize(glyph_y);

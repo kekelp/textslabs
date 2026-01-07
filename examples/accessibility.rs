@@ -56,7 +56,7 @@ impl State {
         // wgpu boilerplate
         let instance = Instance::new(&InstanceDescriptor::default());
         let wgpu_adapter = pollster::block_on(instance.request_adapter(&RequestAdapterOptions::default())).unwrap();
-        let (device, queue) = pollster::block_on(wgpu_adapter.request_device(&DeviceDescriptor::default(), None)).unwrap();
+        let (device, queue) = pollster::block_on(wgpu_adapter.request_device(&DeviceDescriptor::default())).unwrap();
         let surface = instance.create_surface(window.clone()).expect("Create surface");
         let surface_config = surface.get_default_config(&wgpu_adapter, window.inner_size().width, window.inner_size().height).unwrap();
         surface.configure(&device, &surface_config);
@@ -186,6 +186,7 @@ impl State {
                                 load: LoadOp::Clear(wgpu::Color::BLACK),
                                 store: wgpu::StoreOp::Store,
                             },
+                            depth_slice: None,
                         })],
                         ..Default::default()
                     });

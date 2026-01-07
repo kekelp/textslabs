@@ -995,8 +995,10 @@ impl TextBox {
         self.refresh_layout();
         &self.layout
     }
-
-    pub(crate) fn refresh_layout(&mut self) {
+    
+    // todo better comment.
+    /// Refresh the layout.
+    pub fn refresh_layout(&mut self) {
         if self.needs_relayout || self.style_version_changed() {
             if self.style_version_changed() {
                 self.style_version = self.style_version();
