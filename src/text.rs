@@ -736,6 +736,65 @@ impl Text {
         self.prepare_all_impl(text_renderer, window_id, window_size);
     }
 
+    /// Prepare decorations
+    pub fn prepare_decorations(&mut self, text_renderer: &mut TextRenderer) -> (usize, usize) {
+        let res = self.shared.windows.first().map(|w| (w.window_id, w.dimensions));
+
+        let Some((window_id, _)) = res else {
+            return (0, 0);
+        };
+
+        return self.prepare_decorations_for_window(text_renderer, window_id);
+    }
+
+    /// Prepare decorations for a window
+    pub fn prepare_decorations_for_window(&mut self, text_renderer: &mut TextRenderer, window_id: WindowId) -> (usize, usize) {
+        let show_cursor = self.shared.cursor_blink_animation_currently_visible;
+
+        // Decorations are prepared after the text. This matters for the quad ranges for the scroll fast path.
+        if self.shared.decorations_changed || self.shared.text_changed  || !self.scrolled_moved_indices.is_empty() {
+            let start_index = text_renderer.quads().len();
+            if let Some(focused) = self.shared.focused {
+                // For multi-window, only prepare decorations if the focused element belongs to this window
+                let focused_belongs_to_window = match focused {
+                    AnyBox::TextEdit(i) => {
+                        if let Some(text_edit) = self.text_edits.get(i) {
+                            text_edit.text_box.window_id.is_none() || text_edit.text_box.window_id == Some(window_id)
+                        } else {
+                            false
+                        }
+                    },
+                    AnyBox::TextBox(i) => {
+                        if let Some(text_box) = self.text_boxes.get(i) {
+                            text_box.window_id.is_none() || text_box.window_id == Some(window_id)
+                        } else {
+                            false
+                        }
+                    },
+                };
+
+                if focused_belongs_to_window {
+                    match focused {
+                        AnyBox::TextEdit(i) => {
+                            let handle = TextEditHandle { key: i };
+                            let text_edit = self.get_text_edit(&handle);
+                            text_renderer.prepare_text_box_decorations(&text_edit.text_box, show_cursor);
+                        },
+                        AnyBox::TextBox(i) => {
+                            let handle = TextBoxHandle { key: i };
+                            let text_box = self.get_text_box(&handle);
+                            text_renderer.prepare_text_box_decorations(&text_box, false);
+                        },
+                    }
+                }
+            }
+            let end_index = text_renderer.quads().len();
+            self.shared.decorations_range = (start_index, end_index);
+        }
+
+        return self.shared.decorations_range;
+    }
+
     pub(crate) fn prepare_all_impl(&mut self, text_renderer: &mut TextRenderer, window_id: WindowId, window_size: (f32, f32)) {
 
         text_renderer.update_resolution(window_size.0, window_size.1);
@@ -755,8 +814,6 @@ impl Text {
             }
         }
         
-        let show_cursor = self.shared.cursor_blink_animation_currently_visible;
-
         if self.shared.text_changed {
             text_renderer.clear();
         } else if self.shared.decorations_changed || !self.scrolled_moved_indices.is_empty() {
@@ -800,48 +857,7 @@ impl Text {
             }
         }
 
-        
-        // Decorations are prepared after the text. This matters for the quad ranges for the scroll fast path.
-        if self.shared.decorations_changed || self.shared.text_changed  || !self.scrolled_moved_indices.is_empty() {
-            let start_index = text_renderer.quads().len();
-            if let Some(focused) = self.shared.focused {
-                // For multi-window, only prepare decorations if the focused element belongs to this window
-                let focused_belongs_to_window = match focused {
-                    AnyBox::TextEdit(i) => {
-                        if let Some(text_edit) = self.text_edits.get(i) {
-                            text_edit.text_box.window_id.is_none() || text_edit.text_box.window_id == Some(window_id)
-                        } else {
-                            false
-                        }
-                    },
-                    AnyBox::TextBox(i) => {
-                        if let Some(text_box) = self.text_boxes.get(i) {
-                            text_box.window_id.is_none() || text_box.window_id == Some(window_id)
-                        } else {
-                            false
-                        }
-                    },
-                };
-                
-                if focused_belongs_to_window {
-                    match focused {
-                        AnyBox::TextEdit(i) => {
-                            let handle = TextEditHandle { key: i };
-                            let text_edit = self.get_text_edit(&handle);
-                            text_renderer.prepare_text_box_decorations(&text_edit.text_box, show_cursor);
-                        },
-                        AnyBox::TextBox(i) => {
-                            let handle = TextBoxHandle { key: i };
-                            let text_box = self.get_text_box(&handle);
-                            text_renderer.prepare_text_box_decorations(&text_box, false);
-                        },
-                    }
-                }
-            }
-            let end_index = text_renderer.quads().len();
-            self.shared.decorations_range = (start_index, end_index);
-        }
-
+        self.prepare_decorations_for_window(text_renderer, window_id);
 
         // Multi-window: mark prepared and check if all windows done.
         let should_clear_flags = {

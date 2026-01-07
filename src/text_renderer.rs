@@ -420,7 +420,8 @@ impl TextRenderer {
         self.text_renderer.needs_gpu_sync = true;
     }
 
-    /// Prepare a text box layout for rendering with scrolling and clipping support.
+    /// Prepare a single text box.
+    // todo: make a different function (on Text) that can use the fast paths better and stuff.
     pub fn prepare_text_box_layout(&mut self, text_box: &mut TextBox) {
         if text_box.hidden() {
             return;
