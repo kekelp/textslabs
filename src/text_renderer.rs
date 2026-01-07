@@ -68,6 +68,7 @@ pub(crate) struct ContextlessTextRenderer {
 pub(crate) struct AtlasPage<ImageType> {
     pub(crate) packer: BucketedAtlasAllocator,
     pub(crate) image: ImageType,
+    pub(crate) needs_upload: bool,
 }
 
 
@@ -762,7 +763,7 @@ impl ContextlessTextRenderer {
                     let samples = samples.as_mut_slice();
                     let dst_start =
                     (dst_y as usize) * layout.height_stride + (dst_x as usize) * layout.width_stride;
-    
+
                 samples[dst_start..(dst_start + size.width as usize)].copy_from_slice(src_slice);
                 },
                 Content::Color => {
@@ -770,12 +771,12 @@ impl ContextlessTextRenderer {
                     let layout = self.color_atlas_pages[page].image.as_flat_samples().layout;
                     let mut samples = self.color_atlas_pages[page].image.as_flat_samples_mut();
                     let samples = samples.as_mut_slice();
-                    
+
                     // For RGBA, each pixel is 4 bytes
                     for x in 0..size.width as usize {
                         let src_idx = src_start + x;
                         let dst_idx = (dst_y as usize) * layout.height_stride + (dst_x as usize + x) * layout.width_stride;
-                        
+
                         // Copy all 4 channels
                         for c in 0..4 {
                             samples[dst_idx + c] = self.tmp_image.data[src_idx * 4 + c];
@@ -784,6 +785,13 @@ impl ContextlessTextRenderer {
                 },
                 Content::SubpixelMask => unreachable!(),
             };
+        }
+
+        // Mark the page as dirty since we've modified it
+        match content_type {
+            Content::Mask => self.mask_atlas_pages[page].needs_upload = true,
+            Content::Color => self.color_atlas_pages[page].needs_upload = true,
+            Content::SubpixelMask => unreachable!(),
         }
     }
 
@@ -939,6 +947,7 @@ impl ContextlessTextRenderer {
                 self.mask_atlas_pages.push(AtlasPage {
                     image: GrayImage::from_pixel(atlas_size, atlas_size, Luma([0])),
                     packer: BucketedAtlasAllocator::new(size2(atlas_size as i32, atlas_size as i32)),
+                    needs_upload: true,
                 });
                 self.needs_texture_array_rebuild = true;
                 return self.mask_atlas_pages.len() - 1;
@@ -947,6 +956,7 @@ impl ContextlessTextRenderer {
                 self.color_atlas_pages.push(AtlasPage {
                     image: RgbaImage::from_pixel(atlas_size, atlas_size, Rgba([0, 0, 0, 0])),
                     packer: BucketedAtlasAllocator::new(size2(atlas_size as i32, atlas_size as i32)),
+                    needs_upload: true,
                 });
                 self.needs_texture_array_rebuild = true;
                 return self.color_atlas_pages.len() - 1;

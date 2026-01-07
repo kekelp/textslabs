@@ -176,14 +176,16 @@ impl ContextlessTextRenderer {
 
         let glyph_cache = LruCache::unbounded_with_hasher(BuildHasherDefault::<FxHasher>::default());
 
-        let mask_atlas_pages = vec![AtlasPage {
+        let mut mask_atlas_pages = vec![AtlasPage {
             image: GrayImage::from_pixel(atlas_size, atlas_size, Luma([0])),
             packer: BucketedAtlasAllocator::new(size2(atlas_size as i32, atlas_size as i32)),
+            needs_upload: true,
         }];
-        
-        let color_atlas_pages = vec![AtlasPage {
+
+        let mut color_atlas_pages = vec![AtlasPage {
             image: RgbaImage::from_pixel(atlas_size, atlas_size, Rgba([0, 0, 0, 0])),
             packer: BucketedAtlasAllocator::new(size2(atlas_size as i32, atlas_size as i32)),
+            needs_upload: true,
         }];
 
         let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
@@ -230,8 +232,8 @@ impl ContextlessTextRenderer {
             device,
             queue,
             atlas_size,
-            &mask_atlas_pages,
-            &color_atlas_pages,
+            &mut mask_atlas_pages,
+            &mut color_atlas_pages,
             uniform_params.srgb != 0,
         );
 
@@ -276,9 +278,9 @@ impl ContextlessTextRenderer {
             device,
             queue,
             self.atlas_size,
-            &self.mask_atlas_pages,
-            &self.color_atlas_pages,
-            self.params.srgb != 0
+            &mut self.mask_atlas_pages,
+            &mut self.color_atlas_pages,
+            self.params.srgb != 0,
         );
 
         self.mask_texture_array = mask_texture_array;
@@ -289,50 +291,55 @@ impl ContextlessTextRenderer {
     }
 
     pub(crate) fn update_texture_arrays(&mut self, queue: &wgpu::Queue) {
-        // Update mask texture array
-        for (i, page) in self.mask_atlas_pages.iter().enumerate() {
-            queue.write_texture(
-                wgpu::TexelCopyTextureInfo {
-                    texture: &self.mask_texture_array,
-                    mip_level: 0,
-                    origin: wgpu::Origin3d { x: 0, y: 0, z: i as u32 },
-                    aspect: wgpu::TextureAspect::All,
-                },
-                &page.image.as_raw(),
-                wgpu::TexelCopyBufferLayout {
-                    offset: 0,
-                    bytes_per_row: Some(page.image.width()),
-                    rows_per_image: None,
-                },
-                wgpu::Extent3d {
-                    width: page.image.width(),
-                    height: page.image.height(),
-                    depth_or_array_layers: 1,
-                },
-            );
+        for (i, page) in self.mask_atlas_pages.iter_mut().enumerate() {
+            if page.needs_upload {
+                queue.write_texture(
+                    wgpu::TexelCopyTextureInfo {
+                        texture: &self.mask_texture_array,
+                        mip_level: 0,
+                        origin: wgpu::Origin3d { x: 0, y: 0, z: i as u32 },
+                        aspect: wgpu::TextureAspect::All,
+                    },
+                    &page.image.as_raw(),
+                    wgpu::TexelCopyBufferLayout {
+                        offset: 0,
+                        bytes_per_row: Some(page.image.width()),
+                        rows_per_image: None,
+                    },
+                    wgpu::Extent3d {
+                        width: page.image.width(),
+                        height: page.image.height(),
+                        depth_or_array_layers: 1,
+                    },
+                );
+                page.needs_upload = false;
+            }
         }
-    
-        // Update color texture array
-        for (i, page) in self.color_atlas_pages.iter().enumerate() {
-            queue.write_texture(
-                wgpu::TexelCopyTextureInfo {
-                    texture: &self.color_texture_array,
-                    mip_level: 0,
-                    origin: wgpu::Origin3d { x: 0, y: 0, z: i as u32 },
-                    aspect: wgpu::TextureAspect::All,
-                },
-                &page.image.as_raw(),
-                wgpu::TexelCopyBufferLayout {
-                    offset: 0,
-                    bytes_per_row: Some(page.image.width() * 4),
-                    rows_per_image: None,
-                },
-                wgpu::Extent3d {
-                    width: page.image.width(),
-                    height: page.image.height(),
-                    depth_or_array_layers: 1,
-                },
-            );
+
+        // Update only dirty color texture array pages
+        for (i, page) in self.color_atlas_pages.iter_mut().enumerate() {
+            if page.needs_upload {
+                queue.write_texture(
+                    wgpu::TexelCopyTextureInfo {
+                        texture: &self.color_texture_array,
+                        mip_level: 0,
+                        origin: wgpu::Origin3d { x: 0, y: 0, z: i as u32 },
+                        aspect: wgpu::TextureAspect::All,
+                    },
+                    &page.image.as_raw(),
+                    wgpu::TexelCopyBufferLayout {
+                        offset: 0,
+                        bytes_per_row: Some(page.image.width() * 4),
+                        rows_per_image: None,
+                    },
+                    wgpu::Extent3d {
+                        width: page.image.width(),
+                        height: page.image.height(),
+                        depth_or_array_layers: 1,
+                    },
+                );
+                page.needs_upload = false;
+            }
         }
     }
     
@@ -407,8 +414,8 @@ fn rebuild_texture_arrays(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     atlas_size: u32,
-    mask_atlas_pages: &[AtlasPage<GrayImage>],
-    color_atlas_pages: &[AtlasPage<RgbaImage>],
+    mask_atlas_pages: &mut [AtlasPage<GrayImage>],
+    color_atlas_pages: &mut [AtlasPage<RgbaImage>],
     surface_is_srgb: bool,
 ) -> (wgpu::Texture, wgpu::Texture) {
     // Create mask texture array
@@ -427,26 +434,29 @@ fn rebuild_texture_arrays(
         view_formats: &[],
     });
 
-    for (i, page) in mask_atlas_pages.iter().enumerate() {
-        queue.write_texture(
-            wgpu::TexelCopyTextureInfo {
-                texture: &mask_tex,
-                mip_level: 0,
-                origin: wgpu::Origin3d { x: 0, y: 0, z: i as u32 },
-                aspect: wgpu::TextureAspect::All,
-            },
-            &page.image.as_raw(),
-            wgpu::TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(page.image.width()),
-                rows_per_image: None,
-            },
-            wgpu::Extent3d {
-                width: page.image.width(),
-                height: page.image.height(),
-                depth_or_array_layers: 1,
-            },
-        );
+    for (i, page) in mask_atlas_pages.iter_mut().enumerate() {
+        if page.needs_upload {
+            queue.write_texture(
+                wgpu::TexelCopyTextureInfo {
+                    texture: &mask_tex,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d { x: 0, y: 0, z: i as u32 },
+                    aspect: wgpu::TextureAspect::All,
+                },
+                &page.image.as_raw(),
+                wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(page.image.width()),
+                    rows_per_image: None,
+                },
+                wgpu::Extent3d {
+                    width: page.image.width(),
+                    height: page.image.height(),
+                    depth_or_array_layers: 1,
+                },
+            );
+            page.needs_upload = false;
+        }
     }
 
     let color_texture_format = if surface_is_srgb {
@@ -471,26 +481,29 @@ fn rebuild_texture_arrays(
         view_formats: &[],
     });
 
-    for (i, page) in color_atlas_pages.iter().enumerate() {
-        queue.write_texture(
-            wgpu::TexelCopyTextureInfo {
-                texture: &color_tex,
-                mip_level: 0,
-                origin: wgpu::Origin3d { x: 0, y: 0, z: i as u32 },
-                aspect: wgpu::TextureAspect::All,
-            },
-            &page.image.as_raw(),
-            wgpu::TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(page.image.width() * 4),
-                rows_per_image: None,
-            },
-            wgpu::Extent3d {
-                width: page.image.width(),
-                height: page.image.height(),
-                depth_or_array_layers: 1,
-            },
-        );
+    for (i, page) in color_atlas_pages.iter_mut().enumerate() {
+        if page.needs_upload {
+            queue.write_texture(
+                wgpu::TexelCopyTextureInfo {
+                    texture: &color_tex,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d { x: 0, y: 0, z: i as u32 },
+                    aspect: wgpu::TextureAspect::All,
+                },
+                &page.image.as_raw(),
+                wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(page.image.width() * 4),
+                    rows_per_image: None,
+                },
+                wgpu::Extent3d {
+                    width: page.image.width(),
+                    height: page.image.height(),
+                    depth_or_array_layers: 1,
+                },
+            );
+            page.needs_upload = false;
+        }
     }
 
     (mask_tex, color_tex)
