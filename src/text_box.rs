@@ -790,6 +790,13 @@ impl TextBox {
         }
     }
 
+    /// Returns the size of the text box.
+    /// 
+    /// By default text boxes don't clip the text. Depending on the purpose, you might want to use the size of the [layout](`Self::layout()`) rather than the size of the text box itself.
+    pub fn size(&self) -> (f32, f32) {
+        (self.width, self.height)
+    }
+
     /// Sets the text alignment.
     pub fn set_alignment(&mut self, alignment: Alignment) {
         self.alignment = alignment;

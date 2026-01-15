@@ -853,7 +853,12 @@ impl TextEdit {
     pub fn set_size(&mut self, size: (f32, f32)) {
         self.text_box.set_size(size)
     }
-    
+
+    /// Returns the size of the text edit box.
+    pub fn size(&self) -> (f32, f32) {
+        self.text_box.size()
+    }
+
     #[cfg(feature = "accessibility")]
     /// Pushes an accessibility update for this text edit.
     pub fn push_accesskit_update(&mut self, tree_update: &mut TreeUpdate) {
