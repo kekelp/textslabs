@@ -44,6 +44,8 @@ vello_common = { git = "https://github.com/linebender/vello", optional = true }
 
 [dev-dependencies]
 pollster = "0.4.0"
+wgpu-profiler = "0.25.0"
+winit = "0.30.9"
 
 [[example]]
 name = "accessibility"
