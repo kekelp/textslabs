@@ -2,6 +2,7 @@ use std::{sync::Arc, time::{Duration, Instant}};
 use winit::{event::WindowEvent, event_loop::EventLoop, window::Window};
 use wgpu::*;
 use textslabs::*;
+use textslabs::parley::{TextStyle, OverflowWrap};
 use wgpu_profiler::{GpuProfiler, GpuProfilerSettings};
 
 fn main() {
@@ -18,15 +19,18 @@ struct State {
     text: Text,
     text_renderer: TextRenderer,
     _text_edit_handles: Vec<TextEditHandle>,
+    header: TextBoxHandle,
     first_frame_stats: TextBoxHandle,
     avg_stats: TextBoxHandle,
     gpu_profiler: GpuProfiler,
     frame_count: u32,
     last_print_time: Instant,
     total_prepare_time: Duration,
-    total_render_time: Duration,
+    total_gpu_time: Duration,
     total_frame_time: Duration,
-    first_frame: bool,
+    first_gpu_time: Option<Duration>,
+    first_prepare_time: Option<Duration>,
+    first_frame_time: Option<Duration>,
 }
 
 impl State {
@@ -46,44 +50,85 @@ impl State {
         let text_renderer = TextRenderer::new(&device, &queue, surface_config.format);
         let mut text = Text::new();
 
-        // Create stats display text boxes at the top
-        let first_frame_stats = text.add_text_box(
-            "First frame: ...".to_string(),
+        let small_style = text.add_style(TextStyle {
+            font_size: 18.0,
+            brush: ColorBrush([255, 255, 255, 255]),
+            overflow_wrap: OverflowWrap::Anywhere,
+            ..Default::default()
+        }, None);
+
+        // Create header text box
+        let header = text.add_text_box(
+            "This is a benchmark for the builtin atlas renderer.\n\
+            The first time is very slow because of setup and cpu-side glyph rasterization. In the following frames, the glyphs are cached in the atlases.",
             (10.0, 10.0),
+            (1900.0, 60.0),
+            0.0
+        );
+        text.get_text_box_mut(&header).set_style(&small_style);
+
+        // Create stats display text boxes
+        let first_frame_stats = text.add_text_box(
+            "",
+            (10.0, 80.0),
             (400.0, 100.0),
             0.0
         );
 
         let avg_stats = text.add_text_box(
             "Average: computing...".to_string(),
-            (420.0, 10.0),
+            (420.0, 80.0),
             (400.0, 100.0),
             0.0
         );
 
-        // Create multiple text boxes in a grid layout (moved down to make room for stats)
+        text.get_text_box_mut(&first_frame_stats).set_style(&small_style);
+        text.get_text_box_mut(&avg_stats).set_style(&small_style);
+
+        // Sample texts in different scripts
+        let latin_text = "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum. Sed ut perspiciatis unde omnis iste natus error sit voluptatem accusantium doloremque laudantium, totam rem aperiam, eaque ipsa quae ab illo inventore veritatis et quasi architecto beatae vitae dicta sunt explicabo. Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum. Sed ut perspiciatis unde omnis iste natus error sit voluptatem accusantium doloremque laudantium, totam rem aperiam, eaque ipsa quae ab illo inventore veritatis et quasi architecto beatae vitae dicta sunt explicabo.";
+
+        let arabic_text = "عندما يريد العالم أن يتكلم فهو يتحدث بلغة يونيكود. تسجل الآن لحضور المؤتمر الدولي العاشر ليونيكود الذي سيعقد في مارس المقبل بمدينة مايونتس في ألمانيا. و سيجمع المؤتمر بين خبراء من كافة قطاعات الصناعة على الشبكة العالمية انترنيت ويونيكود حيث ستتم مناقشة سبل استخدام يونكود في النظم القائمة وفيما يخص التطبيقات الحاسوبية والخطوط ورسم النصوص المترجمة والحوسبة متعددة اللغات. ليونيكود الذي سيعقد في مارس المقبل بمدينة مايونتس في ألمانيا. و سيجمع المؤتمر بين خبراء من كافة قطاعات الصناعة على الشبكة العالمية انترنيت ويونيكود حيث ستتم مناقشة سبل استخدام يونكود في النظم القائمة وفيما يخص التطبيقات الحاسوبية والخطوط ورسم النصوص المترجمة والحوسبة متعددة اللغات. ليونيكود الذي سيعقد في مارس المقبل بمدينة مايونتس في ألمانيا. و سيجمع المؤتمر بين خبراء من كافة قطاعات الصناعة على الشبكة العالمية انترنيت ويونيكود حيث ستتم مناقشة سبل استخدام يونكود في النظم القائمة وفيما يخص التطبيقات الحاسوبية والخطوط ورسم النصوص المترجمة والحوسبة متعددة اللغات. ليونيكود الذي سيعقد في مارس المقبل بمدينة مايونتس في ألمانيا. و سيجمع المؤتمر بين خبراء من كافة قطاعات الصناعة على الشبكة العالمية انترنيت ويونيكود حيث ستتم مناقشة سبل استخدام يونكود في النظم القائمة وفيما يخص التطبيقات الحاسوبية والخطوط ورسم النصوص المترجمة والحوسبة متعددة اللغات.";
+
+        let chinese_text = "側経意責家方家閉討店暖育田庁載社転線宇。得君新術治温抗添代話考振投員殴大闘北裁。品間識部案代学凰処済準世一戸刻法分。悼測済諏計飯利安凶断理資沢同岩面文認革。内警格化再薬方久化体教御決数詭芸得筆代。指麦新設評掲聞測件索投権図囲写供表側経意責家方家閉討店暖育田庁載社転線宇。得君新術治温抗添代話考振投員殴大闘北裁。品間識部案代学凰処済準世一戸刻法分。悼測済諏計飯利安凶断理資沢同岩面文認革。内警格化再薬方久化体教御決数詭芸得筆代。指麦新設評掲聞測件索投権図囲写供表側経意責家方家閉討店暖育田庁載社転線宇。得君新術治温抗添代話考振投員殴大闘北裁。品間識部案代学凰処済準世一戸刻法分。悼測済諏計飯利安凶断理資沢同岩面文認革。内警格化再薬方久化体教御決数詭芸得筆代。指麦新設評掲聞測件索投権図囲写供表側経意責家方家閉討店暖育田庁載社転線宇。得君新術治温抗添代話考振投員殴大闘北裁。品間識部案代学凰処済準世一戸刻法分。悼測済諏計飯利安凶断理資沢同岩面文認革。内警格化再薬方久化体教御決数詭芸得筆代。指麦新設評掲聞測件索投権図囲写供表。";
+
+        let japanese_text = "旅ロ京青利セムレ弱改フヨス波府かばぼ意送でぼ調掲察たス日西重ケアナ住橋ユムミク順待ふかんぼ人奨貯鏡すびそ。校文江方上温杯飛禁去克朝弘職掲器関権。阪社幸野岡愛権間投辞者庁対地更社号旅ロ京青利セムレ弱改フヨス波府かばぼ意送でぼ調掲察たス日西重ケアナ住橋ユムミク順待ふかんぼ人奨貯鏡すびそ。校文江方上温杯飛禁去克朝弘職掲器関権。阪社幸野岡愛権間投辞者庁対地更社号旅ロ京青利セムレ弱改フヨス波府かばぼ意送でぼ調掲察たス日西重ケアナ住橋ユムミク順待ふかんぼ人奨貯鏡すびそ。校文江方上温杯飛禁去克朝弘職掲器関権。阪社幸野岡愛権間投辞者庁対地更社号旅ロ京青利セムレ弱改フヨス波府かばぼ意送でぼ調掲察たス日西重ケアナ住橋ユムミク順待ふかんぼ人奨貯鏡すびそ。校文江方上温杯飛禁去克朝弘職掲器関権。阪社幸野岡愛権間投辞者庁対地更社号。";
+
+        let cyrillic_text = "Лорем ипсум долор сит амет, пер цлита поссит ех, ат мунере фабулас петентиум сит. Иус цу цибо саперет сцрипсерит, нец виси муциус лабитур ид. Ет хис нонумес нолуиссе дигниссим. Ут но цонгуе цонсулату, ут усу путент алиенум индоцтум. При цу омнес епицуреиЛорем ипсум долор сит амет, пер цлита поссит ех, ат мунере фабулас петентиум сит. Иус цу цибо саперет сцрипсерит, нец виси муциус лабитур ид. Ет хис нонумес нолуиссе дигниссим. Ут но цонгуе цонсулату, ут усу путент алиенум индоцтум. При цу омнес епицуреиЛорем ипсум долор сит амет, пер цлита поссит ех, ат мунере фабулас петентиум сит. Иус цу цибо саперет сцрипсерит, нец виси муциус лабитур ид. Ет хис нонумес нолуиссе дигниссим. Ут но цонгуе цонсулату, ут усу путент алиенум индоцтум. При цу омнес епицуреиЛорем ипсум долор сит амет, пер цлита поссит ех, ат мунере фабулас петентиум сит. Иус цу цибо саперет сцрипсерит, нец виси муциус лабитур ид. Ет хис нонумес нолуиссе дигниссим. Ут но цонгуе цонсулату, ут усу путент алиенум индоцтум. При цу омнес епицуреи.";
+
+        let greek_text = "Λορεμ ιπσθμ δολορ σιτ αμετ, μει ιδ νοvθμ φαβελλασ πετεντιθμ vελ νε, ατ νισλ σονετ οπορτερε εθμ. Αλιι δοcτθσ μει ιδ, νο αθτεμ αθδιρε ιντερεσσετ μελ, δοcενδι cομμθνε οπορτεατ τε cθμ. Πθρτο σαπιεντεμ ιν εαμ, σολθμ νθσqθαμ αδιπισcινγ ηασ νεΛορεμ ιπσθμ δολορ σιτ αμετ, μει ιδ νοvθμ φαβελλασ πετεντιθμ vελ νε, ατ νισλ σονετ οπορτερε εθμ. Αλιι δοcτθσ μει ιδ, νο αθτεμ αθδιρε ιντερεσσετ μελ, δοcενδι cομμθνε οπορτεατ τε cθμ. Πθρτο σαπιεντεμ ιν εαμ, σολθμ νθσqθαμ αδιπισcινγ ηασ νεΛορεμ ιπσθμ δολορ σιτ αμετ, μει ιδ νοvθμ φαβελλασ πετεντιθμ vελ νε, ατ νισλ σονετ οπορτερε εθμ. Αλιι δοcτθσ μει ιδ, νο αθτεμ αθδιρε ιντερεσσετ μελ, δοcενδι cομμθνε οπορτεατ τε cθμ. Πθρτο σαπιεντεμ ιν εαμ, σολθμ νθσqθαμ αδιπισcινγ ηασ νεΛορεμ ιπσθμ δολορ σιτ αμετ, μει ιδ νοvθμ φαβελλασ πετεντιθμ vελ νε, ατ νισλ σονετ οπορτερε εθμ. Αλιι δοcτθσ μει ιδ, νο αθτεμ αθδιρε ιντερεσσετ μελ, δοcενδι cομμθνε οπορτεατ τε cθμ. Πθρτο σαπιεντεμ ιν εαμ, σολθμ νθσqθαμ αδιπισcινγ ηασ νε.";
+
+        // Create text boxes with different scripts
         let mut text_edit_handles = Vec::new();
-        let rows = 10;
-        let cols = 5;
-        let box_width = 150.0;
-        let box_height = 60.0;
-        let spacing_x = 150.0;
-        let spacing_y = 60.0;
+        let box_width = 600.0;
+        let box_height = 330.0;
         let start_x = 10.0;
         let start_y = 220.0;
+        let spacing_y = 350.0;
 
-        for row in 0..rows {
-            for col in 0..cols {
-                let x = start_x + col as f64 * spacing_x;
-                let y = start_y + row as f64 * spacing_y;
-                let handle = text.add_text_edit(
-                    format!("Text box {},{}", row, col),
-                    (x, y),
-                    (box_width, box_height),
-                    0.0
-                );
-                text_edit_handles.push(handle);
-            }
+        let samples = vec![
+            latin_text,
+            arabic_text,
+            chinese_text,
+            japanese_text,
+            cyrillic_text,
+            greek_text,
+        ];
+
+        for (col, text_content) in samples.iter().enumerate() {
+            let row_offset = col / 3;
+            let col_offset = col % 3;
+            let x = start_x + col_offset as f64 * 640.0;
+            let y = start_y + row_offset as f64 * spacing_y;
+
+            let handle = text.add_text_edit(
+                text_content.to_string(),
+                (x, y),
+                (box_width, box_height),
+                0.0
+            );
+            text.get_text_edit_mut(&handle).set_style(&small_style);
+            text_edit_handles.push(handle);
         }
 
         let gpu_profiler = GpuProfiler::new(&device, GpuProfilerSettings {
@@ -101,15 +146,18 @@ impl State {
             text,
             text_renderer,
             _text_edit_handles: text_edit_handles,
+            header,
             first_frame_stats,
             avg_stats,
             gpu_profiler,
             frame_count: 0,
             last_print_time: Instant::now(),
             total_prepare_time: Duration::ZERO,
-            total_render_time: Duration::ZERO,
+            total_gpu_time: Duration::ZERO,
             total_frame_time: Duration::ZERO,
-            first_frame: true,
+            first_gpu_time: None,
+            first_prepare_time: None,
+            first_frame_time: None,
         }
     }
 }
@@ -121,6 +169,7 @@ impl winit::application::ApplicationHandler for Application {
         if self.state.is_none() {
             let window = Arc::new(event_loop.create_window(
                 Window::default_attributes()
+                    .with_inner_size(winit::dpi::LogicalSize::new(1920, 1080))
             ).unwrap());
             window.set_ime_allowed(true);
             self.state = Some(State::new(window));
@@ -141,13 +190,11 @@ impl winit::application::ApplicationHandler for Application {
             WindowEvent::RedrawRequested => {
                 let frame_start = Instant::now();
 
-                // Measure prepare time
                 let prepare_start = Instant::now();
                 state.text.prepare_all(&mut state.text_renderer);
                 let prepare_time = prepare_start.elapsed();
                 state.total_prepare_time += prepare_time;
 
-                // Load 
                 state.text_renderer.load_to_gpu(&state.device, &state.queue);
 
                 let surface_texture = state.surface.get_current_texture().unwrap();
@@ -155,8 +202,6 @@ impl winit::application::ApplicationHandler for Application {
 
                 let query = state.gpu_profiler.begin_query("Render", &mut encoder);
 
-                // Measure render pass time
-                let render_start = Instant::now();
                 {
                     let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
                         color_attachments: &[Some(RenderPassColorAttachment {
@@ -169,8 +214,6 @@ impl winit::application::ApplicationHandler for Application {
                     });
                     state.text_renderer.render(&mut pass);
                 }
-                let render_time = render_start.elapsed();
-                state.total_render_time += render_time;
 
                 state.gpu_profiler.end_query(&mut encoder, query);
                 state.gpu_profiler.resolve_queries(&mut encoder);
@@ -181,9 +224,16 @@ impl winit::application::ApplicationHandler for Application {
 
                 if let Some(profiling_data) = state.gpu_profiler.process_finished_frame(state.queue.get_timestamp_period()) {
                     for p in profiling_data {
-                        if let Some(time) = p.time {
-                            let dur = Duration::from_secs_f64(time.end - time.start);
-                            println!("GPU time ({}): {:?}", p.label, dur);
+                        if p.label == "Render" {
+                            if let Some(time) = p.time {
+                                let dur = Duration::from_secs_f64(time.end - time.start);
+                                state.total_gpu_time += dur;
+
+                                // Capture first GPU time when it becomes available
+                                if state.first_gpu_time.is_none() {
+                                    state.first_gpu_time = Some(dur);
+                                }
+                            }
                         }
                     }
                 }
@@ -192,14 +242,21 @@ impl winit::application::ApplicationHandler for Application {
 
                 let frame_time = frame_start.elapsed();
 
-                // Update first frame stats
-                if state.first_frame {
+                // Store first frame timings
+                if state.first_prepare_time.is_none() {
+                    state.first_prepare_time = Some(prepare_time);
+                    state.first_frame_time = Some(frame_time);
+                }
+
+                // Update first frame stats display when we have GPU time
+                if state.first_gpu_time.is_some() {
                     let stats_text = format!(
-                        "First frame:\nPrepare: {:?}\nRender:  {:?}\nFrame:   {:?}",
-                        prepare_time, render_time, frame_time
+                        "First frame:\nPrepare:    {:?}\nGPU Render: {:?}\nFrame:      {:?}",
+                        state.first_prepare_time.unwrap(),
+                        state.first_gpu_time.unwrap(),
+                        state.first_frame_time.unwrap()
                     );
                     *state.text.get_text_box_mut(&state.first_frame_stats).text_mut() = stats_text.into();
-                    state.first_frame = false;
                 }
 
                 state.total_frame_time += frame_time;
@@ -208,13 +265,13 @@ impl winit::application::ApplicationHandler for Application {
                 // Update average statistics every second
                 if state.last_print_time.elapsed() >= Duration::from_secs(1) {
                     let avg_prepare = state.total_prepare_time / state.frame_count;
-                    let avg_render = state.total_render_time / state.frame_count;
+                    let avg_gpu = state.total_gpu_time / state.frame_count;
                     let avg_frame = state.total_frame_time / state.frame_count;
-                    let fps = state.frame_count as f64 / state.last_print_time.elapsed().as_secs_f64();
+                    let fps = 1.0 / avg_frame.as_secs_f64();
 
                     let stats_text = format!(
-                        "Average ({} frames):\nFPS: {:.1}\nPrepare: {:?}\nRender:  {:?}\nFrame:   {:?}",
-                        state.frame_count, fps, avg_prepare, avg_render, avg_frame
+                        "Average ({} frames):\nPrepare:    {:?}\nGPU Render: {:?}\nFrame:      {:?}\nFPS: {:.1}",
+                        state.frame_count, avg_prepare, avg_gpu, avg_frame, fps
                     );
                     *state.text.get_text_box_mut(&state.avg_stats).text_mut() = stats_text.into();
 
@@ -222,7 +279,7 @@ impl winit::application::ApplicationHandler for Application {
                     state.frame_count = 0;
                     state.last_print_time = Instant::now();
                     state.total_prepare_time = Duration::ZERO;
-                    state.total_render_time = Duration::ZERO;
+                    state.total_gpu_time = Duration::ZERO;
                     state.total_frame_time = Duration::ZERO;
                 }
 
