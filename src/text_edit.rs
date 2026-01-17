@@ -121,6 +121,7 @@ pub struct TextEdit {
     pub(crate) showing_placeholder: bool,
     pub(crate) placeholder_text: Option<Cow<'static, str>>,
     pub(crate) text_box: TextBox,
+    pub(crate) needs_scroll_update: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -154,6 +155,7 @@ impl TextEdit {
             showing_placeholder: false,
             placeholder_text: None,
             text_box,
+            needs_scroll_update: false,
         }
     }
 }
@@ -466,13 +468,10 @@ impl TextEdit {
             }
         }
 
-        self.refresh_layout();
-
-        if decorations_changed || self.text_box.shared_mut().text_changed  {
-            let did_scroll = self.update_scroll_to_cursor();
-            if did_scroll {
-                self.text_box.shared_mut().scrolled = true;
-            }
+        // Mark that we need to update scroll before rendering.
+        // All these functions that rely on a fresh layout are deferred before a real render, otherwise when events come in too fast they cause too many unneeded layout rebuilds.
+        if decorations_changed || self.text_box.shared_mut().text_changed {
+            self.needs_scroll_update = true;
         }
 
         consumed
@@ -833,9 +832,9 @@ impl TextEdit {
         } else {
             self.text_box.text_mut_string().replace_range(range, s);
         
-        if self.single_line {
-            self.remove_newlines();
-        }
+            if self.single_line {
+                self.remove_newlines();
+            }
         }
 
         let index = start.saturating_add(s.len());

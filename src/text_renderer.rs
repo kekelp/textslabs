@@ -466,6 +466,15 @@ impl TextRenderer {
             return;
         }
 
+        // Update scroll to ensure cursor is visible before rendering
+        if text_edit.needs_scroll_update {
+            let did_scroll = text_edit.update_scroll_to_cursor();
+            if did_scroll {
+                text_edit.text_box.shared_mut().scrolled = true;
+            }
+            text_edit.needs_scroll_update = false;
+        }
+
         text_edit.refresh_layout();
 
         let clip_rect = text_edit.text_box.effective_clip_rect();
