@@ -102,7 +102,7 @@ impl ContextlessTextRenderer {
         self.last_frame_evicted != current_frame
     }
 
-    fn add_selection_rect(&mut self, rect: parley::BoundingBox, left: f32, top: f32, color: u32, clip_rect: Option<parley::BoundingBox>) {        
+    fn add_selection_rect(&mut self, rect: parley::BoundingBox, left: f32, top: f32, color: u32, clip_rect: Option<parley::BoundingBox>, transform: Transform2D) {
         let left = left as i32;
         let top = top as i32;
 
@@ -137,12 +137,12 @@ impl ContextlessTextRenderer {
             color,
             depth: 0.0,
             flags_and_page: pack_flags_and_page(pack_flags(CONTENT_TYPE_DECORATION, false), 0),
-            transform_m11: 1.0,
-            transform_m12: 0.0,
-            transform_m21: 0.0,
-            transform_m22: 1.0,
-            transform_m31: 0.0,
-            transform_m32: 0.0,
+            transform_m11: transform.m11,
+            transform_m12: transform.m12,
+            transform_m21: transform.m21,
+            transform_m22: transform.m22,
+            transform_m31: transform.m31,
+            transform_m32: transform.m32,
             _padding: [0, 0],
         };
         self.quads.push(quad);
@@ -493,25 +493,26 @@ impl TextRenderer {
 
     /// Prepare decorations (selection and cursor) for a text box.
     pub fn prepare_text_box_decorations(&mut self, text_box: &TextBox, show_cursor: bool) {
-        let (left, top) = text_box.position();
-        let (left, top) = (left as f32, top as f32);
         let clip_rect = text_box.effective_clip_rect();
 
-        let content_left = left - text_box.scroll_offset().0;
-        let content_top = top - text_box.scroll_offset().1;
+        // Position is now in local space (before transform), just account for scroll
+        let content_left = -text_box.scroll_offset().0;
+        let content_top = -text_box.scroll_offset().1;
 
         let selection_color = 0x33_33_ff_aa;
         let cursor_color = 0xee_ee_ee_ff;
 
+        let transform = text_box.transform;
+
         text_box.selection().geometry_with(&text_box.layout, |rect, _line_i| {
-            self.text_renderer.add_selection_rect(rect, content_left, content_top, selection_color, clip_rect);
+            self.text_renderer.add_selection_rect(rect, content_left, content_top, selection_color, clip_rect, transform);
         });
-        
+
         let show_cursor = show_cursor && text_box.selection().is_collapsed();
         if show_cursor {
             let size = CURSOR_WIDTH;
             let cursor_rect = text_box.selection().focus().geometry(&text_box.layout, size);
-            self.text_renderer.add_selection_rect(cursor_rect, content_left, content_top, cursor_color, clip_rect);
+            self.text_renderer.add_selection_rect(cursor_rect, content_left, content_top, cursor_color, clip_rect, transform);
         }
         self.text_renderer.needs_gpu_sync = true;
     }
