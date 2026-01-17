@@ -653,7 +653,24 @@ impl ContextlessTextRenderer {
 
 
     fn prepare_layout(&mut self, layout: &Layout<ColorBrush>, scale_cx: &mut ScaleContext, left: f32, top: f32, clip_rect: Option<parley::BoundingBox>, fade: bool, depth: f32, transform: Transform2D) {
+        let (clip_top, clip_bottom) = if let Some(clip) = clip_rect {
+            (top + clip.y0 as f32, top + clip.y1 as f32)
+        } else {
+            (0.0, self.params.screen_resolution_height)
+        };
+
         for line in layout.lines() {
+            let metrics = line.metrics();
+            let line_y = top + metrics.baseline;
+
+            // Cull lines
+            let line_top = line_y - metrics.ascent;
+            let line_bottom = line_y + metrics.descent;
+
+            if line_bottom < clip_top || line_top > clip_bottom {
+                continue;
+            }
+
             for item in line.items() {
                 match item {
                     PositionedLayoutItem::GlyphRun(glyph_run) => {

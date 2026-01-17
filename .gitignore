@@ -1,2 +1,5 @@
 /target
 notes.md
+flamegraph.svg
+perf.data
+perf.data.old
