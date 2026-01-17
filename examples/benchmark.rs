@@ -18,8 +18,6 @@ struct State {
     surface_config: SurfaceConfiguration,
     text: Text,
     text_renderer: TextRenderer,
-    _text_edit_handles: Vec<TextEditHandle>,
-    header: TextBoxHandle,
     first_frame_stats: TextBoxHandle,
     avg_stats: TextBoxHandle,
     frame_counter_display: TextBoxHandle,
@@ -109,7 +107,6 @@ impl State {
         let greek_text = "Λορεμ ιπσθμ δολορ σιτ αμετ, μει ιδ νοvθμ φαβελλασ πετεντιθμ vελ νε, ατ νισλ σονετ οπορτερε εθμ. Αλιι δοcτθσ μει ιδ, νο αθτεμ αθδιρε ιντερεσσετ μελ, δοcενδι cομμθνε οπορτεατ τε cθμ. Πθρτο σαπιεντεμ ιν εαμ, σολθμ νθσqθαμ αδιπισcινγ ηασ νεΛορεμ ιπσθμ δολορ σιτ αμετ, μει ιδ νοvθμ φαβελλασ πετεντιθμ vελ νε, ατ νισλ σονετ οπορτερε εθμ. Αλιι δοcτθσ μει ιδ, νο αθτεμ αθδιρε ιντερεσσετ μελ, δοcενδι cομμθνε οπορτεατ τε cθμ. Πθρτο σαπιεντεμ ιν εαμ, σολθμ νθσqθαμ αδιπισcινγ ηασ νεΛορεμ ιπσθμ δολορ σιτ αμετ, μει ιδ νοvθμ φαβελλασ πετεντιθμ vελ νε, ατ νισλ σονετ οπορτερε εθμ. Αλιι δοcτθσ μει ιδ, νο αθτεμ αθδιρε ιντερεσσετ μελ, δοcενδι cομμθνε οπορτεατ τε cθμ. Πθρτο σαπιεντεμ ιν εαμ, σολθμ νθσqθαμ αδιπισcινγ ηασ νεΛορεμ ιπσθμ δολορ σιτ αμετ, μει ιδ νοvθμ φαβελλασ πετεντιθμ vελ νε, ατ νισλ σονετ οπορτερε εθμ. Αλιι δοcτθσ μει ιδ, νο αθτεμ αθδιρε ιντερεσσετ μελ, δοcενδι cομμθνε οπορτεατ τε cθμ. Πθρτο σαπιεντεμ ιν εαμ, σολθμ νθσqθαμ αδιπισcινγ ηασ νε.";
 
         // Create text boxes with different scripts
-        let mut text_edit_handles = Vec::new();
         let box_width = 600.0;
         let box_height = 330.0;
         let start_x = 10.0;
@@ -118,11 +115,11 @@ impl State {
 
         let samples = vec![
             latin_text,
-            arabic_text,
-            chinese_text,
+            greek_text,
             japanese_text,
             cyrillic_text,
-            greek_text,
+            chinese_text,
+            arabic_text,
         ];
 
         for (col, text_content) in samples.iter().enumerate() {
@@ -138,7 +135,6 @@ impl State {
                 0.0
             );
             text.get_text_edit_mut(&handle).set_style(&small_style);
-            text_edit_handles.push(handle);
         }
 
         let gpu_profiler = GpuProfiler::new(&device, GpuProfilerSettings {
@@ -155,8 +151,6 @@ impl State {
             window,
             text,
             text_renderer,
-            _text_edit_handles: text_edit_handles,
-            header,
             first_frame_stats,
             avg_stats,
             frame_counter_display,
@@ -202,10 +196,63 @@ impl winit::application::ApplicationHandler for Application {
             WindowEvent::RedrawRequested => {
                 let frame_start = Instant::now();
 
+                // Store first frame timings
+                let prepare_time_for_first_frame = if state.first_prepare_time.is_none() {
+                    Some(Instant::now())
+                } else {
+                    None
+                };
+
+                state.total_frame_time += frame_start.elapsed();
+                state.frame_count += 1;
+
+                // Update frame counter display every frame (to force text_changed = true)
+                *state.text.get_text_box_mut(&state.frame_counter_display).text_mut() =
+                    format!("Frame count:\n{}", state.frame_count).into();
+
+                // Update first frame stats display when we have GPU time (only once)
+                if state.first_gpu_time.is_some() && !state.first_frame_stats_written {
+                    let stats_text = format!(
+                        "First frame:\nPrepare:    {:?}\nGPU Render: {:?}\nFrame:      {:?}",
+                        state.first_prepare_time.unwrap(),
+                        state.first_gpu_time.unwrap(),
+                        state.first_frame_time.unwrap()
+                    );
+                    *state.text.get_text_box_mut(&state.first_frame_stats).text_mut() = stats_text.into();
+                    state.first_frame_stats_written = true;
+                }
+
+                // Update average statistics every second
+                if state.last_print_time.elapsed() >= Duration::from_secs(1) {
+                    let avg_prepare = state.total_prepare_time / state.frame_count;
+                    let avg_gpu = state.total_gpu_time / state.frame_count;
+                    let avg_frame = state.total_frame_time / state.frame_count;
+                    let fps = 1.0 / avg_frame.as_secs_f64();
+
+                    let stats_text = format!(
+                        "Average ({} frames):\nPrepare:    {:?}\nGPU Render: {:?}\nFrame:      {:?}\nFPS: {:.1}",
+                        state.frame_count, avg_prepare, avg_gpu, avg_frame, fps
+                    );
+                    *state.text.get_text_box_mut(&state.avg_stats).text_mut() = stats_text.into();
+
+                    // Reset counters
+                    state.frame_count = 0;
+                    state.last_print_time = Instant::now();
+                    state.total_prepare_time = Duration::ZERO;
+                    state.total_gpu_time = Duration::ZERO;
+                    state.total_frame_time = Duration::ZERO;
+                }
+
+                // Render
                 let prepare_start = Instant::now();
                 state.text.prepare_all(&mut state.text_renderer);
                 let prepare_time = prepare_start.elapsed();
                 state.total_prepare_time += prepare_time;
+
+                if let Some(first_prepare_start) = prepare_time_for_first_frame {
+                    state.first_prepare_time = Some(first_prepare_start.elapsed());
+                    state.first_frame_time = Some(frame_start.elapsed());
+                }
 
                 state.text_renderer.load_to_gpu(&state.device, &state.queue);
 
@@ -251,54 +298,6 @@ impl winit::application::ApplicationHandler for Application {
                 }
 
                 surface_texture.present();
-
-                let frame_time = frame_start.elapsed();
-
-                // Store first frame timings
-                if state.first_prepare_time.is_none() {
-                    state.first_prepare_time = Some(prepare_time);
-                    state.first_frame_time = Some(frame_time);
-                }
-
-                // Update first frame stats display when we have GPU time (only once)
-                if state.first_gpu_time.is_some() && !state.first_frame_stats_written {
-                    let stats_text = format!(
-                        "First frame:\nPrepare:    {:?}\nGPU Render: {:?}\nFrame:      {:?}",
-                        state.first_prepare_time.unwrap(),
-                        state.first_gpu_time.unwrap(),
-                        state.first_frame_time.unwrap()
-                    );
-                    *state.text.get_text_box_mut(&state.first_frame_stats).text_mut() = stats_text.into();
-                    state.first_frame_stats_written = true;
-                }
-
-                state.total_frame_time += frame_time;
-                state.frame_count += 1;
-
-                // Update frame counter display every frame (to force text_changed = true)
-                *state.text.get_text_box_mut(&state.frame_counter_display).text_mut() =
-                    format!("{}", state.frame_count % 100).into();
-
-                // Update average statistics every second
-                if state.last_print_time.elapsed() >= Duration::from_secs(1) {
-                    let avg_prepare = state.total_prepare_time / state.frame_count;
-                    let avg_gpu = state.total_gpu_time / state.frame_count;
-                    let avg_frame = state.total_frame_time / state.frame_count;
-                    let fps = 1.0 / avg_frame.as_secs_f64();
-
-                    let stats_text = format!(
-                        "Average ({} frames):\nPrepare:    {:?}\nGPU Render: {:?}\nFrame:      {:?}\nFPS: {:.1}",
-                        state.frame_count, avg_prepare, avg_gpu, avg_frame, fps
-                    );
-                    *state.text.get_text_box_mut(&state.avg_stats).text_mut() = stats_text.into();
-
-                    // Reset counters
-                    state.frame_count = 0;
-                    state.last_print_time = Instant::now();
-                    state.total_prepare_time = Duration::ZERO;
-                    state.total_gpu_time = Duration::ZERO;
-                    state.total_frame_time = Duration::ZERO;
-                }
 
                 state.window.request_redraw();
             },
