@@ -129,8 +129,6 @@ impl ContextlessTextRenderer {
             }
         }
 
-        let matrix = transform.to_matrix();
-
         let quad = GlyphQuad {
             pos_packed: pack_i32_pair_as_u16(x0, y0),
             clip_rect_packed: [pack_i16_pair(0, 0), pack_i16_pair(32767, 32767)], // No clipping for decorations
@@ -139,13 +137,11 @@ impl ContextlessTextRenderer {
             color,
             depth: 0.0,
             flags_and_page: pack_flags_and_page(pack_flags(CONTENT_TYPE_DECORATION, false), 0),
-            transform_m11: matrix[0],
-            transform_m12: matrix[1],
-            transform_m21: matrix[2],
-            transform_m22: matrix[3],
-            transform_m31: matrix[4],
-            transform_m32: matrix[5],
-            _padding: [0, 0],
+            translation_x: transform.translation.0,
+            translation_y: transform.translation.1,
+            rotation: transform.rotation,
+            scale: transform.scale,
+            _padding: [0, 0, 0, 0],
         };
         self.quads.push(quad);
     }
@@ -208,13 +204,11 @@ pub struct GlyphQuad {
     pub color: u32,                       // 4 bytes
     pub depth: f32,                       // 4 bytes
     pub flags_and_page: u32,              // 4 bytes - flags (24 bits) + page_index (8 bits)
-    pub transform_m11: f32,               // 4 bytes - transform matrix element
-    pub transform_m12: f32,               // 4 bytes
-    pub transform_m21: f32,               // 4 bytes
-    pub transform_m22: f32,               // 4 bytes
-    pub transform_m31: f32,               // 4 bytes - translation x
-    pub transform_m32: f32,               // 4 bytes - translation y
-    pub _padding: [u32; 2],               // 8 bytes - padding for alignment
+    pub translation_x: f32,               // 4 bytes
+    pub translation_y: f32,               // 4 bytes
+    pub rotation: f32,                    // 4 bytes - rotation in radians
+    pub scale: f32,                       // 4 bytes
+    pub _padding: [u32; 4],               // 16 bytes - padding for alignment
 }
 
 impl GlyphQuad {
@@ -297,8 +291,6 @@ fn make_quad(glyph: &GlyphWithContext, stored_glyph: &StoredGlyph, depth: f32, t
         Content::SubpixelMask => unreachable!(),
     };
 
-    let matrix = transform.to_matrix();
-
     return GlyphQuad {
         pos_packed: pack_i32_pair_as_u16(x, y),
         clip_rect_packed: [pack_i16_pair(0, 0), pack_i16_pair(32767, 32767)], // No clipping (will be set later)
@@ -307,13 +299,11 @@ fn make_quad(glyph: &GlyphWithContext, stored_glyph: &StoredGlyph, depth: f32, t
         color,
         depth,
         flags_and_page: pack_flags_and_page(pack_flags(flags, false), stored_glyph.page as u32),
-        transform_m11: matrix[0],
-        transform_m12: matrix[1],
-        transform_m21: matrix[2],
-        transform_m22: matrix[3],
-        transform_m31: matrix[4],
-        transform_m32: matrix[5],
-        _padding: [0, 0],
+        translation_x: transform.translation.0,
+        translation_y: transform.translation.1,
+        rotation: transform.rotation,
+        scale: transform.scale,
+        _padding: [0, 0, 0, 0],
     };
 }
 
@@ -462,7 +452,7 @@ impl TextRenderer {
 
         let start_index = self.text_renderer.quads.len();
 
-        self.text_renderer.prepare_layout(&text_box.layout, &mut self.scale_cx, content_left, content_top, clip_rect, fade, text_box.depth, text_box.transform);
+        self.text_renderer.prepare_layout(&text_box.layout, &mut self.scale_cx, content_left, content_top, clip_rect, fade, text_box.depth, text_box.transform());
         self.text_renderer.needs_gpu_sync = true;
 
         // Update quad storage with new ranges
@@ -486,7 +476,7 @@ impl TextRenderer {
 
         let start_index = self.text_renderer.quads.len();
 
-        self.text_renderer.prepare_layout(&text_edit.text_box.layout, &mut self.scale_cx, content_left, content_top, clip_rect, fade, text_edit.text_box.depth, text_edit.text_box.transform);
+        self.text_renderer.prepare_layout(&text_edit.text_box.layout, &mut self.scale_cx, content_left, content_top, clip_rect, fade, text_edit.text_box.depth, text_edit.text_box.transform());
         self.text_renderer.needs_gpu_sync = true;
 
         // Update quad storage with new ranges
@@ -505,7 +495,7 @@ impl TextRenderer {
         let selection_color = 0x33_33_ff_aa;
         let cursor_color = 0xee_ee_ee_ff;
 
-        let transform = text_box.transform;
+        let transform = text_box.transform();
 
         text_box.selection().geometry_with(&text_box.layout, |rect, _line_i| {
             self.text_renderer.add_selection_rect(rect, content_left, content_top, selection_color, clip_rect, transform);

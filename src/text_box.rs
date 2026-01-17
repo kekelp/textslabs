@@ -33,12 +33,13 @@ pub struct TextBox {
     pub(crate) accesskit_id: Option<accesskit::NodeId>,
 
     pub(crate) needs_relayout: bool,
-    pub(crate) transform: Transform2D,
+    pub(crate) translation: (f32, f32),
+    pub(crate) rotation: f32,
     pub(crate) max_advance: f32,
     pub(crate) depth: f32,
     pub(crate) selection: Selection,
     pub(crate) width: f32,
-    pub(crate) height: f32, 
+    pub(crate) height: f32,
     pub(crate) alignment: Alignment,
     pub(crate) scale: f32,
     pub(crate) clip_rect: Option<parley::BoundingBox>,
@@ -113,15 +114,16 @@ impl TextBox {
             accesskit_id: None,
             selectable: true,
             needs_relayout: true,
-            transform: Transform2D::translation(pos.0 as f32, pos.1 as f32),
+            translation: (pos.0 as f32, pos.1 as f32),
+            rotation: 0.0,
             max_advance: size.0,
             height: size.1,
             depth,
             selection: Selection::default(),
             style: StyleHandle { key: default_style_key },
-            width: size.0, 
+            width: size.0,
             alignment: Default::default(),
-            scale: Default::default(),
+            scale: 1.0,
             clip_rect: None,
             fadeout_clipping: false,
             auto_clip: false,
@@ -139,7 +141,7 @@ impl TextBox {
     #[must_use]
     pub(crate) fn hit_full_rect(&self, cursor_pos: (f64, f64)) -> bool {
         // Transform cursor position to text box local space
-        let inv_transform = self.transform.inverse().unwrap_or(Transform2D::identity());
+        let inv_transform = self.transform().inverse().unwrap_or(Transform2D::identity());
         let local_pos = inv_transform.transform_point(euclid::Point2D::new(cursor_pos.0 as f32, cursor_pos.1 as f32));
 
         let offset = (local_pos.x as f64, local_pos.y as f64);
@@ -228,7 +230,7 @@ impl TextBox {
 
     /// Returns the current position of the text box.
     pub fn position(&self) -> (f64, f64) {
-        (self.transform.translation.0 as f64, self.transform.translation.1 as f64)
+        (self.translation.0 as f64, self.translation.1 as f64)
     }
 
     /// Returns the current clip rect of the text box.
@@ -442,7 +444,7 @@ impl TextBox {
                 // macOS seems to generate a spurious move after selecting word?
                 if input_state.mouse.pointer_down {
                     // Transform cursor position to text box local space
-                    let inv_transform = self.transform.inverse().unwrap_or(Transform2D::identity());
+                    let inv_transform = self.transform().inverse().unwrap_or(Transform2D::identity());
                     let local_pos = inv_transform.transform_point(euclid::Point2D::new(cursor_pos.0, cursor_pos.1));
                     let left = 0.0f32;
                     let top = 0.0f32;
@@ -516,8 +518,7 @@ impl TextBox {
                 let shift = input_state.modifiers.state().shift_key();
                 if *button == winit::event::MouseButton::Left {
                     // Transform cursor position to text box local space
-                    dbg!(self.transform.inverse());
-                    let inv_transform = self.transform.inverse().unwrap_or(Transform2D::identity());
+                    let inv_transform = self.transform().inverse().unwrap_or(Transform2D::identity());
                     let local_pos = inv_transform.transform_point(euclid::Point2D::new(
                         input_state.mouse.cursor_pos.0 as f32,
                         input_state.mouse.cursor_pos.1 as f32
@@ -526,10 +527,6 @@ impl TextBox {
                         local_pos.x + self.scroll_offset.0,
                         local_pos.y + self.scroll_offset.1,
                     );
-
-                    dbg!(input_state.mouse.cursor_pos);
-                    dbg!(cursor_pos);
-
 
                     if state.is_pressed() {
                         let click_count = input_state.mouse.click_count;
@@ -675,19 +672,37 @@ impl TextBox {
 
     /// Sets the position of the text box.
     pub fn set_pos(&mut self, pos: (f64, f64)) {
-        self.transform = Transform2D::translation(pos.0 as f32, pos.1 as f32);
+        self.translation = (pos.0 as f32, pos.1 as f32);
         self.shared_mut().text_changed = true;
     }
 
     /// Sets the transform of the text box.
     pub fn set_transform(&mut self, transform: Transform2D) {
-        self.transform = transform;
+        self.translation = transform.translation;
+        self.rotation = transform.rotation;
+        self.scale = transform.scale;
         self.shared_mut().text_changed = true;
     }
 
     /// Returns the current transform of the text box.
     pub fn transform(&self) -> Transform2D {
-        self.transform
+        Transform2D {
+            translation: self.translation,
+            rotation: self.rotation,
+            scale: self.scale,
+        }
+    }
+
+    /// Sets the translation (position) of the text box.
+    pub fn set_translation(&mut self, x: f32, y: f32) {
+        self.translation = (x, y);
+        self.shared_mut().text_changed = true;
+    }
+
+    /// Sets the rotation of the text box in radians.
+    pub fn set_rotation(&mut self, radians: f32) {
+        self.rotation = radians;
+        self.shared_mut().text_changed = true;
     }
 
     /// Hides or unhides the text box.
@@ -1154,7 +1169,7 @@ pub(crate) trait Ext1 {
 impl Ext1 for TextBox {
     fn hit_bounding_box(&mut self, cursor_pos: (f64, f64)) -> bool {
         // Transform cursor position to text box local space
-        let inv_transform = self.transform.inverse().unwrap_or(Transform2D::identity());
+        let inv_transform = self.transform().inverse().unwrap_or(Transform2D::identity());
         let local_pos = inv_transform.transform_point(euclid::Point2D::new(cursor_pos.0 as f32, cursor_pos.1 as f32));
 
         let offset = (local_pos.x as f64, local_pos.y as f64);

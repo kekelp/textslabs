@@ -6,13 +6,11 @@ struct GlyphQuad {
     uint color;
     float depth;
     uint flags_and_page;
-    float transform_m11;
-    float transform_m12;
-    float transform_m21;
-    float transform_m22;
-    float transform_m31;
-    float transform_m32;
-    uint2 _padding;
+    float translation_x;
+    float translation_y;
+    float rotation;
+    float scale;
+    uint4 _padding;
 }
 
 struct Params {
@@ -124,12 +122,22 @@ void text_vertex(
 
     ClipResult clip_result = apply_clipping(quad_pos, dim, clip_rect, uv01);
 
-    // Apply transform
+    // Apply transform: first scale, then rotate, then translate
     float2 pos = clip_result.position;
-    float2 transformed_pos = float2(
-        quad.transform_m11 * pos.x + quad.transform_m21 * pos.y + quad.transform_m31,
-        quad.transform_m12 * pos.x + quad.transform_m22 * pos.y + quad.transform_m32,
+
+    // Scale
+    float2 scaled_pos = pos * quad.scale;
+
+    // Rotate
+    float cos_r = cos(quad.rotation);
+    float sin_r = sin(quad.rotation);
+    float2 rotated_pos = float2(
+        cos_r * scaled_pos.x - sin_r * scaled_pos.y,
+        sin_r * scaled_pos.x + cos_r * scaled_pos.y
     );
+
+    // Translate
+    float2 transformed_pos = rotated_pos + float2(quad.translation_x, quad.translation_y);
 
     // Convert to NDC
     float2 ndc = (transformed_pos / resolution) * 2.0 - 1.0;

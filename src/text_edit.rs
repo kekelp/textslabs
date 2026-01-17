@@ -399,7 +399,7 @@ impl TextEdit {
                     match phase {
                         Started => {
                             // Transform touch position to text box local space
-                            let inv_transform = self.text_box.transform.inverse().unwrap_or(Transform2D::identity());
+                            let inv_transform = self.text_box.transform().inverse().unwrap_or(Transform2D::identity());
                             let local_pos = inv_transform.transform_point(euclid::Point2D::new(location.x as f32, location.y as f32));
                             let cursor_pos = (
                                 local_pos.x as f64 + self.text_box.scroll_offset.0 as f64,
@@ -412,7 +412,7 @@ impl TextEdit {
                         }
                         Moved => {
                             // Transform touch position to text box local space
-                            let inv_transform = self.text_box.transform.inverse().unwrap_or(Transform2D::identity());
+                            let inv_transform = self.text_box.transform().inverse().unwrap_or(Transform2D::identity());
                             let local_pos = inv_transform.transform_point(euclid::Point2D::new(location.x as f32, location.y as f32));
                             self.text_box.extend_selection_to_point(
                                 local_pos.x + self.text_box.scroll_offset.0,
@@ -1481,8 +1481,7 @@ impl TextEdit {
 
     /// Sets the transform of the text box.
     pub fn set_transform(&mut self, transform: Transform2D) {
-        self.text_box.transform = transform;
-        self.text_box.shared_mut().text_changed = true;
+        self.text_box.set_transform(transform);
     }
     
 
@@ -1493,7 +1492,7 @@ impl TextEdit {
             // until https://github.com/rust-windowing/winit/pull/3966 is in the Winit release
             // used by this example.
             // Transform the IME cursor area to screen space
-            let screen_pos = self.text_box.transform.transform_point(euclid::Point2D::new(area.x0 as f32, area.y0 as f32));
+            let screen_pos = self.text_box.transform().transform_point(euclid::Point2D::new(area.x0 as f32, area.y0 as f32));
             window.set_ime_cursor_area(
                 winit::dpi::PhysicalPosition::new(
                     screen_pos.x as f64,

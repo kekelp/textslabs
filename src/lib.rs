@@ -255,25 +255,6 @@ impl Transform2D {
         }
     }
 
-    /// Converts to a matrix representation for GPU rendering.
-    /// Rotation is applied around the top-left corner (0, 0) in local space.
-    pub(crate) fn to_matrix(&self) -> [f32; 6] {
-        let cos_r = self.rotation.cos();
-        let sin_r = self.rotation.sin();
-
-        // Combined rotation and scale matrix:
-        // [cos*s  -sin*s  tx]
-        // [sin*s   cos*s  ty]
-        [
-            cos_r * self.scale,  // m11
-            sin_r * self.scale,  // m12
-            -sin_r * self.scale, // m21
-            cos_r * self.scale,  // m22
-            self.translation.0,  // m31 (tx)
-            self.translation.1,  // m32 (ty)
-        ]
-    }
-
     /// Computes the inverse transform.
     /// Returns None if the transform is not invertible (e.g., scale is 0).
     pub fn inverse(&self) -> Option<Self> {

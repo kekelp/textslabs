@@ -155,13 +155,11 @@ impl ContextlessTextRenderer {
                 4 => Uint32,      // color
                 5 => Float32,     // depth
                 6 => Uint32,      // flags_and_page
-                7 => Float32,     // transform_m11
-                8 => Float32,     // transform_m12
-                9 => Float32,     // transform_m21
-                10 => Float32,    // transform_m22
-                11 => Float32,    // transform_m31
-                12 => Float32,    // transform_m32
-                13 => Uint32x2,   // _padding
+                7 => Float32,     // translation_x
+                8 => Float32,     // translation_y
+                9 => Float32,     // rotation
+                10 => Float32,    // scale
+                11 => Uint32x4,   // _padding
             ],
         };
 
