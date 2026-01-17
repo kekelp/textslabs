@@ -6,6 +6,13 @@ struct GlyphQuad {
     uint color;
     float depth;
     uint flags_and_page;
+    float transform_m11;
+    float transform_m12;
+    float transform_m21;
+    float transform_m22;
+    float transform_m31;
+    float transform_m32;
+    uint2 _padding;
 }
 
 struct Params {
@@ -98,7 +105,7 @@ void text_vertex(
     uint vertexIndex,
     float2 resolution,
     out float4 position,
-    out float2 uv,
+    out float2 uv
 ) {
     GlyphQuad quad = textslabs.quads[instanceIndex];
 
@@ -117,8 +124,15 @@ void text_vertex(
 
     ClipResult clip_result = apply_clipping(quad_pos, dim, clip_rect, uv01);
 
+    // Apply transform
+    float2 pos = clip_result.position;
+    float2 transformed_pos = float2(
+        quad.transform_m11 * pos.x + quad.transform_m21 * pos.y + quad.transform_m31,
+        quad.transform_m12 * pos.x + quad.transform_m22 * pos.y + quad.transform_m32,
+    );
+
     // Convert to NDC
-    float2 ndc = (clip_result.position / resolution) * 2.0 - 1.0;
+    float2 ndc = (transformed_pos / resolution) * 2.0 - 1.0;
     position = float4(ndc.x, -ndc.y, 0.0, 1.0);
 
     // Calculate UV coordinates for texture atlas

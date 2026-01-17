@@ -1,6 +1,6 @@
 use textslabs::*;
 use textslabs::parley::*;
-use std::{borrow::Cow, sync::Arc};
+use std::{borrow::Cow, f32::consts::PI, sync::Arc};
 use wgpu::*;
 use winit::{
     dpi::LogicalSize,
@@ -90,7 +90,7 @@ impl State {
         let _help_text_edit = text.add_text_edit("Press Ctrl + Plus and Ctrl + Minus to adjust the size of the big text.".to_string(), (470.0, 60.0), (200.0, 150.0), 0.0);
         let shift_enter_text_edit = text.add_text_edit("Use Shift+Enter for newlines here".to_string(), (250.0, 60.0), (200.0, 100.0), 0.0);
         
-        let clipped_text_box = text.add_text_box("Clipped text".to_string(), (10.0, 340.0), (300.0, 50.0), 0.0);
+        let clipped_text_box = text.add_text_box("Clipped text".to_string(), (0.0, 0.0), (1000.0, 1000.0), 0.0);
         
         // Using a &'static str here for this non-editable text box.
         let justified_static_text = text.add_text_box("Long static words, Long static words, Long static words, Long static words, ... (justified btw) ", (150.0, 440.0), (600.0, 150.0), 0.0);
@@ -103,18 +103,35 @@ impl State {
         text.get_text_edit_mut(&_help_text_edit).set_style(&monospace_style_handle);
         
         text.get_text_box_mut(&clipped_text_box).set_style(&big_text_style_handle);
-        
-        text.get_text_box_mut(&clipped_text_box).set_clip_rect(Some(parley::BoundingBox {
-            x0: 0.0,
-            y0: 0.0,
-            x1: 200.0,
-            y1: 30.0,
-        }));
+        text.get_text_box_mut(&clipped_text_box).set_selectable(true);
+
+        text.get_text_box_mut(&clipped_text_box).set_selectable(true);
+        // text.get_text_box_mut(&clipped_text_box).set_clip_rect(Some(parley::BoundingBox {
+        //     x0: 0.0,
+        //     y0: 0.0,
+        //     x1: 200.0,
+        //     y1: 30.0,
+        // }));
 
         text.get_text_style_mut(&big_text_style_handle).font_size = 32.0;
 
         text.get_text_box_mut(&justified_static_text).set_style(&custom_font_style_handle);
         text.get_text_box_mut(&justified_static_text).set_alignment(Alignment::Justify);
+
+        // Set a rotation on the clipped text box to test transform event handling
+        // Rotate first around (0,0) in local space, then translate to final position
+        text.get_text_box_mut(&clipped_text_box).set_transform(
+            // Transform2D::rotation(euclid::Angle::radians(-PI * 0.5))
+            //     .then(&Transform2D::translation(70.0, 200.0))
+
+            Transform2D::translation(70.0, 200.0)
+                .then(&Transform2D::rotation(euclid::Angle::radians(-PI * 0.5)))
+        );
+
+        // text.get_text_edit_mut(&editable_text_with_unicode).set_transform(
+        //     Transform::rotation(euclid::Angle::radians(-PI * 0.5))
+        //         .then(&Transform::translation(300.0, 200.0))
+        // );
 
         let text_renderer = TextRenderer::new(&device, &queue, surface_config.format);
 

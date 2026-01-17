@@ -33,8 +33,7 @@ pub struct TextBox {
     pub(crate) accesskit_id: Option<accesskit::NodeId>,
 
     pub(crate) needs_relayout: bool,
-    pub(crate) left: f64,
-    pub(crate) top: f64,
+    pub(crate) transform: Transform2D,
     pub(crate) max_advance: f32,
     pub(crate) depth: f32,
     pub(crate) selection: Selection,
@@ -114,8 +113,7 @@ impl TextBox {
             accesskit_id: None,
             selectable: true,
             needs_relayout: true,
-            left: pos.0,
-            top: pos.1,
+            transform: Transform2D::translation(pos.0 as f32, pos.1 as f32),
             max_advance: size.0,
             height: size.1,
             depth,
@@ -140,10 +138,11 @@ impl TextBox {
 
     #[must_use]
     pub(crate) fn hit_full_rect(&self, cursor_pos: (f64, f64)) -> bool {
-        let offset = (
-            cursor_pos.0 as f64 - self.left,
-            cursor_pos.1 as f64 - self.top,
-        );
+        // Transform cursor position to text box local space
+        let inv_transform = self.transform.inverse().unwrap_or(Transform2D::identity());
+        let local_pos = inv_transform.transform_point(euclid::Point2D::new(cursor_pos.0 as f32, cursor_pos.1 as f32));
+
+        let offset = (local_pos.x as f64, local_pos.y as f64);
 
         let hit = offset.0 > -X_TOLERANCE
             && offset.0 < self.max_advance as f64 + X_TOLERANCE
@@ -162,13 +161,27 @@ impl TextBox {
         let text_content = self.text.to_string();
         node.set_value(text_content.clone());
         node.set_description(text_content);
-        
-        let (left, top) = self.pos();
+
+        // Transform all four corners of the text box bounds to screen space
+        let width = self.layout.width();
+        let height = self.layout.height();
+
+        let top_left = self.transform.transform_point(euclid::Point2D::new(0.0, 0.0));
+        let top_right = self.transform.transform_point(euclid::Point2D::new(width, 0.0));
+        let bottom_left = self.transform.transform_point(euclid::Point2D::new(0.0, height));
+        let bottom_right = self.transform.transform_point(euclid::Point2D::new(width, height));
+
+        // Compute the axis-aligned bounding box of the transformed corners
+        let min_x = top_left.x.min(top_right.x).min(bottom_left.x).min(bottom_right.x);
+        let max_x = top_left.x.max(top_right.x).max(bottom_left.x).max(bottom_right.x);
+        let min_y = top_left.y.min(top_right.y).min(bottom_left.y).min(bottom_right.y);
+        let max_y = top_left.y.max(top_right.y).max(bottom_left.y).max(bottom_right.y);
+
         let bounds = AccessRect::new(
-            left,
-            top,
-            left + self.layout.width() as f64,
-            top + self.layout.height() as f64
+            min_x as f64,
+            min_y as f64,
+            max_x as f64,
+            max_y as f64
         );
 
         node.set_bounds(bounds);
@@ -178,12 +191,12 @@ impl TextBox {
 }
 
 impl TextBox {
-    // SAFETY: only use if no mutable references created with shared_mut() are live.
+    // SAFETY: only use if no other mutable references created with shared_mut() are live.
     // When using the public API, this is automatically enforced, because you can only get references to text boxes with Text::get_text_box() and similar functions, which borrow the whole Text struct.
     // In private functions, it should be easy enough. The idea is in the cases where there are multiple ways to get a mutable reference to Shared, there's always a single one that's "reasonable".
     // - If we're in a method on Text, just use &mut self.shared. It would be unreasonable to go fetch it in text.text_boxes[17].shared.
     // - If we're in a method on TextBox, use self.shared_mut().
-    // - If we're in a random free function and the arguments are a random mixture of references to things that we don't remember the path to, just delete the whole function, rewrite it passing a single TextBox, and get the Shared from there.
+    // - If we're in a random free function and the arguments are a random mixture of references to things that we don't remember the path to, delete the whole function, rewrite it as either a method on Text or a method on TextBox, and get the Shared from there.
     // Technically these functions should be marked as unsafe, but since they are private, we don't do it.
     pub(crate) fn shared_mut(&mut self) -> &mut Shared {
         unsafe { self.shared_backref.as_mut() }
@@ -215,7 +228,7 @@ impl TextBox {
 
     /// Returns the current position of the text box.
     pub fn position(&self) -> (f64, f64) {
-        (self.left, self.top)
+        (self.transform.m31 as f64, self.transform.m32 as f64)
     }
 
     /// Returns the current clip rect of the text box.
@@ -428,12 +441,14 @@ impl TextBox {
                 let cursor_pos = (position.x as f32, position.y as f32);
                 // macOS seems to generate a spurious move after selecting word?
                 if input_state.mouse.pointer_down {
-                    let left = self.left as f32;
-                    let top = self.top as f32;
+                    // Transform cursor position to text box local space
+                    let inv_transform = self.transform.inverse().unwrap_or(Transform2D::identity());
+                    let local_pos = inv_transform.transform_point(euclid::Point2D::new(cursor_pos.0, cursor_pos.1));
+                    let left = 0.0f32;
+                    let top = 0.0f32;
                     let scroll_offset_x = self.scroll_offset.0;
                     let scroll_offset_y = self.scroll_offset.1;
-                    let max_advance = self.max_advance;
-                    let height = self.height;
+                    let cursor_pos = (local_pos.x, local_pos.y);
 
                     // Check for auto-scroll when dragging near borders (only for text edits)
                     let mut new_scroll_x = scroll_offset_x;
@@ -451,10 +466,10 @@ impl TextBox {
                             if new_scroll_x != scroll_offset_x {
                                 did_scroll = true;
                             }
-                        } else if cursor_pos.0 > (left + max_advance) - scroll_margin {
+                        } else if cursor_pos.0 > (left + self.max_advance) - scroll_margin {
                             // Near right border - scroll right
                             let total_text_width = self.layout.full_width();
-                            let max_scroll_x = (total_text_width - max_advance).max(0.0);
+                            let max_scroll_x = (total_text_width - self.max_advance).max(0.0);
                             new_scroll_x = (scroll_offset_x + scroll_speed).min(max_scroll_x);
                             if new_scroll_x != scroll_offset_x {
                                 did_scroll = true;
@@ -468,10 +483,10 @@ impl TextBox {
                             if new_scroll_y != scroll_offset_y {
                                 did_scroll = true;
                             }
-                        } else if cursor_pos.1 > (top + height) - scroll_margin {
+                        } else if cursor_pos.1 > (top + self.height) - scroll_margin {
                             // Near bottom border - scroll down
                             let total_text_height = self.layout.height();
-                            let max_scroll_y = (total_text_height - height).max(0.0);
+                            let max_scroll_y = (total_text_height - self.height).max(0.0);
                             new_scroll_y = (scroll_offset_y + scroll_speed).min(max_scroll_y);
                             if new_scroll_y != scroll_offset_y {
                                 did_scroll = true;
@@ -500,10 +515,21 @@ impl TextBox {
             WindowEvent::MouseInput { state, button, .. } => {
                 let shift = input_state.modifiers.state().shift_key();
                 if *button == winit::event::MouseButton::Left {
+                    // Transform cursor position to text box local space
+                    dbg!(self.transform.inverse());
+                    let inv_transform = self.transform.inverse().unwrap_or(Transform2D::identity());
+                    let local_pos = inv_transform.transform_point(euclid::Point2D::new(
+                        input_state.mouse.cursor_pos.0 as f32,
+                        input_state.mouse.cursor_pos.1 as f32
+                    ));
                     let cursor_pos = (
-                        input_state.mouse.cursor_pos.0 as f32 - self.left as f32 + self.scroll_offset.0,
-                        input_state.mouse.cursor_pos.1 as f32 - self.top as f32 + self.scroll_offset.1,
+                        local_pos.x + self.scroll_offset.0,
+                        local_pos.y + self.scroll_offset.1,
                     );
+
+                    dbg!(input_state.mouse.cursor_pos);
+                    dbg!(cursor_pos);
+
 
                     if state.is_pressed() {
                         let click_count = input_state.mouse.click_count;
@@ -649,8 +675,19 @@ impl TextBox {
 
     /// Sets the position of the text box.
     pub fn set_pos(&mut self, pos: (f64, f64)) {
-        (self.left, self.top) = pos;
+        self.transform = Transform2D::translation(pos.0 as f32, pos.1 as f32);
         self.shared_mut().text_changed = true;
+    }
+
+    /// Sets the transform of the text box.
+    pub fn set_transform(&mut self, transform: Transform2D) {
+        self.transform = transform;
+        self.shared_mut().text_changed = true;
+    }
+
+    /// Returns the current transform of the text box.
+    pub fn transform(&self) -> Transform2D {
+        self.transform
     }
 
     /// Hides or unhides the text box.
@@ -672,6 +709,8 @@ impl TextBox {
     }
 
     /// Sets the clipping rectangle for the text box.
+    /// 
+    /// This clipping rectangle is in local space, not affected by the transform. 
     pub fn set_clip_rect(&mut self, clip_rect: Option<parley::BoundingBox>) {
         self.clip_rect = clip_rect;
         self.shared_mut().text_changed = true;
@@ -1114,10 +1153,11 @@ pub(crate) trait Ext1 {
 }
 impl Ext1 for TextBox {
     fn hit_bounding_box(&mut self, cursor_pos: (f64, f64)) -> bool {
-        let offset = (
-            cursor_pos.0 as f64 - self.left,
-            cursor_pos.1 as f64 - self.top,
-        );
+        // Transform cursor position to text box local space
+        let inv_transform = self.transform.inverse().unwrap_or(Transform2D::identity());
+        let local_pos = inv_transform.transform_point(euclid::Point2D::new(cursor_pos.0 as f32, cursor_pos.1 as f32));
+
+        let offset = (local_pos.x as f64, local_pos.y as f64);
 
         assert!(!self.needs_relayout);
         let hit = offset.0 > -X_TOLERANCE

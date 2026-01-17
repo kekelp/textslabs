@@ -398,9 +398,12 @@ impl TextEdit {
                     consumed = true;
                     match phase {
                         Started => {
+                            // Transform touch position to text box local space
+                            let inv_transform = self.text_box.transform.inverse().unwrap_or(Transform2D::identity());
+                            let local_pos = inv_transform.transform_point(euclid::Point2D::new(location.x as f32, location.y as f32));
                             let cursor_pos = (
-                                location.x - self.text_box.left as f64 + self.text_box.scroll_offset.0 as f64,
-                                location.y - self.text_box.top as f64 + self.text_box.scroll_offset.1 as f64,
+                                local_pos.x as f64 + self.text_box.scroll_offset.0 as f64,
+                                local_pos.y as f64 + self.text_box.scroll_offset.1 as f64,
                             );
                             self.text_box.move_to_point(cursor_pos.0 as f32, cursor_pos.1 as f32);
                         }
@@ -408,9 +411,12 @@ impl TextEdit {
                             self.text_box.collapse_selection();
                         }
                         Moved => {
+                            // Transform touch position to text box local space
+                            let inv_transform = self.text_box.transform.inverse().unwrap_or(Transform2D::identity());
+                            let local_pos = inv_transform.transform_point(euclid::Point2D::new(location.x as f32, location.y as f32));
                             self.text_box.extend_selection_to_point(
-                                location.x as f32 - self.text_box.left as f32 + self.text_box.scroll_offset.0,
-                                location.y as f32 - self.text_box.top as f32 + self.text_box.scroll_offset.1,
+                                local_pos.x + self.text_box.scroll_offset.0,
+                                local_pos.y + self.text_box.scroll_offset.1,
                             );
                         }
                         Ended => (),
@@ -1473,16 +1479,25 @@ impl TextEdit {
         }
     }
 
+    /// Sets the transform of the text box.
+    pub fn set_transform(&mut self, transform: Transform2D) {
+        self.text_box.transform = transform;
+        self.text_box.shared_mut().text_changed = true;
+    }
+    
+
     /// Sets the IME cursor area for this text edit.
     pub fn set_ime_cursor_area(&mut self, window: &Window) {
         if let Some(area) = self.cursor_geometry(1.0) {
             // Note: on X11 `set_ime_cursor_area` may cause the exclusion area to be obscured
             // until https://github.com/rust-windowing/winit/pull/3966 is in the Winit release
             // used by this example.
+            // Transform the IME cursor area to screen space
+            let screen_pos = self.text_box.transform.transform_point(euclid::Point2D::new(area.x0 as f32, area.y0 as f32));
             window.set_ime_cursor_area(
                 winit::dpi::PhysicalPosition::new(
-                    area.x0 + self.text_box.left as f64,
-                    area.y0 + self.text_box.top as f64,
+                    screen_pos.x as f64,
+                    screen_pos.y as f64,
                 ),
                 winit::dpi::PhysicalSize::new(area.width(), area.height()),
             );

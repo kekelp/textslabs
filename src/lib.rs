@@ -197,3 +197,7 @@ use wgpu::{MultisampleState, Texture, TextureFormat};
 use swash::zeno::Placement;
 
 pub use parley;
+pub use euclid;
+
+/// 2D affine transform re-exported from the `euclid` crate.
+pub type Transform2D = euclid::Transform2D<f32, euclid::UnknownUnit, euclid::UnknownUnit>;

@@ -137,6 +137,13 @@ impl ContextlessTextRenderer {
             color,
             depth: 0.0,
             flags_and_page: pack_flags_and_page(pack_flags(CONTENT_TYPE_DECORATION, false), 0),
+            transform_m11: 1.0,
+            transform_m12: 0.0,
+            transform_m21: 0.0,
+            transform_m22: 1.0,
+            transform_m31: 0.0,
+            transform_m32: 0.0,
+            _padding: [0, 0],
         };
         self.quads.push(quad);
     }
@@ -194,11 +201,18 @@ fn quantize<const N: u8>(pos: f32) -> (i32, f32, SubpixelBin::<N>) {
 pub struct GlyphQuad {
     pub clip_rect_packed: [u32; 2],       // 8 bytes - pack i16 pairs into u32s
     pub pos_packed: u32,                  // 4 bytes - pack x,y as u16,u16
-    pub dim_packed: u32,                  // 4 bytes - pack width,height as u16,u16  
+    pub dim_packed: u32,                  // 4 bytes - pack width,height as u16,u16
     pub uv_origin_packed: u32,            // 4 bytes - pack u,v as u16,u16
-    pub color: u32,                       // 4 bytes  
+    pub color: u32,                       // 4 bytes
     pub depth: f32,                       // 4 bytes
     pub flags_and_page: u32,              // 4 bytes - flags (24 bits) + page_index (8 bits)
+    pub transform_m11: f32,               // 4 bytes - transform matrix element
+    pub transform_m12: f32,               // 4 bytes
+    pub transform_m21: f32,               // 4 bytes
+    pub transform_m22: f32,               // 4 bytes
+    pub transform_m31: f32,               // 4 bytes - translation x
+    pub transform_m32: f32,               // 4 bytes - translation y
+    pub _padding: [u32; 2],               // 8 bytes - padding for alignment
 }
 
 impl GlyphQuad {
@@ -268,7 +282,7 @@ fn unpack_page_index_rust(flags_and_page: u32) -> u32 {
 }
 
 
-fn make_quad(glyph: &GlyphWithContext, stored_glyph: &StoredGlyph, depth: f32) -> GlyphQuad {
+fn make_quad(glyph: &GlyphWithContext, stored_glyph: &StoredGlyph, depth: f32, transform: Transform2D) -> GlyphQuad {
     let y = glyph.quantized_pos_y - stored_glyph.placement_top as i32;
     let x = glyph.quantized_pos_x + stored_glyph.placement_left as i32;
 
@@ -288,6 +302,13 @@ fn make_quad(glyph: &GlyphWithContext, stored_glyph: &StoredGlyph, depth: f32) -
         color,
         depth,
         flags_and_page: pack_flags_and_page(pack_flags(flags, false), stored_glyph.page as u32),
+        transform_m11: transform.m11,
+        transform_m12: transform.m12,
+        transform_m21: transform.m21,
+        transform_m22: transform.m22,
+        transform_m31: transform.m31,
+        transform_m32: transform.m32,
+        _padding: [0, 0],
     };
 }
 
@@ -416,7 +437,7 @@ impl TextRenderer {
 
     /// Prepare an individual parley layout for rendering at the specified position.
     pub fn prepare_layout(&mut self, layout: &Layout<ColorBrush>, left: f32, top: f32, clip_rect: Option<parley::BoundingBox>, fade: bool, depth: f32) {
-        self.text_renderer.prepare_layout(layout, &mut self.scale_cx, left, top, clip_rect, fade, depth);
+        self.text_renderer.prepare_layout(layout, &mut self.scale_cx, left, top, clip_rect, fade, depth, Transform2D::identity());
         self.text_renderer.needs_gpu_sync = true;
     }
 
@@ -427,20 +448,19 @@ impl TextRenderer {
             return;
         }
         text_box.refresh_layout();
-                
-        let (left, top) = text_box.position();
-        let (left, top) = (left as f32, top as f32);
+
         let clip_rect = text_box.effective_clip_rect();
         let fade = text_box.fadeout_clipping();
 
-        let content_left = left - text_box.scroll_offset().0;
-        let content_top = top - text_box.scroll_offset().1;
+        // Position is now in local space (before transform), just account for scroll
+        let content_left = -text_box.scroll_offset().0;
+        let content_top = -text_box.scroll_offset().1;
 
         let start_index = self.text_renderer.quads.len();
 
-        self.text_renderer.prepare_layout(&text_box.layout, &mut self.scale_cx, content_left, content_top, clip_rect, fade, text_box.depth);
+        self.text_renderer.prepare_layout(&text_box.layout, &mut self.scale_cx, content_left, content_top, clip_rect, fade, text_box.depth, text_box.transform);
         self.text_renderer.needs_gpu_sync = true;
-        
+
         // Update quad storage with new ranges
         let scroll_offset = text_box.scroll_offset();
         self.capture_quad_ranges_after(&mut text_box.quad_storage, scroll_offset, start_index);
@@ -451,22 +471,21 @@ impl TextRenderer {
         if text_edit.hidden() {
             return;
         }
-        
+
         text_edit.refresh_layout();
 
-        let (left, top) = text_edit.pos();
-        let (left, top) = (left as f32, top as f32);
         let clip_rect = text_edit.text_box.effective_clip_rect();
         let fade = text_edit.fadeout_clipping();
 
-        let content_left = left - text_edit.scroll_offset().0;
-        let content_top = top - text_edit.scroll_offset().1;
+        // Position is now in local space (before transform), just account for scroll
+        let content_left = -text_edit.scroll_offset().0;
+        let content_top = -text_edit.scroll_offset().1;
 
         let start_index = self.text_renderer.quads.len();
 
-        self.text_renderer.prepare_layout(&text_edit.text_box.layout, &mut self.scale_cx, content_left, content_top, clip_rect, fade, text_edit.text_box.depth);
+        self.text_renderer.prepare_layout(&text_edit.text_box.layout, &mut self.scale_cx, content_left, content_top, clip_rect, fade, text_edit.text_box.depth, text_edit.text_box.transform);
         self.text_renderer.needs_gpu_sync = true;
-        
+
         // Update quad storage with new ranges
         let scroll_offset = text_edit.scroll_offset();
         self.capture_quad_ranges_after(&mut text_edit.text_box.quad_storage, scroll_offset, start_index);
@@ -639,12 +658,12 @@ impl ContextlessTextRenderer {
     }
 
 
-    fn prepare_layout(&mut self, layout: &Layout<ColorBrush>, scale_cx: &mut ScaleContext, left: f32, top: f32, clip_rect: Option<parley::BoundingBox>, fade: bool, depth: f32) {
+    fn prepare_layout(&mut self, layout: &Layout<ColorBrush>, scale_cx: &mut ScaleContext, left: f32, top: f32, clip_rect: Option<parley::BoundingBox>, fade: bool, depth: f32, transform: Transform2D) {
         for line in layout.lines() {
             for item in line.items() {
                 match item {
                     PositionedLayoutItem::GlyphRun(glyph_run) => {
-                        self.prepare_glyph_run(&glyph_run, scale_cx, left, top, clip_rect, fade, depth);
+                        self.prepare_glyph_run(&glyph_run, scale_cx, left, top, clip_rect, fade, depth, transform);
                     }
                     PositionedLayoutItem::InlineBox(_inline_box) => {}
                 }
@@ -660,7 +679,8 @@ impl ContextlessTextRenderer {
         top: f32,
         clip_rect: Option<parley::BoundingBox>,
         fade: bool,
-        depth: f32
+        depth: f32,
+        transform: Transform2D,
     ) {
         let mut run_x = left + glyph_run.offset();
         let run_y = top + glyph_run.baseline();
@@ -704,7 +724,7 @@ impl ContextlessTextRenderer {
 
             if let Some(stored_glyph) = self.glyph_cache.get(&glyph_ctx.key()) {
                 if let Some(stored_glyph) = stored_glyph {
-                    let quad = make_quad(&glyph_ctx, stored_glyph, depth);
+                    let quad = make_quad(&glyph_ctx, stored_glyph, depth, transform);
                     if let Some(clipped_quad) = clip_quad(quad, left, top, clip_rect, fade) {
                         self.quads.push(clipped_quad);
                     }
@@ -721,7 +741,7 @@ impl ContextlessTextRenderer {
                             .build()
                     );
                 }
-                if let Some((quad, _stored_glyph)) = self.prepare_glyph(&glyph_ctx, scaler.as_mut().unwrap(), depth) {
+                if let Some((quad, _stored_glyph)) = self.prepare_glyph(&glyph_ctx, scaler.as_mut().unwrap(), depth, transform) {
                     if let Some(clipped_quad) = clip_quad(quad, left, top, clip_rect, fade) {
                         self.quads.push(clipped_quad);
                     }
@@ -870,16 +890,16 @@ impl ContextlessTextRenderer {
     // }
 
     /// Rasterizes the glyph in a texture atlas and returns a Quad that can be used to render it, or None if the glyph was just empty (like a space).
-    fn prepare_glyph(&mut self, glyph: &GlyphWithContext, scaler: &mut Scaler, depth: f32) -> Option<(GlyphQuad, StoredGlyph)> {
+    fn prepare_glyph(&mut self, glyph: &GlyphWithContext, scaler: &mut Scaler, depth: f32, transform: Transform2D) -> Option<(GlyphQuad, StoredGlyph)> {
         let (content, placement) = self._render_glyph(&glyph, scaler);
         let size = placement.size();
-        
+
         // For some glyphs there's no image to store, like spaces.
         if size.is_empty() {
             self.glyph_cache.push(glyph.key(), None);
             return None;
         }
-        
+
         let n_pages = match content {
             Content::Mask => self.mask_atlas_pages.len(),
             Content::Color => self.color_atlas_pages.len(),
@@ -888,25 +908,25 @@ impl ContextlessTextRenderer {
         // Try to allocate on existing pages
         for page in 0..n_pages {
             if let Some(alloc) = self.pack_rectangle(size, content, page) {
-                return self.store_glyph(glyph, size, &alloc, page, &placement, content, depth);
+                return self.store_glyph(glyph, size, &alloc, page, &placement, content, depth, transform);
             }
-            
+
             // Try evicting glyphs from previous frames and retry
             if self.needs_evicting(self.frame) {
                 self.evict_old_glyphs();
-                
+
                 if let Some(alloc) = self.pack_rectangle(size, content, page) {
-                    return self.store_glyph(glyph, size, &alloc, page, &placement, content, depth);
+                    return self.store_glyph(glyph, size, &alloc, page, &placement, content, depth, transform);
                 }
             }
         }
-        
+
         // Create a new page and try to allocate there
         let new_page: usize = self.make_new_page(content);
         if let Some(alloc) = self.pack_rectangle(size, content, new_page) {
-            return self.store_glyph(glyph, size, &alloc, new_page, &placement, content, depth);
+            return self.store_glyph(glyph, size, &alloc, new_page, &placement, content, depth, transform);
         }
-        
+
         // Glyph is too large to fit even in a new empty page. It's time to give up.
         // todo: should probably try to catch these earlier by checking for unreasonable font sizes
         // todo2: technically, we could split the huge glyph across multiple pages, or render it on the surface directly.
@@ -918,17 +938,18 @@ impl ContextlessTextRenderer {
     // todo: don't carry around `size`, alloc probably has the same data
     fn store_glyph(&mut self, 
             glyph: &GlyphWithContext,
-            size: Size2D<i32, UnknownUnit>                            , 
-            alloc: &Allocation, 
-            page: usize, 
+            size: Size2D<i32, UnknownUnit>,
+            alloc: &Allocation,
+            page: usize,
             placement: &Placement,
             content_type: Content,
             depth: f32,
+            transform: Transform2D,
         ) -> Option<(GlyphQuad, StoredGlyph)> {
         self.copy_glyph_to_atlas(size, alloc, page, content_type);
         let stored_glyph = StoredGlyph::create(alloc, placement, page, self.frame, content_type);
         self.glyph_cache.push(glyph.key(), Some(stored_glyph));
-        let quad = make_quad(glyph, &stored_glyph, depth);
+        let quad = make_quad(glyph, &stored_glyph, depth, transform);
         Some((quad, stored_glyph))
     }
 
