@@ -1425,7 +1425,7 @@ impl TextEdit {
         Some(self.text_box.selection().focus().geometry(&self.text_box.layout, size))
     }
 
-    /// Refreshes the text layout if needed.
+    /// Refresh the text layout if needed.
     pub fn refresh_layout(&mut self) {
         let color_override = if self.disabled {
             Some(self.text_edit_style().disabled_text_color)
@@ -1443,20 +1443,17 @@ impl TextEdit {
         }
     }
 
-    /// Sets the text content of the text edit.
-    pub fn set_text(&mut self, new_text: String) {
-        self.text_box.text_mut_string().clear();
-        self.text_box.text_mut_string().push_str(&new_text);
-        self.text_box.needs_relayout = true;
+    /// Set the text of the text edit box.
+    pub fn set_text(&mut self, new_text: &str) {
+        self.text_box.set_text(new_text);
         self.text_box.move_to_text_end();
         // Clear any composition state
         self.compose = None;
         // Not showing placeholder anymore since we have real text
         self.showing_placeholder = false;
-        self.text_box.shared_mut().text_changed = true;
     }
 
-    /// Sets placeholder text that will be shown when the text edit is empty.
+    /// Set placeholder text that will be shown when the text edit is empty.
     pub fn set_placeholder(&mut self, placeholder: impl Into<Cow<'static, str>>) {
         let placeholder_cow = placeholder.into();
         self.placeholder_text = Some(placeholder_cow.clone());

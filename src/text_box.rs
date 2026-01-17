@@ -652,10 +652,26 @@ impl TextBox {
     }
 
     /// Returns a mutable reference to the text content as a `String`. If the text was a borrowed `&str`, it will be cloned.
-    /// 
+    ///
     /// This is a convenience method over [`Self::text_mut()`]
     pub fn text_mut_string(&mut self) -> &mut String {
         self.text_mut().to_mut()
+    }
+
+    /// Set the text in the text box.
+    pub fn set_text(&mut self, new_text: &str) {
+        self.needs_relayout = true;
+        self.shared_mut().text_changed = true;
+
+        match &mut self.text {
+            Cow::Owned(s) => {
+                s.clear();
+                s.push_str(new_text);
+            }
+            Cow::Borrowed(_) => {
+                self.text = Cow::Owned(new_text.to_string());
+            }
+        }
     }
 
     #[cfg(feature = "accessibility")]

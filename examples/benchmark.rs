@@ -31,6 +31,8 @@ struct State {
     first_prepare_time: Option<Duration>,
     first_frame_time: Option<Duration>,
     first_frame_stats_written: bool,
+    scratch_string: String,
+    last_frame_end: Instant,
 }
 
 impl State {
@@ -44,6 +46,7 @@ impl State {
         let (device, queue) = pollster::block_on(adapter.request_device(&device_desc)).unwrap();
         let surface = instance.create_surface(window.clone()).unwrap();
         let mut surface_config = surface.get_default_config(&adapter, window.inner_size().width, window.inner_size().height).unwrap();
+        // surface_config.present_mode = PresentMode::Fifo;
         surface_config.present_mode = PresentMode::Immediate;
         surface.configure(&device, &surface_config);
 
@@ -60,7 +63,7 @@ impl State {
         // Create header text box
         let header = text.add_text_box(
             "This is a benchmark for the builtin atlas renderer.\n\
-            The first time is very slow because of setup and cpu-side glyph rasterization. In the following frames, the glyphs are cached in the atlases.",
+            The first time is very slow because of cpu-side glyph rasterization. In the following frames, the glyphs are cached in the atlases.",
             (10.0, 10.0),
             (1900.0, 60.0),
             0.0
@@ -164,6 +167,8 @@ impl State {
             first_prepare_time: None,
             first_frame_time: None,
             first_frame_stats_written: false,
+            scratch_string: String::with_capacity(64),
+            last_frame_end: Instant::now(),
         }
     }
 }
@@ -194,7 +199,6 @@ impl winit::application::ApplicationHandler for Application {
                 state.surface.configure(&state.device, &state.surface_config);
             }
             WindowEvent::RedrawRequested => {
-                let frame_start = Instant::now();
 
                 // Store first frame timings
                 let prepare_time_for_first_frame = if state.first_prepare_time.is_none() {
@@ -203,22 +207,25 @@ impl winit::application::ApplicationHandler for Application {
                     None
                 };
 
-                state.total_frame_time += frame_start.elapsed();
                 state.frame_count += 1;
 
                 // Update frame counter display every frame (to force text_changed = true)
-                *state.text.get_text_box_mut(&state.frame_counter_display).text_mut() =
-                    format!("Frame count:\n{}", state.frame_count).into();
+                use std::fmt::Write;
+                state.scratch_string.clear();
+                write!(&mut state.scratch_string, "Frame count:\n{}", state.frame_count).unwrap();
+                state.text.get_text_box_mut(&state.frame_counter_display).set_text(&state.scratch_string);
 
                 // Update first frame stats display when we have GPU time (only once)
                 if state.first_gpu_time.is_some() && !state.first_frame_stats_written {
-                    let stats_text = format!(
+                    state.scratch_string.clear();
+                    write!(
+                        &mut state.scratch_string,
                         "First frame:\nPrepare:    {:?}\nGPU Render: {:?}\nFrame:      {:?}",
                         state.first_prepare_time.unwrap(),
                         state.first_gpu_time.unwrap(),
                         state.first_frame_time.unwrap()
-                    );
-                    *state.text.get_text_box_mut(&state.first_frame_stats).text_mut() = stats_text.into();
+                    ).unwrap();
+                    state.text.get_text_box_mut(&state.first_frame_stats).set_text(&state.scratch_string);
                     state.first_frame_stats_written = true;
                 }
 
@@ -229,11 +236,13 @@ impl winit::application::ApplicationHandler for Application {
                     let avg_frame = state.total_frame_time / state.frame_count;
                     let fps = 1.0 / avg_frame.as_secs_f64();
 
-                    let stats_text = format!(
-                        "Average ({} frames):\nPrepare:    {:?}\nGPU Render: {:?}\nFrame:      {:?}\nFPS: {:.1}",
-                        state.frame_count, avg_prepare, avg_gpu, avg_frame, fps
-                    );
-                    *state.text.get_text_box_mut(&state.avg_stats).text_mut() = stats_text.into();
+                    state.scratch_string.clear();
+                    write!(
+                        &mut state.scratch_string,
+                        "Average (last 1 second):\nPrepare:    {:?}\nGPU Render: {:?}\nFrame:      {:?}\nFPS: {:.1}",
+                        avg_prepare, avg_gpu, avg_frame, fps
+                    ).unwrap();
+                    state.text.get_text_box_mut(&state.avg_stats).set_text(&state.scratch_string);
 
                     // Reset counters
                     state.frame_count = 0;
@@ -251,7 +260,6 @@ impl winit::application::ApplicationHandler for Application {
 
                 if let Some(first_prepare_start) = prepare_time_for_first_frame {
                     state.first_prepare_time = Some(first_prepare_start.elapsed());
-                    state.first_frame_time = Some(frame_start.elapsed());
                 }
 
                 state.text_renderer.load_to_gpu(&state.device, &state.queue);
@@ -288,7 +296,7 @@ impl winit::application::ApplicationHandler for Application {
                                 let dur = Duration::from_secs_f64(time.end - time.start);
                                 state.total_gpu_time += dur;
 
-                                // Capture first GPU time when it becomes available
+                                // get the first GPU time that becomes available
                                 if state.first_gpu_time.is_none() {
                                     state.first_gpu_time = Some(dur);
                                 }
@@ -298,6 +306,16 @@ impl winit::application::ApplicationHandler for Application {
                 }
 
                 surface_texture.present();
+
+                let frame_end = Instant::now();
+
+                state.total_frame_time += frame_end.duration_since(state.last_frame_end);
+                
+                if state.first_frame_time.is_none() {
+                    state.first_frame_time = Some(frame_end.duration_since(state.last_frame_end));
+                }
+
+                state.last_frame_end = frame_end;
 
                 state.window.request_redraw();
             },
