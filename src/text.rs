@@ -730,6 +730,10 @@ impl Text {
         // But we unregister windows on CloseRequested.
         // For this reason, it seems that we have to accept that prepare_all might be called when no windows are around and silently do nothing.
         let Some((window_id, window_size)) = res else {
+            // Even if there are no windows, we should reset the change flags
+            // so they don't stay stuck at true
+            self.shared.text_changed = false;
+            self.shared.decorations_changed = false;
             return;
         };
 
@@ -796,6 +800,8 @@ impl Text {
     }
 
     pub(crate) fn prepare_all_impl(&mut self, text_renderer: &mut TextRenderer, window_id: WindowId, window_size: (f32, f32)) {
+
+        dbg!(self.shared.text_changed);
 
         text_renderer.update_resolution(window_size.0, window_size.1);
 

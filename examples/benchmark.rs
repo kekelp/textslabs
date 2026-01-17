@@ -22,6 +22,7 @@ struct State {
     header: TextBoxHandle,
     first_frame_stats: TextBoxHandle,
     avg_stats: TextBoxHandle,
+    frame_counter_display: TextBoxHandle,
     gpu_profiler: GpuProfiler,
     frame_count: u32,
     last_print_time: Instant,
@@ -31,6 +32,7 @@ struct State {
     first_gpu_time: Option<Duration>,
     first_prepare_time: Option<Duration>,
     first_frame_time: Option<Duration>,
+    first_frame_stats_written: bool,
 }
 
 impl State {
@@ -84,6 +86,14 @@ impl State {
 
         text.get_text_box_mut(&first_frame_stats).set_style(&small_style);
         text.get_text_box_mut(&avg_stats).set_style(&small_style);
+
+        let frame_counter_display = text.add_text_box(
+            "0",
+            (1820.0, 10.0),
+            (90.0, 30.0),
+            0.0
+        );
+        text.get_text_box_mut(&frame_counter_display).set_style(&small_style);
 
         // Sample texts in different scripts
         let latin_text = "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum. Sed ut perspiciatis unde omnis iste natus error sit voluptatem accusantium doloremque laudantium, totam rem aperiam, eaque ipsa quae ab illo inventore veritatis et quasi architecto beatae vitae dicta sunt explicabo. Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum. Sed ut perspiciatis unde omnis iste natus error sit voluptatem accusantium doloremque laudantium, totam rem aperiam, eaque ipsa quae ab illo inventore veritatis et quasi architecto beatae vitae dicta sunt explicabo.";
@@ -149,6 +159,7 @@ impl State {
             header,
             first_frame_stats,
             avg_stats,
+            frame_counter_display,
             gpu_profiler,
             frame_count: 0,
             last_print_time: Instant::now(),
@@ -158,6 +169,7 @@ impl State {
             first_gpu_time: None,
             first_prepare_time: None,
             first_frame_time: None,
+            first_frame_stats_written: false,
         }
     }
 }
@@ -248,8 +260,8 @@ impl winit::application::ApplicationHandler for Application {
                     state.first_frame_time = Some(frame_time);
                 }
 
-                // Update first frame stats display when we have GPU time
-                if state.first_gpu_time.is_some() {
+                // Update first frame stats display when we have GPU time (only once)
+                if state.first_gpu_time.is_some() && !state.first_frame_stats_written {
                     let stats_text = format!(
                         "First frame:\nPrepare:    {:?}\nGPU Render: {:?}\nFrame:      {:?}",
                         state.first_prepare_time.unwrap(),
@@ -257,10 +269,15 @@ impl winit::application::ApplicationHandler for Application {
                         state.first_frame_time.unwrap()
                     );
                     *state.text.get_text_box_mut(&state.first_frame_stats).text_mut() = stats_text.into();
+                    state.first_frame_stats_written = true;
                 }
 
                 state.total_frame_time += frame_time;
                 state.frame_count += 1;
+
+                // Update frame counter display every frame (to force text_changed = true)
+                *state.text.get_text_box_mut(&state.frame_counter_display).text_mut() =
+                    format!("{}", state.frame_count % 100).into();
 
                 // Update average statistics every second
                 if state.last_print_time.elapsed() >= Duration::from_secs(1) {

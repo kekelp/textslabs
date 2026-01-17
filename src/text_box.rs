@@ -1168,13 +1168,13 @@ pub(crate) trait Ext1 {
 }
 impl Ext1 for TextBox {
     fn hit_bounding_box(&mut self, cursor_pos: (f64, f64)) -> bool {
+        self.refresh_layout();
         // Transform cursor position to text box local space
         let inv_transform = self.transform().inverse().unwrap_or(Transform2D::identity());
         let local_pos = inv_transform.transform_point(euclid::Point2D::new(cursor_pos.0 as f32, cursor_pos.1 as f32));
 
         let offset = (local_pos.x as f64, local_pos.y as f64);
 
-        assert!(!self.needs_relayout);
         let hit = offset.0 > -X_TOLERANCE
             && offset.0 < self.layout.full_width() as f64 + X_TOLERANCE
             && offset.1 > 0.0
