@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 use winit::{event::WindowEvent, event_loop::EventLoop, window::Window};
 use wgpu::*;
 use textslabs::*;
@@ -64,20 +64,20 @@ impl winit::application::ApplicationHandler for Application {
             }
             WindowEvent::RedrawRequested => {
 
-                let t = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis();
-                    
-                dbg!(t);
-                
-                let t = (t % 10000) as f32;
-                dbg!(t);
-
-
-                state.text.get_text_edit_mut(&state.text_edit_handle).set_transform(
+                let t = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs_f64();
             
-                    Transform2D::translation(300.0, 300.0)
-                    .then(&
-                        Transform2D::rotation(euclid::Angle::radians(t * 0.001))
-                    )
+                let period_seconds = 5.0;
+                let rotation = ((t % period_seconds) / period_seconds * std::f64::consts::TAU) as f32;
+                
+                state.text.get_text_edit_mut(&state.text_edit_handle).set_transform(
+                    Transform2D {
+                        translation: (300.0, 300.0),
+                        rotation,
+                        scale: 1.0,
+                    }
                 );
 
                 state.text.prepare_all(&mut state.text_renderer);

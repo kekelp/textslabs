@@ -129,6 +129,8 @@ impl ContextlessTextRenderer {
             }
         }
 
+        let matrix = transform.to_matrix();
+
         let quad = GlyphQuad {
             pos_packed: pack_i32_pair_as_u16(x0, y0),
             clip_rect_packed: [pack_i16_pair(0, 0), pack_i16_pair(32767, 32767)], // No clipping for decorations
@@ -137,12 +139,12 @@ impl ContextlessTextRenderer {
             color,
             depth: 0.0,
             flags_and_page: pack_flags_and_page(pack_flags(CONTENT_TYPE_DECORATION, false), 0),
-            transform_m11: transform.m11,
-            transform_m12: transform.m12,
-            transform_m21: transform.m21,
-            transform_m22: transform.m22,
-            transform_m31: transform.m31,
-            transform_m32: transform.m32,
+            transform_m11: matrix[0],
+            transform_m12: matrix[1],
+            transform_m21: matrix[2],
+            transform_m22: matrix[3],
+            transform_m31: matrix[4],
+            transform_m32: matrix[5],
             _padding: [0, 0],
         };
         self.quads.push(quad);
@@ -294,6 +296,9 @@ fn make_quad(glyph: &GlyphWithContext, stored_glyph: &StoredGlyph, depth: f32, t
         Content::Color => (0xff_ff_ff_ff, CONTENT_TYPE_COLOR),
         Content::SubpixelMask => unreachable!(),
     };
+
+    let matrix = transform.to_matrix();
+
     return GlyphQuad {
         pos_packed: pack_i32_pair_as_u16(x, y),
         clip_rect_packed: [pack_i16_pair(0, 0), pack_i16_pair(32767, 32767)], // No clipping (will be set later)
@@ -302,12 +307,12 @@ fn make_quad(glyph: &GlyphWithContext, stored_glyph: &StoredGlyph, depth: f32, t
         color,
         depth,
         flags_and_page: pack_flags_and_page(pack_flags(flags, false), stored_glyph.page as u32),
-        transform_m11: transform.m11,
-        transform_m12: transform.m12,
-        transform_m21: transform.m21,
-        transform_m22: transform.m22,
-        transform_m31: transform.m31,
-        transform_m32: transform.m32,
+        transform_m11: matrix[0],
+        transform_m12: matrix[1],
+        transform_m21: matrix[2],
+        transform_m22: matrix[3],
+        transform_m31: matrix[4],
+        transform_m32: matrix[5],
         _padding: [0, 0],
     };
 }
@@ -452,7 +457,6 @@ impl TextRenderer {
         let clip_rect = text_box.effective_clip_rect();
         let fade = text_box.fadeout_clipping();
 
-        // Position is now in local space (before transform), just account for scroll
         let content_left = -text_box.scroll_offset().0;
         let content_top = -text_box.scroll_offset().1;
 
@@ -477,7 +481,6 @@ impl TextRenderer {
         let clip_rect = text_edit.text_box.effective_clip_rect();
         let fade = text_edit.fadeout_clipping();
 
-        // Position is now in local space (before transform), just account for scroll
         let content_left = -text_edit.scroll_offset().0;
         let content_top = -text_edit.scroll_offset().1;
 

@@ -119,13 +119,12 @@ impl State {
         text.get_text_box_mut(&justified_static_text).set_alignment(Alignment::Justify);
 
         // Set a rotation on the clipped text box to test transform event handling
-        // Rotate first around (0,0) in local space, then translate to final position
         text.get_text_box_mut(&clipped_text_box).set_transform(
-            // Transform2D::rotation(euclid::Angle::radians(-PI * 0.5))
-            //     .then(&Transform2D::translation(70.0, 200.0))
-
-            Transform2D::translation(70.0, 200.0)
-                .then(&Transform2D::rotation(euclid::Angle::radians(-PI * 0.5)))
+            Transform2D {
+                translation: (70.0, 200.0),
+                rotation: -PI * 0.5,
+                scale: 1.0,
+            }
         );
 
         // text.get_text_edit_mut(&editable_text_with_unicode).set_transform(

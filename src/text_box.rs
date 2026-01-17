@@ -228,7 +228,7 @@ impl TextBox {
 
     /// Returns the current position of the text box.
     pub fn position(&self) -> (f64, f64) {
-        (self.transform.m31 as f64, self.transform.m32 as f64)
+        (self.transform.translation.0 as f64, self.transform.translation.1 as f64)
     }
 
     /// Returns the current clip rect of the text box.

@@ -199,5 +199,118 @@ use swash::zeno::Placement;
 pub use parley;
 pub use euclid;
 
-/// 2D affine transform re-exported from the `euclid` crate.
-pub type Transform2D = euclid::Transform2D<f32, euclid::UnknownUnit, euclid::UnknownUnit>;
+/// Simple 2D transform with translation, rotation, and scale.
+///
+/// Rotation is applied around the top-left corner of the text box.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Transform2D {
+    /// Translation in pixels (x, y)
+    pub translation: (f32, f32),
+    /// Rotation in radians (clockwise)
+    pub rotation: f32,
+    /// Uniform scale factor
+    pub scale: f32,
+}
+
+impl Default for Transform2D {
+    fn default() -> Self {
+        Self::identity()
+    }
+}
+
+impl Transform2D {
+    /// Creates an identity transform (no translation, rotation, or scale).
+    pub const fn identity() -> Self {
+        Self {
+            translation: (0.0, 0.0),
+            rotation: 0.0,
+            scale: 1.0,
+        }
+    }
+
+    /// Creates a transform with only translation.
+    pub const fn translation(x: f32, y: f32) -> Self {
+        Self {
+            translation: (x, y),
+            rotation: 0.0,
+            scale: 1.0,
+        }
+    }
+
+    /// Creates a transform with only rotation (in radians).
+    pub const fn rotation(radians: f32) -> Self {
+        Self {
+            translation: (0.0, 0.0),
+            rotation: radians,
+            scale: 1.0,
+        }
+    }
+
+    /// Creates a transform with only scale.
+    pub const fn scale(scale: f32) -> Self {
+        Self {
+            translation: (0.0, 0.0),
+            rotation: 0.0,
+            scale,
+        }
+    }
+
+    /// Converts to a matrix representation for GPU rendering.
+    /// Rotation is applied around the top-left corner (0, 0) in local space.
+    pub(crate) fn to_matrix(&self) -> [f32; 6] {
+        let cos_r = self.rotation.cos();
+        let sin_r = self.rotation.sin();
+
+        // Combined rotation and scale matrix:
+        // [cos*s  -sin*s  tx]
+        // [sin*s   cos*s  ty]
+        [
+            cos_r * self.scale,  // m11
+            sin_r * self.scale,  // m12
+            -sin_r * self.scale, // m21
+            cos_r * self.scale,  // m22
+            self.translation.0,  // m31 (tx)
+            self.translation.1,  // m32 (ty)
+        ]
+    }
+
+    /// Computes the inverse transform.
+    /// Returns None if the transform is not invertible (e.g., scale is 0).
+    pub fn inverse(&self) -> Option<Self> {
+        if self.scale.abs() < 1e-10 {
+            return None;
+        }
+
+        // For a transform with rotation, scale, and translation:
+        // First invert scale and rotation, then apply inverse translation
+        let inv_scale = 1.0 / self.scale;
+        let inv_rotation = -self.rotation;
+
+        // To invert translation, we need to apply inverse rotation and scale first
+        let cos_r = inv_rotation.cos();
+        let sin_r = inv_rotation.sin();
+
+        let inv_tx = -(cos_r * self.translation.0 - sin_r * self.translation.1) * inv_scale;
+        let inv_ty = -(sin_r * self.translation.0 + cos_r * self.translation.1) * inv_scale;
+
+        Some(Self {
+            translation: (inv_tx, inv_ty),
+            rotation: inv_rotation,
+            scale: inv_scale,
+        })
+    }
+
+    /// Transforms a point using this transform.
+    pub fn transform_point(&self, point: euclid::Point2D<f32, euclid::UnknownUnit>) -> euclid::Point2D<f32, euclid::UnknownUnit> {
+        let cos_r = self.rotation.cos();
+        let sin_r = self.rotation.sin();
+
+        let x = point.x * self.scale;
+        let y = point.y * self.scale;
+
+        euclid::Point2D::new(
+            cos_r * x - sin_r * y + self.translation.0,
+            sin_r * x + cos_r * y + self.translation.1,
+        )
+    }
+}
