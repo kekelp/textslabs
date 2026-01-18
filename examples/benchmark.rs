@@ -72,15 +72,16 @@ impl State {
         
         // Create header text box
         let header = text.add_text_box(
-            "This is an informal benchmark for the library and for the builtin atlas renderer.\n\
+            "This is an informal benchmark for the library and for the atlas renderer.\n\
             The first frame is very slow because of cpu-side glyph rasterization. In the following frames, the glyphs are cached in the atlases.\n\
-            If you go really hard with ctrl+v on one of the text edit boxes, you'll quickly see the other limitation. Rendering can efficiently skip the text that's outside the clip area (or the screen), but the layouting and shaping can't.\n\
-            There are two problems: \n\
-                - Parley's Selection is always relative to the layout, not the raw text. This means that even when doing operations that could technically work on the raw text still, we still need to work on a fresh layout.\n\
-                This means that if you ctrl+v ten times in the time of a frame, we have to do ten layout rebuilds before rendering once. Ideally you'd be fine with just one rebuild per render.\n\
-                This slows down the frame, giving you time to spam even more events before next one, and so on. When the whole program freezes for 20-30 seconds, it's because of this.\n\
-                - Layouting a long text even once is still slow. This alone isn't enough to cause dramatic 30 second freezes, but it can still cause the FPS to drop very low. \n\
-                Of course if text is split reasonably across multiple text boxes (one per UI element of per paragraph) it's probably fine.
+            If you go really hard with ctrl+v on one of the text edit boxes, you'll quickly see the other limitation. Rendering can efficiently skip the text that's outside the clip area (or the screen), but the layouting and shaping can't.\n\n\
+            \
+            One funny issue is that Parley's Selection is always relative to the layout, not the raw text. This means that even when doing operations that could technically work on the raw text still, we still need to work on a fresh layout.\n\
+            \
+            So, if you hold down ctrl+v and paste ten times in the time of a frame, we have to do ten layout rebuilds before rendering once. The subsequent pastes should replace the selection, so they need a fresh selection to replace, so they need a fresh layout. Ideally you'd be fine with just one rebuild per render.\n\
+            This slows down the frame, giving you time to spam even more events before next one, and so on. When the whole program freezes for 20-30 seconds, it's because of this.\n\n\
+            \
+            Layouting a long text just once can still be quite slow, but this alone isn't enough to cause dramatic 30 second freezes. It can still cause the FPS to drop quite low, but from what I've seen, this effect is of the same order of magnitude as you see in browsers. Of course if text is split reasonably across multiple text boxes (one per UI element or one per paragraph) none of this is an issue.
              ",
             (10.0, 10.0),
             (1850.0, 60.0),
@@ -89,24 +90,24 @@ impl State {
 
         // Create stats display text boxes
         
-        let row_y = 240.0;
+        let row_y = 280.0;
         let first_frame_stats = text.add_text_box(
             "",
-            (10.0, row_y),
+            (110.0, row_y),
             (400.0, 100.0),
             0.0
         );
 
         let avg_stats = text.add_text_box(
             "Average: computing...".to_string(),
-            (420.0, row_y),
+            (520.0, row_y),
             (400.0, 100.0),
             0.0
         );
 
         let char_count = text.add_text_box(
             "Total bytes of text:".to_string(),
-            (670.0, row_y),
+            (880.0, row_y),
             (400.0, 100.0),
             0.0
         );
@@ -134,10 +135,10 @@ impl State {
 
         // Create text boxes with different scripts
         let box_width = 600.0;
-        let box_height = 330.0;
+        let box_height = 310.0;
         let start_x = 10.0;
-        let start_y = 360.0;
-        let spacing_y = 350.0;
+        let start_y = 400.0;
+        let spacing_y = box_height as f64 + 10.0;
 
         let samples = vec![
             latin_text,
