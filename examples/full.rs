@@ -106,12 +106,12 @@ impl State {
         text.get_text_box_mut(&clipped_text_box).set_selectable(true);
 
         text.get_text_box_mut(&clipped_text_box).set_selectable(true);
-        // text.get_text_box_mut(&clipped_text_box).set_clip_rect(Some(parley::BoundingBox {
-        //     x0: 0.0,
-        //     y0: 0.0,
-        //     x1: 200.0,
-        //     y1: 30.0,
-        // }));
+        text.get_text_box_mut(&clipped_text_box).set_clip_rect(Some(parley::BoundingBox {
+            x0: 0.0,
+            y0: 0.0,
+            x1: 200.0,
+            y1: 30.0,
+        }));
 
         text.get_text_style_mut(&big_text_style_handle).font_size = 32.0;
 
@@ -121,16 +121,11 @@ impl State {
         // Set a rotation on the clipped text box to test transform event handling
         text.get_text_box_mut(&clipped_text_box).set_transform(
             Transform2D {
-                translation: (70.0, 200.0),
+                translation: (20.0, 400.0),
                 rotation: -PI * 0.5,
                 scale: 1.0,
             }
         );
-
-        // text.get_text_edit_mut(&editable_text_with_unicode).set_transform(
-        //     Transform::rotation(euclid::Angle::radians(-PI * 0.5))
-        //         .then(&Transform::translation(300.0, 200.0))
-        // );
 
         let text_renderer = TextRenderer::new(&device, &queue, surface_config.format);
 

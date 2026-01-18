@@ -77,7 +77,6 @@ impl State {
             If you go really hard with ctrl+v on one of the text edit boxes, you'll quickly see the other limitation. Rendering can efficiently skip the text that's outside the clip area (or the screen), but the layouting and shaping can't.\n\n\
             \
             One funny issue is that Parley's Selection is always relative to the layout, not the raw text. This means that even when doing operations that could technically work on the raw text still, we still need to work on a fresh layout.\n\
-            \
             So, if you hold down ctrl+v and paste ten times in the time of a frame, we have to do ten layout rebuilds before rendering once. The subsequent pastes should replace the selection, so they need a fresh selection to replace, so they need a fresh layout. Ideally you'd be fine with just one rebuild per render.\n\
             This slows down the frame, giving you time to spam even more events before next one, and so on. When the whole program freezes for 20-30 seconds, it's because of this.\n\n\
             \
@@ -246,8 +245,7 @@ impl winit::application::ApplicationHandler for Application {
                 // Update first frame stats display when we have GPU time (only once)
                 if state.first_gpu_time.is_some() && !state.first_frame_stats_written {
                     state.scratch_string.clear();
-                    write!(
-                        &mut state.scratch_string,
+                    write!(&mut state.scratch_string,
                         "First frame:\nPrepare:    {:?}\nGPU Render: {:?}\nFrame:      {:?}",
                         state.first_prepare_time.unwrap(),
                         state.first_gpu_time.unwrap(),
@@ -265,8 +263,7 @@ impl winit::application::ApplicationHandler for Application {
                     let fps = 1.0 / avg_frame.as_secs_f64();
 
                     state.scratch_string.clear();
-                    write!(
-                        &mut state.scratch_string,
+                    write!(&mut state.scratch_string,
                         "Average (last 1 second):\nPrepare:    {:?}\nGPU Render: {:?}\nFrame:      {:?}\nFPS: {:.1}",
                         avg_prepare, avg_gpu, avg_frame, fps
                     ).unwrap();
@@ -278,24 +275,24 @@ impl winit::application::ApplicationHandler for Application {
                     state.total_prepare_time = Duration::ZERO;
                     state.total_gpu_time = Duration::ZERO;
                     state.total_frame_time = Duration::ZERO;
-                    
-                    // Update byte count
-                    let mut char_count = 0;
-                    char_count += state.text.get_text_box(&state.header).text().len();
-                    char_count += state.text.get_text_box(&state.first_frame_stats).text().len();
-                    char_count += state.text.get_text_box(&state.avg_stats).text().len();
-                    char_count += state.text.get_text_box(&state.frame_counter).text().len();
-                    char_count += state.text.get_text_box(&state.char_count).text().len();
-                    for b in &state.edit_boxes {
-                        char_count += state.text.get_text_edit(&b).raw_text().len();
-                    }
-
-                    state.scratch_string.clear();
-                    write!(&mut state.scratch_string,
-                        "Total bytes of text: {}", char_count
-                    ).unwrap();
-                    state.text.get_text_box_mut(&state.char_count).set_text(&state.scratch_string);
                 }
+                    
+                // Update byte count
+                let mut char_count = 0;
+                char_count += state.text.get_text_box(&state.header).text().len();
+                char_count += state.text.get_text_box(&state.first_frame_stats).text().len();
+                char_count += state.text.get_text_box(&state.avg_stats).text().len();
+                char_count += state.text.get_text_box(&state.frame_counter).text().len();
+                char_count += state.text.get_text_box(&state.char_count).text().len();
+                for b in &state.edit_boxes {
+                    char_count += state.text.get_text_edit(&b).raw_text().len();
+                }
+
+                state.scratch_string.clear();
+                write!(&mut state.scratch_string,
+                    "Total bytes of text: {}", char_count
+                ).unwrap();
+                state.text.get_text_box_mut(&state.char_count).set_text(&state.scratch_string);
 
                 // Render
                 let prepare_start = Instant::now();

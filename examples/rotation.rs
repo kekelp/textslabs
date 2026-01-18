@@ -16,6 +16,7 @@ struct State {
     surface_config: SurfaceConfiguration,
     text: Text,
     text_renderer: TextRenderer,
+    text_edit_handle: TextEditHandle,
 }
 
 impl State {
@@ -29,9 +30,11 @@ impl State {
 
         let text_renderer = TextRenderer::new(&device, &queue, surface_config.format);
         let mut text = Text::new();
-        let _text_edit_handle = text.add_text_edit("Type here...".to_string(), (50.0, 50.0), (400.0, 200.0), 0.0);
+        let text_edit_handle = text.add_text_edit("Type here. Rotations after the cpu-side rasterization by just rotating the gpu quads, so this is not a high quality way to render highly dynamic text. If you just need to rotate text by 90 degrees, as in an axis label in a lot, it's good.".to_string(), (50.0, 50.0), (400.0, 200.0), 0.0);
+        
 
-        Self { device, queue, surface, surface_config, window, text, text_renderer }
+
+        Self { device, queue, surface, surface_config, window, text, text_renderer, text_edit_handle }
     }
 }
 
@@ -60,6 +63,23 @@ impl winit::application::ApplicationHandler for Application {
                 state.surface.configure(&state.device, &state.surface_config);
             }
             WindowEvent::RedrawRequested => {
+
+                let t = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs_f64();
+            
+                let period_seconds = 5.0;
+                let rotation = ((t % period_seconds) / period_seconds * std::f64::consts::TAU) as f32;
+                
+                state.text.get_text_edit_mut(&state.text_edit_handle).set_transform(
+                    Transform2D {
+                        translation: (300.0, 300.0),
+                        rotation,
+                        scale: 1.0,
+                    }
+                );
+
                 state.text.prepare_all(&mut state.text_renderer);
                 state.text_renderer.load_to_gpu(&state.device, &state.queue);
         

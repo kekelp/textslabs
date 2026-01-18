@@ -111,12 +111,7 @@ impl State {
                             view: &view,
                             resolve_target: None,
                             ops: Operations {
-                                load: LoadOp::Clear(wgpu::Color {
-                                    r: 0.1,
-                                    g: 0.1,
-                                    b: 0.2,
-                                    a: 1.0,
-                                }),
+                                load: LoadOp::Clear(wgpu::Color { r: 0.1, g: 0.1, b: 0.2, a: 1.0, }),
                                 store: wgpu::StoreOp::Store,
                             },
                             depth_slice: None,
@@ -169,8 +164,8 @@ impl State {
             if text_depth < OCCLUDING_RECT_DEPTH {
                 self.text.handle_event_with_topmost(event, &self.window, Some(topmost_text_box));
             } else {
-                // ... run custom code to handle the rectangle being clicked, if there was any.
                 self.text.handle_event_with_topmost(event, &self.window, None);
+                // ... and run custom code to handle the rectangle being clicked, if there was any.
             }
 
         } else {
