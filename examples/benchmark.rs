@@ -2,7 +2,7 @@ use std::{sync::Arc, time::{Duration, Instant}};
 use winit::{event::WindowEvent, event_loop::EventLoop, window::Window};
 use wgpu::*;
 use textslabs::*;
-use textslabs::parley::{TextStyle, OverflowWrap};
+use textslabs::parley::TextStyle;
 use wgpu_profiler::{GpuProfiler, GpuProfilerSettings};
 
 fn main() {
@@ -18,9 +18,10 @@ struct State {
     surface_config: SurfaceConfiguration,
     text: Text,
     text_renderer: TextRenderer,
+    header: TextBoxHandle,
     first_frame_stats: TextBoxHandle,
     avg_stats: TextBoxHandle,
-    frame_counter_display: TextBoxHandle,
+    frame_counter: TextBoxHandle,
     char_count: TextBoxHandle,
     edit_boxes: Vec<TextEditHandle>,
     gpu_profiler: GpuProfiler,
@@ -55,62 +56,68 @@ impl State {
         let text_renderer = TextRenderer::new(&device, &queue, surface_config.format);
         let mut text = Text::new();
 
-        let small_style = text.add_style(TextStyle {
-            font_size: 16.0,
+        let big_style = text.add_style(TextStyle {
+            font_size: 24.0,
             brush: ColorBrush([255, 255, 255, 255]),
-            overflow_wrap: OverflowWrap::Anywhere,
             ..Default::default()
         }, None);
 
+        let small_style = text.add_style(TextStyle {
+            font_size: 16.0,
+            brush: ColorBrush([255, 255, 255, 255]),
+            ..Default::default()
+        }, None);
+
+        text.set_default_style(&small_style);
+        
         // Create header text box
         let header = text.add_text_box(
             "This is an informal benchmark for the library and for the builtin atlas renderer.\n\
-            The first time is very slow because of cpu-side glyph rasterization. In the following frames, the glyphs are cached in the atlases.\n\
+            The first frame is very slow because of cpu-side glyph rasterization. In the following frames, the glyphs are cached in the atlases.\n\
             If you go really hard with ctrl+v on one of the text edit boxes, you'll quickly see the other limitation. Rendering can efficiently skip the text that's outside the clip area (or the screen), but the layouting and shaping can't.\n\
             There are two problems: \n\
                 - Parley's Selection is always relative to the layout, not the raw text. This means that even when doing operations that could technically work on the raw text still, we still need to work on a fresh layout.\n\
-                This means that if you ctrl+v ten times in the time of a frame, we have to do ten rebuilds before rendering once. Ideally you'd be fine with just one rebuild per render.\n\
-                This slows down the frame, giving you time to spam even more events in frame duration. When the whole program freezes for 20-30 seconds, it's because of this.\n\
-                - Layouting a long text even once is still slow. This shouldn't be enough to cause dramatic 30 second freezes, but it can still cause the FPS to drop very low.   
+                This means that if you ctrl+v ten times in the time of a frame, we have to do ten layout rebuilds before rendering once. Ideally you'd be fine with just one rebuild per render.\n\
+                This slows down the frame, giving you time to spam even more events before next one, and so on. When the whole program freezes for 20-30 seconds, it's because of this.\n\
+                - Layouting a long text even once is still slow. This alone isn't enough to cause dramatic 30 second freezes, but it can still cause the FPS to drop very low. \n\
+                Of course if text is split reasonably across multiple text boxes (one per UI element of per paragraph) it's probably fine.
              ",
             (10.0, 10.0),
             (1850.0, 60.0),
             0.0
         );
-        text.get_text_box_mut(&header).set_style(&small_style);
 
         // Create stats display text boxes
+        
+        let row_y = 240.0;
         let first_frame_stats = text.add_text_box(
             "",
-            (10.0, 200.0),
+            (10.0, row_y),
             (400.0, 100.0),
             0.0
         );
 
         let avg_stats = text.add_text_box(
             "Average: computing...".to_string(),
-            (420.0, 200.0),
+            (420.0, row_y),
             (400.0, 100.0),
             0.0
         );
 
         let char_count = text.add_text_box(
             "Total bytes of text:".to_string(),
-            (670.0, 200.0),
+            (670.0, row_y),
             (400.0, 100.0),
             0.0
         );
+        text.get_text_box_mut(&char_count).set_style(&big_style);
 
-        text.get_text_box_mut(&first_frame_stats).set_style(&small_style);
-        text.get_text_box_mut(&avg_stats).set_style(&small_style);
-
-        let frame_counter_display = text.add_text_box(
+        let frame_counter = text.add_text_box(
             "0",
-            (1820.0, 10.0),
+            (1820.0, 20.0),
             (90.0, 30.0),
             0.0
         );
-        text.get_text_box_mut(&frame_counter_display).set_style(&small_style);
 
         // Sample texts in different scripts
         let latin_text = "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum. Sed ut perspiciatis unde omnis iste natus error sit voluptatem accusantium doloremque laudantium, totam rem aperiam, eaque ipsa quae ab illo inventore veritatis et quasi architecto beatae vitae dicta sunt explicabo. Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum. Sed ut perspiciatis unde omnis iste natus error sit voluptatem accusantium doloremque laudantium, totam rem aperiam, eaque ipsa quae ab illo inventore veritatis et quasi architecto beatae vitae dicta sunt explicabo.Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum. Sed ut perspiciatis unde omnis iste natus error sit voluptatem accusantium doloremque laudantium, totam rem aperiam, eaque ipsa quae ab illo inventore veritatis et quasi architecto beatae vitae dicta sunt explicabo. Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum. Sed ut perspiciatis unde omnis iste natus error sit voluptatem accusantium doloremque laudantium, totam rem aperiam, eaque ipsa quae ab illo inventore veritatis et quasi architecto beatae vitae dicta sunt explicabo.Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum. Sed ut perspiciatis unde omnis iste natus error sit voluptatem accusantium doloremque laudantium, totam rem aperiam, eaque ipsa quae ab illo inventore veritatis et quasi architecto beatae vitae dicta sunt explicabo. Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum. Sed ut perspiciatis unde omnis iste natus error sit voluptatem accusantium doloremque laudantium, totam rem aperiam, eaque ipsa quae ab illo inventore veritatis et quasi architecto beatae vitae dicta sunt explicabo.Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi";
@@ -129,7 +136,7 @@ impl State {
         let box_width = 600.0;
         let box_height = 330.0;
         let start_x = 10.0;
-        let start_y = 320.0;
+        let start_y = 360.0;
         let spacing_y = 350.0;
 
         let samples = vec![
@@ -154,7 +161,6 @@ impl State {
                 (box_width, box_height),
                 0.0
             );
-            text.get_text_edit_mut(&handle).set_style(&small_style);
             edit_boxes.push(handle);
         }
 
@@ -174,7 +180,8 @@ impl State {
             text_renderer,
             first_frame_stats,
             avg_stats,
-            frame_counter_display,
+            header,
+            frame_counter,
             char_count,
             gpu_profiler,
             frame_count: 0,
@@ -233,7 +240,7 @@ impl winit::application::ApplicationHandler for Application {
                 use std::fmt::Write;
                 state.scratch_string.clear();
                 write!(&mut state.scratch_string, "Frame count:\n{}", state.frame_count).unwrap();
-                state.text.get_text_box_mut(&state.frame_counter_display).set_text(&state.scratch_string);
+                state.text.get_text_box_mut(&state.frame_counter).set_text(&state.scratch_string);
 
                 // Update first frame stats display when we have GPU time (only once)
                 if state.first_gpu_time.is_some() && !state.first_frame_stats_written {
@@ -273,9 +280,10 @@ impl winit::application::ApplicationHandler for Application {
                     
                     // Update byte count
                     let mut char_count = 0;
+                    char_count += state.text.get_text_box(&state.header).text().len();
                     char_count += state.text.get_text_box(&state.first_frame_stats).text().len();
                     char_count += state.text.get_text_box(&state.avg_stats).text().len();
-                    char_count += state.text.get_text_box(&state.frame_counter_display).text().len();
+                    char_count += state.text.get_text_box(&state.frame_counter).text().len();
                     char_count += state.text.get_text_box(&state.char_count).text().len();
                     for b in &state.edit_boxes {
                         char_count += state.text.get_text_edit(&b).raw_text().len();

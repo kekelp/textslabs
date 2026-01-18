@@ -65,6 +65,7 @@ pub struct Text {
 // A cooler way to do this would be to make the TextBoxMut be TextBoxMut { i: u32, text: &mut Text }. So you have access to the whole Text struct unconditionally, and you don't have to separate things this way. And to get the actual text box, you do self.text.text_boxes[i] every time. But we're trying this way this time
 pub(crate) struct Shared {
     pub styles: SlotMap<DefaultKey, StyleInner>,
+    // todo use the newtype
     pub default_style_key: DefaultKey,
     pub text_changed: bool,
     pub decorations_changed: bool,
@@ -1673,7 +1674,12 @@ impl Text {
         Some(family.name().to_string())
     }
 
-    
+    /// Set an inserted style as the default style.
+    pub fn set_default_style(&mut self, style: &StyleHandle) {
+        self.shared.default_style_key = style.key;
+        // todo set needs relayout?
+    }
+
     #[cfg(feature = "accessibility")]
     /// Returns the accessibility node ID of the currently focused text element.
     pub fn focused_accesskit_id(&self) -> Option<NodeId> {
