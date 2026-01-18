@@ -1,9 +1,10 @@
 use std::{sync::Arc, time::{Duration, Instant}};
-use winit::{event::WindowEvent, event_loop::EventLoop, window::Window};
+use winit::{event::{ElementState, WindowEvent}, event_loop::EventLoop, keyboard::ModifiersState, window::Window};
 use wgpu::*;
 use textslabs::*;
 use textslabs::parley::TextStyle;
 use wgpu_profiler::{GpuProfiler, GpuProfilerSettings};
+use std::fmt::Write;
 
 fn main() {
     let event_loop = EventLoop::new().unwrap();
@@ -23,6 +24,7 @@ struct State {
     avg_stats: TextBoxHandle,
     frame_counter: TextBoxHandle,
     char_count: TextBoxHandle,
+    help_text: TextBoxHandle,
     edit_boxes: Vec<TextEditHandle>,
     gpu_profiler: GpuProfiler,
     frame_count: u32,
@@ -36,7 +38,13 @@ struct State {
     first_frame_stats_written: bool,
     scratch_string: String,
     last_frame_end: Instant,
+    modifiers: ModifiersState,
+    benchmark_mode: bool,
 }
+
+const BENCHMARK_MODE_DESC: &'static str = "Press Ctrl+S to toggle between realistic mode and benchmark mode.\nCurrent mode: benchmark. In this mode, we change the frame-counter text on every frame. This forces the renderer to reprepare all the text every frame. This is good for benchmarking prepare() itself, but for most applications, the other mode is more realistic.";
+const REALISTIC_MODE_DESC: &'static str = "Press Ctrl+S to toggle between realistic mode and benchmark mode.\nCurrent mode: realistic. In this mode, the text only changes once per second. This means that even if the user is scrolling, we can get away with just moving around the quads that we prepared last frame instead of re-preparing everything. This helps a lot.";
+
 
 impl State {
     fn new(window: Arc<Window>) -> Self {
@@ -89,24 +97,24 @@ impl State {
 
         // Create stats display text boxes
         
-        let row_y = 280.0;
+        let stats_row_y = 270.0;
         let first_frame_stats = text.add_text_box(
             "",
-            (110.0, row_y),
+            (110.0, stats_row_y),
             (400.0, 100.0),
             0.0
         );
 
         let avg_stats = text.add_text_box(
             "Average: computing...".to_string(),
-            (520.0, row_y),
+            (520.0, stats_row_y),
             (400.0, 100.0),
             0.0
         );
 
         let char_count = text.add_text_box(
             "Total bytes of text:".to_string(),
-            (880.0, row_y),
+            (880.0, stats_row_y),
             (400.0, 100.0),
             0.0
         );
@@ -116,6 +124,13 @@ impl State {
             "0",
             (1820.0, 20.0),
             (90.0, 30.0),
+            0.0
+        );
+
+        let help_text = text.add_text_box(
+            REALISTIC_MODE_DESC,
+            (1250.0, stats_row_y),
+            (600.0, 100.0),
             0.0
         );
 
@@ -183,6 +198,7 @@ impl State {
             header,
             frame_counter,
             char_count,
+            help_text,
             gpu_profiler,
             frame_count: 0,
             last_print_time: Instant::now(),
@@ -196,6 +212,8 @@ impl State {
             scratch_string: String::with_capacity(64),
             last_frame_end: Instant::now(),
             edit_boxes,
+            modifiers: ModifiersState::empty(),
+            benchmark_mode: false,
         }
     }
 }
@@ -225,6 +243,26 @@ impl winit::application::ApplicationHandler for Application {
                 (state.surface_config.width, state.surface_config.height) = (size.width, size.height);
                 state.surface.configure(&state.device, &state.surface_config);
             }
+            WindowEvent::ModifiersChanged(modifiers) => {
+                state.modifiers = modifiers.state();
+            }
+            WindowEvent::KeyboardInput { event, .. } => {
+                if event.state == ElementState::Pressed && state.modifiers.control_key() {
+                    if let Some(s) = event.text {
+                        if s.as_str() == "s" {
+                            state.benchmark_mode = !state.benchmark_mode;
+
+                            state.scratch_string.clear();
+                            let help_text = if state.benchmark_mode {
+                                BENCHMARK_MODE_DESC
+                            } else {
+                                REALISTIC_MODE_DESC
+                            };
+                            state.text.get_text_box_mut(&state.help_text).set_text(&help_text);
+                        }
+                    }
+                }
+            }
             WindowEvent::RedrawRequested => {
 
                 // Store first frame timings
@@ -236,11 +274,29 @@ impl winit::application::ApplicationHandler for Application {
 
                 state.frame_count += 1;
 
-                // Update frame counter display every frame (to force text_changed = true)
-                use std::fmt::Write;
-                state.scratch_string.clear();
-                write!(&mut state.scratch_string, "Frame count:\n{}", state.frame_count).unwrap();
-                state.text.get_text_box_mut(&state.frame_counter).set_text(&state.scratch_string);
+                // In realtime mode, update frame counter and byte count every frame
+                if state.benchmark_mode {
+                    state.scratch_string.clear();
+                    write!(&mut state.scratch_string, "Frame count:\n{}", state.frame_count).unwrap();
+                    state.text.get_text_box_mut(&state.frame_counter).set_text(&state.scratch_string);
+
+                    let mut char_count = 0;
+                    char_count += state.text.get_text_box(&state.header).text().len();
+                    char_count += state.text.get_text_box(&state.first_frame_stats).text().len();
+                    char_count += state.text.get_text_box(&state.avg_stats).text().len();
+                    char_count += state.text.get_text_box(&state.frame_counter).text().len();
+                    char_count += state.text.get_text_box(&state.char_count).text().len();
+                    char_count += state.text.get_text_box(&state.help_text).text().len();
+                    for b in &state.edit_boxes {
+                        char_count += state.text.get_text_edit(&b).raw_text().len();
+                    }
+
+                    state.scratch_string.clear();
+                    write!(&mut state.scratch_string,
+                        "Total bytes of text: {}", char_count
+                    ).unwrap();
+                    state.text.get_text_box_mut(&state.char_count).set_text(&state.scratch_string);
+                }
 
                 // Update first frame stats display when we have GPU time (only once)
                 if state.first_gpu_time.is_some() && !state.first_frame_stats_written {
@@ -268,7 +324,31 @@ impl winit::application::ApplicationHandler for Application {
                         avg_prepare, avg_gpu, avg_frame, fps
                     ).unwrap();
                     state.text.get_text_box_mut(&state.avg_stats).set_text(&state.scratch_string);
-                    
+
+                    // In one-second mode, update frame counter and byte count here
+                    if !state.benchmark_mode {
+                        state.scratch_string.clear();
+                        write!(&mut state.scratch_string, "Frame count:\n{}", state.frame_count).unwrap();
+                        state.text.get_text_box_mut(&state.frame_counter).set_text(&state.scratch_string);
+
+                        let mut char_count = 0;
+                        char_count += state.text.get_text_box(&state.header).text().len();
+                        char_count += state.text.get_text_box(&state.first_frame_stats).text().len();
+                        char_count += state.text.get_text_box(&state.avg_stats).text().len();
+                        char_count += state.text.get_text_box(&state.frame_counter).text().len();
+                        char_count += state.text.get_text_box(&state.char_count).text().len();
+                        char_count += state.text.get_text_box(&state.help_text).text().len();
+                        for b in &state.edit_boxes {
+                            char_count += state.text.get_text_edit(&b).raw_text().len();
+                        }
+
+                        state.scratch_string.clear();
+                        write!(&mut state.scratch_string,
+                            "Total bytes of text: {}", char_count
+                        ).unwrap();
+                        state.text.get_text_box_mut(&state.char_count).set_text(&state.scratch_string);
+                    }
+
                     // Reset counters
                     state.frame_count = 0;
                     state.last_print_time = Instant::now();
@@ -276,23 +356,6 @@ impl winit::application::ApplicationHandler for Application {
                     state.total_gpu_time = Duration::ZERO;
                     state.total_frame_time = Duration::ZERO;
                 }
-                    
-                // Update byte count
-                let mut char_count = 0;
-                char_count += state.text.get_text_box(&state.header).text().len();
-                char_count += state.text.get_text_box(&state.first_frame_stats).text().len();
-                char_count += state.text.get_text_box(&state.avg_stats).text().len();
-                char_count += state.text.get_text_box(&state.frame_counter).text().len();
-                char_count += state.text.get_text_box(&state.char_count).text().len();
-                for b in &state.edit_boxes {
-                    char_count += state.text.get_text_edit(&b).raw_text().len();
-                }
-
-                state.scratch_string.clear();
-                write!(&mut state.scratch_string,
-                    "Total bytes of text: {}", char_count
-                ).unwrap();
-                state.text.get_text_box_mut(&state.char_count).set_text(&state.scratch_string);
 
                 // Render
                 let prepare_start = Instant::now();
