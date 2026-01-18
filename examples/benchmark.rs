@@ -43,7 +43,7 @@ struct State {
 }
 
 const BENCHMARK_MODE_DESC: &'static str = "Press Ctrl+S to toggle between realistic mode and benchmark mode.\nCurrent mode: benchmark. In this mode, we change the frame-counter text on every frame. This forces the renderer to reprepare all the text every frame. This is good for benchmarking prepare() itself, but for most applications, the other mode is more realistic.";
-const REALISTIC_MODE_DESC: &'static str = "Press Ctrl+S to toggle between realistic mode and benchmark mode.\nCurrent mode: realistic. In this mode, the text only changes once per second. This means that even if the user is scrolling, we can get away with just moving around the quads that we prepared last frame instead of re-preparing everything. This helps a lot.";
+const REALISTIC_MODE_DESC: &'static str = "Press Ctrl+S to toggle between realistic mode and benchmark mode.\nCurrent mode: realistic. In this mode, the text only changes once per second. This means that even if the user is scrolling, we can get away with just moving around the quads that we prepared last frame instead of re-preparing everything. This helps a lot, even when the glyphs are already cached in the atlas.";
 
 
 impl State {

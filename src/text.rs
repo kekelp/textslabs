@@ -1783,6 +1783,17 @@ impl Text {
 }
 
 fn move_quads_for_scroll(text_renderer: &mut TextRenderer, quad_storage: &mut QuadStorage, current_offset: (f32, f32)) -> bool {
+    // Check if we've scrolled too far
+    let distance_from_original_x = (current_offset.0 - quad_storage.original_offset.0).abs();
+    let distance_from_original_y = (current_offset.1 - quad_storage.original_offset.1).abs();
+
+    // Use the same tolerance as line culling
+    const SCROLL_TOLERANCE: f32 = 200.0;
+
+    if distance_from_original_x > SCROLL_TOLERANCE || distance_from_original_y > SCROLL_TOLERANCE {
+        return false; // Too far from original, need to reprepare
+    }
+
     let delta_x = current_offset.0 - quad_storage.last_offset.0;
     let delta_y = current_offset.1 - quad_storage.last_offset.1;
 

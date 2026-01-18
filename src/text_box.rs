@@ -69,10 +69,12 @@ pub struct TextBox {
 /// Remembers the location of the glyph quads corresponding to the text in this text box, in order to allow fast scrolling without relayouting.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct QuadStorage {
-    /// Range into the text renderer quads. If None, it doesn't mean that there are no quads, but rather that the text box was never prepared. 
+    /// Range into the text renderer quads. If None, it doesn't mean that there are no quads, but rather that the text box was never prepared.
     pub quad_range: Option<(usize, usize)>,
     /// The scroll offset used when this quad data was generated
     pub last_offset: (f32, f32),
+    /// The original scroll offset when the quads were first prepared (not moved)
+    pub original_offset: (f32, f32),
 }
 
 

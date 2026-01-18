@@ -5,6 +5,19 @@ const CONTENT_TYPE_MASK: u32 = 0;
 const CONTENT_TYPE_COLOR: u32 = 1;
 const CONTENT_TYPE_DECORATION: u32 = 2;
 
+// Scroll optimization tolerance: how many pixels we can scroll from the original
+// preparation point before needing to reprepare (to ensure culled lines stay culled)
+//
+// This tolerance enables two optimizations to work together:
+// 1. Line culling: Skip preparing lines outside the clip area (with tolerance margin)
+// 2. Quad moving: When scrolling small distances, just adjust quad positions instead of repreparing
+//
+// The tolerance ensures that:
+// - Lines are prepared with a margin (SCROLL_TOLERANCE) beyond the visible area
+// - Quads can be moved within that margin without bringing unprepared lines into view
+// - Once scrolling exceeds the tolerance, we reprepare everything with the new scroll offset
+const SCROLL_TOLERANCE: f32 = 200.0;
+
 // Flag bits
 const FADE_ENABLED_BIT: u32 = 4;
 
@@ -533,8 +546,9 @@ impl TextRenderer {
     /// Capture quad ranges after text rendering and populate QuadStorage
     fn capture_quad_ranges_after(&mut self, quad_storage: &mut QuadStorage, current_offset: (f32, f32), start_index: usize) {
         let end_index = self.text_renderer.quads.len();
-        quad_storage.quad_range = Some((start_index, end_index));        
+        quad_storage.quad_range = Some((start_index, end_index));
         quad_storage.last_offset = current_offset;
+        quad_storage.original_offset = current_offset;
     }
 
     /// Get the vertex buffer for external rendering
@@ -672,11 +686,11 @@ impl ContextlessTextRenderer {
             let metrics = line.metrics();
             let line_y = top + metrics.baseline;
 
-            // Cull lines
+            // Cull lines with tolerance to allow for scroll optimization
             let line_top = line_y - metrics.ascent;
             let line_bottom = line_y + metrics.descent;
 
-            if line_bottom < clip_top || line_top > clip_bottom {
+            if line_bottom < clip_top - SCROLL_TOLERANCE || line_top > clip_bottom + SCROLL_TOLERANCE {
                 continue;
             }
 
