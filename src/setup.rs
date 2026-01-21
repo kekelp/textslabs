@@ -53,6 +53,17 @@ const BIND_GROUP_LAYOUT_DESC: BindGroupLayoutDescriptor = wgpu::BindGroupLayoutD
                 min_binding_size: NonZeroU64::new(mem::size_of::<Params>() as u64),
             },
             count: None,
+        },
+        // Box data storage buffer
+        BindGroupLayoutEntry {
+            binding: 5,
+            visibility: ShaderStages::VERTEX.union(ShaderStages::FRAGMENT),
+            ty: BindingType::Buffer {
+                ty: BufferBindingType::Storage { read_only: true },
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
+            count: None,
         }
     ],
     label: Some("bind group layout"),
@@ -107,6 +118,15 @@ pub(crate) fn create_vertex_buffer(device: &Device, size: u64) -> Buffer {
     })
 }
 
+pub(crate) fn create_box_data_buffer(device: &Device, size: u64) -> Buffer {
+    device.create_buffer(&BufferDescriptor {
+        label: Some("box data buffer"),
+        size,
+        usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    })
+}
+
 
 impl ContextlessTextRenderer {
     pub fn new_with_params(
@@ -148,18 +168,14 @@ impl ContextlessTextRenderer {
             array_stride: std::mem::size_of::<GlyphQuad>() as wgpu::BufferAddress,
             step_mode: wgpu::VertexStepMode::Instance,
             attributes: &wgpu::vertex_attr_array![
-                0 => Uint32x2,    // clip_rect_packed
-                1 => Uint32,      // pos_packed
-                2 => Uint32,      // dim_packed
-                3 => Uint32,      // uv_origin_packed
-                4 => Uint32,      // color
-                5 => Float32,     // depth
-                6 => Uint32,      // flags_and_page
-                7 => Float32,     // translation_x
-                8 => Float32,     // translation_y
-                9 => Float32,     // rotation
-                10 => Float32,    // scale
-                11 => Uint32x4,   // _padding
+                0 => Uint32,      // pos_packed
+                1 => Uint32,      // dim_packed
+                2 => Uint32,      // uv_origin_packed
+                3 => Uint32,      // color
+                4 => Float32,     // depth
+                5 => Uint32,      // flags_and_page
+                6 => Uint32,      // box_index
+                7 => Uint32,      // _padding
             ],
         };
 
@@ -230,8 +246,9 @@ impl ContextlessTextRenderer {
 
         let tmp_image = Image::new();
         let frame = 1;
-        
+
         let vertex_buffer = create_vertex_buffer(device, INITIAL_BUFFER_SIZE);
+        let box_data_buffer = create_box_data_buffer(device, 1024 * std::mem::size_of::<BoxData>() as u64);
         
         let (mask_texture_array, color_texture_array) = rebuild_texture_arrays(
             device,
@@ -249,6 +266,7 @@ impl ContextlessTextRenderer {
             &vertex_buffer,
             &sampler,
             &params_buffer,
+            &box_data_buffer,
             &bind_group_layout,
         );
 
@@ -259,6 +277,7 @@ impl ContextlessTextRenderer {
             mask_atlas_pages,
             color_atlas_pages,
             quads: Vec::with_capacity(1000),
+            box_data: Vec::with_capacity(100),
             mask_texture_array,
             color_texture_array,
             bind_group,
@@ -271,6 +290,7 @@ impl ContextlessTextRenderer {
             last_frame_evicted: 0,
             // cached_scaler: None,
             vertex_buffer,
+            box_data_buffer,
             needs_gpu_sync: true,
             needs_texture_array_rebuild: false,
         };
@@ -357,6 +377,7 @@ impl ContextlessTextRenderer {
             &self.vertex_buffer,
             &self.sampler,
             &self.params_buffer,
+            &self.box_data_buffer,
             &self.bind_group_layout,
         );
 
@@ -372,6 +393,7 @@ fn create_bind_group(
     vertex_buffer: &wgpu::Buffer,
     sampler: &wgpu::Sampler,
     params_buffer: &wgpu::Buffer,
+    box_data_buffer: &wgpu::Buffer,
     bind_group_layout: &wgpu::BindGroupLayout,
 ) -> wgpu::BindGroup {
 
@@ -405,6 +427,10 @@ fn create_bind_group(
         wgpu::BindGroupEntry {
             binding: 4,
             resource: params_buffer.as_entire_binding(),
+        },
+        wgpu::BindGroupEntry {
+            binding: 5,
+            resource: box_data_buffer.as_entire_binding(),
         },
     ];
 

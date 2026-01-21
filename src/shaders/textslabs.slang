@@ -1,16 +1,24 @@
-struct GlyphQuad {
+struct BoxData {
     uint2 clip_rect_packed;
+    float translation_x;
+    float translation_y;
+    float rotation;
+    float scale;
+    float screen_clip_min_x;
+    float screen_clip_min_y;
+    float screen_clip_max_x;
+    float screen_clip_max_y;
+}
+
+struct GlyphQuad {
     uint pos_packed;
     uint dim_packed;
     uint uv_origin_packed;
     uint color;
     float depth;
     uint flags_and_page;
-    float translation_x;
-    float translation_y;
-    float rotation;
-    float scale;
-    uint4 _padding;
+    uint box_index;
+    uint _padding;
 }
 
 struct Params {
@@ -25,6 +33,7 @@ struct TextSlabs {
     SamplerState atlas_sampler;
     StructuredBuffer<GlyphQuad> quads;
     ConstantBuffer<Params> params;
+    StructuredBuffer<BoxData> box_data;
 }
 
 ParameterBlock<TextSlabs> textslabs;
@@ -106,6 +115,7 @@ void text_vertex(
     out float2 uv
 ) {
     GlyphQuad quad = textslabs.quads[instanceIndex];
+    BoxData box = textslabs.box_data[quad.box_index];
 
     float2 uv01 = float2(
         vertexIndex & 1u,
@@ -116,8 +126,8 @@ void text_vertex(
     float2 dim = split(quad.dim_packed);
 
     // Apply clipping
-    float2 clip_xy = split_i16(quad.clip_rect_packed.x);
-    float2 clip_wh = split_i16(quad.clip_rect_packed.y);
+    float2 clip_xy = split_i16(box.clip_rect_packed.x);
+    float2 clip_wh = split_i16(box.clip_rect_packed.y);
     float4 clip_rect = float4(clip_xy.x, clip_xy.y, clip_wh.x, clip_wh.y);
 
     ClipResult clip_result = apply_clipping(quad_pos, dim, clip_rect, uv01);
@@ -126,18 +136,18 @@ void text_vertex(
     float2 pos = clip_result.position;
 
     // Scale
-    float2 scaled_pos = pos * quad.scale;
+    float2 scaled_pos = pos * box.scale;
 
     // Rotate
-    float cos_r = cos(quad.rotation);
-    float sin_r = sin(quad.rotation);
+    float cos_r = cos(box.rotation);
+    float sin_r = sin(box.rotation);
     float2 rotated_pos = float2(
         cos_r * scaled_pos.x - sin_r * scaled_pos.y,
         sin_r * scaled_pos.x + cos_r * scaled_pos.y
     );
 
     // Translate
-    float2 transformed_pos = rotated_pos + float2(quad.translation_x, quad.translation_y);
+    float2 transformed_pos = rotated_pos + float2(box.translation_x, box.translation_y);
 
     // Convert to NDC
     float2 ndc = (transformed_pos / resolution) * 2.0 - 1.0;
@@ -151,8 +161,15 @@ void text_vertex(
     uv = (uv_origin + clip_result.uv_offset + clip_result.dimensions * uv01) / atlas_size;
 }
 
-float4 text_fragment_pure(GlyphQuad quad, float2 uv): SV_Target {
-    
+float4 text_fragment_pure(GlyphQuad quad, float2 uv, float4 frag_coord): SV_Target {
+    // Apply screen-space clipping using built-in fragment position
+    // frag_coord.xy is in pixel coordinates (screen space)
+    BoxData box = textslabs.box_data[quad.box_index];
+    if (frag_coord.x < box.screen_clip_min_x || frag_coord.x > box.screen_clip_max_x ||
+        frag_coord.y < box.screen_clip_min_y || frag_coord.y > box.screen_clip_max_y) {
+        discard;
+    }
+
     float4 color = unpack_color_u32(quad.color);
     uint page_index = unpack_page_index(quad.flags_and_page);
     uint content_type = get_content_type(quad.flags_and_page);
@@ -179,7 +196,7 @@ float4 text_fragment_pure(GlyphQuad quad, float2 uv): SV_Target {
     }
 }
 
-float4 text_fragment(uint primitiveIndex, float2 uv): SV_Target {
+float4 text_fragment(uint primitiveIndex, float2 uv, float4 frag_coord: SV_Position): SV_Target {
     GlyphQuad quad = textslabs.quads[primitiveIndex];
-    return text_fragment_pure(quad, uv);
+    return text_fragment_pure(quad, uv, frag_coord);
 }

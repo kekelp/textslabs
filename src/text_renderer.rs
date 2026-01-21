@@ -51,6 +51,7 @@ pub(crate) struct ContextlessTextRenderer {
     pub(crate) color_atlas_pages: Vec<AtlasPage<RgbaImage>>,
 
     pub(crate) quads: Vec<GlyphQuad>,
+    pub(crate) box_data: Vec<BoxData>,
     
     // Combined texture arrays and single bind group
     pub(crate) mask_texture_array: Texture,
@@ -66,8 +67,9 @@ pub(crate) struct ContextlessTextRenderer {
     pub atlas_size: u32,
 
     // pub(crate) cached_scaler: Option<CachedScaler>,
-    
+
     pub(crate) vertex_buffer: Buffer,
+    pub(crate) box_data_buffer: Buffer,
     pub(crate) needs_gpu_sync: bool,
     pub(crate) needs_texture_array_rebuild: bool,
 }
@@ -115,7 +117,7 @@ impl ContextlessTextRenderer {
         self.last_frame_evicted != current_frame
     }
 
-    fn add_selection_rect(&mut self, rect: parley::BoundingBox, left: f32, top: f32, color: u32, clip_rect: Option<parley::BoundingBox>, transform: Transform2D) {
+    fn add_selection_rect(&mut self, rect: parley::BoundingBox, left: f32, top: f32, color: u32, clip_rect: Option<parley::BoundingBox>, box_index: u32) {
         let left = left as i32;
         let top = top as i32;
 
@@ -144,17 +146,13 @@ impl ContextlessTextRenderer {
 
         let quad = GlyphQuad {
             pos_packed: pack_i32_pair_as_u16(x0, y0),
-            clip_rect_packed: [pack_i16_pair(0, 0), pack_i16_pair(32767, 32767)], // No clipping for decorations
             dim_packed: pack_u16_pair((x1 - x0) as u32, (y1 - y0) as u32),
             uv_origin_packed: pack_u16_pair(0, 0),
             color,
             depth: 0.0,
             flags_and_page: pack_flags_and_page(pack_flags(CONTENT_TYPE_DECORATION, false), 0),
-            translation_x: transform.translation.0,
-            translation_y: transform.translation.1,
-            rotation: transform.rotation,
-            scale: transform.scale,
-            _padding: [0, 0, 0, 0],
+            box_index,
+            _padding: 0,
         };
         self.quads.push(quad);
     }
@@ -205,23 +203,35 @@ fn quantize<const N: u8>(pos: f32) -> (i32, f32, SubpixelBin::<N>) {
     return (adjusted_trunc, fract, SubpixelBin::<N>(bin))
 }
 
+/// Per-text-box data stored in a separate buffer and referenced by index.
+#[allow(missing_docs)]
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Zeroable, Pod)]
+pub struct BoxData {
+    pub clip_rect_packed: [u32; 2],       // 8 bytes - pack i16 pairs into u32s (local space)
+    pub translation_x: f32,               // 4 bytes
+    pub translation_y: f32,               // 4 bytes
+    pub rotation: f32,                    // 4 bytes - rotation in radians
+    pub scale: f32,                       // 4 bytes
+    pub screen_clip_min_x: f32,           // 4 bytes - screen-space clip rect min x
+    pub screen_clip_min_y: f32,           // 4 bytes - screen-space clip rect min y
+    pub screen_clip_max_x: f32,           // 4 bytes - screen-space clip rect max x
+    pub screen_clip_max_y: f32,           // 4 bytes - screen-space clip rect max y
+}
+
 /// The struct corresponding to the gpu-side representation of a text glyph.
 #[allow(missing_docs)]
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Zeroable, Pod)]
 pub struct GlyphQuad {
-    pub clip_rect_packed: [u32; 2],       // 8 bytes - pack i16 pairs into u32s
     pub pos_packed: u32,                  // 4 bytes - pack x,y as u16,u16
     pub dim_packed: u32,                  // 4 bytes - pack width,height as u16,u16
     pub uv_origin_packed: u32,            // 4 bytes - pack u,v as u16,u16
     pub color: u32,                       // 4 bytes
     pub depth: f32,                       // 4 bytes
     pub flags_and_page: u32,              // 4 bytes - flags (24 bits) + page_index (8 bits)
-    pub translation_x: f32,               // 4 bytes
-    pub translation_y: f32,               // 4 bytes
-    pub rotation: f32,                    // 4 bytes - rotation in radians
-    pub scale: f32,                       // 4 bytes
-    pub _padding: [u32; 4],               // 16 bytes - padding for alignment
+    pub box_index: u32,                   // 4 bytes - index into box_data array
+    pub _padding: u32,                    // 4 bytes - padding for alignment
 }
 
 impl GlyphQuad {
@@ -285,13 +295,43 @@ fn unpack_flags_rust(flags_and_page: u32) -> u32 {
     flags_and_page & 0xFFFFFF
 }
 
-// Unpack page_index from packed field  
+// Unpack page_index from packed field
 fn unpack_page_index_rust(flags_and_page: u32) -> u32 {
     (flags_and_page >> 24) & 0xFF
 }
 
+fn create_box_data(clip_rect: Option<parley::BoundingBox>, left: f32, top: f32, transform: Transform2D, screen_clip: Option<(f32, f32, f32, f32)>) -> BoxData {
+    let clip_rect_packed = if let Some(clip) = clip_rect {
+        let clip_x0 = (left + clip.x0 as f32) as i32;
+        let clip_y0 = (top + clip.y0 as f32) as i32;
+        let clip_x1 = (left + clip.x1 as f32) as i32;
+        let clip_y1 = (top + clip.y1 as f32) as i32;
 
-fn make_quad(glyph: &GlyphWithContext, stored_glyph: &StoredGlyph, depth: f32, transform: Transform2D) -> GlyphQuad {
+        [
+            pack_i16_pair(clip_x0.clamp(i16::MIN as i32, i16::MAX as i32), clip_y0.clamp(i16::MIN as i32, i16::MAX as i32)),
+            pack_i16_pair(clip_x1.clamp(i16::MIN as i32, i16::MAX as i32), clip_y1.clamp(i16::MIN as i32, i16::MAX as i32))
+        ]
+    } else {
+        [pack_i16_pair(0, 0), pack_i16_pair(32767, 32767)]
+    };
+
+    let (screen_clip_min_x, screen_clip_min_y, screen_clip_max_x, screen_clip_max_y) =
+        screen_clip.unwrap_or((f32::NEG_INFINITY, f32::NEG_INFINITY, f32::INFINITY, f32::INFINITY));
+
+    BoxData {
+        clip_rect_packed,
+        translation_x: transform.translation.0,
+        translation_y: transform.translation.1,
+        rotation: transform.rotation,
+        scale: transform.scale,
+        screen_clip_min_x,
+        screen_clip_min_y,
+        screen_clip_max_x,
+        screen_clip_max_y,
+    }
+}
+
+fn make_quad(glyph: &GlyphWithContext, stored_glyph: &StoredGlyph, depth: f32, box_index: u32) -> GlyphQuad {
     let y = glyph.quantized_pos_y - stored_glyph.placement_top as i32;
     let x = glyph.quantized_pos_x + stored_glyph.placement_left as i32;
 
@@ -306,54 +346,29 @@ fn make_quad(glyph: &GlyphWithContext, stored_glyph: &StoredGlyph, depth: f32, t
 
     return GlyphQuad {
         pos_packed: pack_i32_pair_as_u16(x, y),
-        clip_rect_packed: [pack_i16_pair(0, 0), pack_i16_pair(32767, 32767)], // No clipping (will be set later)
         dim_packed: pack_u16_pair(size_x as u32, size_y as u32),
         uv_origin_packed: pack_u16_pair(uv_x as u32, uv_y as u32),
         color,
         depth,
         flags_and_page: pack_flags_and_page(pack_flags(flags, false), stored_glyph.page as u32),
-        translation_x: transform.translation.0,
-        translation_y: transform.translation.1,
-        rotation: transform.rotation,
-        scale: transform.scale,
-        _padding: [0, 0, 0, 0],
+        box_index,
+        _padding: 0,
     };
 }
 
-fn clip_quad(quad: GlyphQuad, left: f32, top: f32, clip_rect: Option<parley::BoundingBox>, fade: bool) -> Option<GlyphQuad> {
+fn clip_quad(quad: GlyphQuad, _left: f32, _top: f32, _clip_rect: Option<parley::BoundingBox>, fade: bool) -> Option<GlyphQuad> {
     let mut quad = quad;
 
-    if let Some(clip) = clip_rect {
-        let left = left as i32;
-        let top = top as i32;
-        
-        let clip_x0 = left + clip.x0 as i32;
-        let clip_x1 = left + clip.x1 as i32;
-        let clip_y0 = top + clip.y0 as i32;
-        let clip_y1 = top + clip.y1 as i32;
-
-        // Set the GPU clip rectangle  
-        let clamped_x0 = clip_x0.clamp(i16::MIN as i32, i16::MAX as i32);
-        let clamped_y0 = clip_y0.clamp(i16::MIN as i32, i16::MAX as i32);
-        let clamped_x1 = clip_x1.clamp(i16::MIN as i32, i16::MAX as i32);
-        let clamped_y1 = clip_y1.clamp(i16::MIN as i32, i16::MAX as i32);
-        quad.clip_rect_packed = [
-            pack_i16_pair(clamped_x0, clamped_y0),
-            pack_i16_pair(clamped_x1, clamped_y1)
-        ];
-
+    if fade {
         // Extract content type and page from existing packed field
         let existing_flags = unpack_flags_rust(quad.flags_and_page);
         let page_index = unpack_page_index_rust(quad.flags_and_page);
         let content_type = existing_flags & 0x0F;
-        
+
         // Update flags with fade bit, keeping same page
         quad.flags_and_page = pack_flags_and_page(pack_flags(content_type, fade), page_index);
-    } else {
-        // No clipping - use maximum clip rectangle
-        quad.clip_rect_packed = [pack_i16_pair(0, 0), pack_i16_pair(32767, 32767)];
     }
-    
+
     Some(quad)
 }
 
@@ -445,7 +460,7 @@ impl TextRenderer {
 
     /// Prepare an individual parley layout for rendering at the specified position.
     pub fn prepare_layout(&mut self, layout: &Layout<ColorBrush>, left: f32, top: f32, clip_rect: Option<parley::BoundingBox>, fade: bool, depth: f32) {
-        self.text_renderer.prepare_layout(layout, &mut self.scale_cx, left, top, clip_rect, fade, depth, Transform2D::identity());
+        self.text_renderer.prepare_layout(layout, &mut self.scale_cx, left, top, clip_rect, fade, depth, Transform2D::identity(), None);
         self.text_renderer.needs_gpu_sync = true;
     }
 
@@ -458,6 +473,7 @@ impl TextRenderer {
         text_box.refresh_layout();
 
         let clip_rect = text_box.effective_clip_rect();
+        let screen_clip = text_box.screen_space_clip_rect;
         let fade = text_box.fadeout_clipping();
 
         let content_left = -text_box.scroll_offset().0;
@@ -465,7 +481,7 @@ impl TextRenderer {
 
         let start_index = self.text_renderer.quads.len();
 
-        self.text_renderer.prepare_layout(&text_box.layout, &mut self.scale_cx, content_left, content_top, clip_rect, fade, text_box.depth, text_box.transform());
+        self.text_renderer.prepare_layout(&text_box.layout, &mut self.scale_cx, content_left, content_top, clip_rect, fade, text_box.depth, text_box.transform(), screen_clip);
         self.text_renderer.needs_gpu_sync = true;
 
         // Update quad storage with new ranges
@@ -491,6 +507,7 @@ impl TextRenderer {
         text_edit.refresh_layout();
 
         let clip_rect = text_edit.text_box.effective_clip_rect();
+        let screen_clip = text_edit.text_box.screen_space_clip_rect;
         let fade = text_edit.fadeout_clipping();
 
         let content_left = -text_edit.scroll_offset().0;
@@ -498,7 +515,7 @@ impl TextRenderer {
 
         let start_index = self.text_renderer.quads.len();
 
-        self.text_renderer.prepare_layout(&text_edit.text_box.layout, &mut self.scale_cx, content_left, content_top, clip_rect, fade, text_edit.text_box.depth, text_edit.text_box.transform());
+        self.text_renderer.prepare_layout(&text_edit.text_box.layout, &mut self.scale_cx, content_left, content_top, clip_rect, fade, text_edit.text_box.depth, text_edit.text_box.transform(), screen_clip);
         self.text_renderer.needs_gpu_sync = true;
 
         // Update quad storage with new ranges
@@ -509,6 +526,7 @@ impl TextRenderer {
     /// Prepare decorations (selection and cursor) for a text box.
     pub fn prepare_text_box_decorations(&mut self, text_box: &TextBox, show_cursor: bool) {
         let clip_rect = text_box.effective_clip_rect();
+        let screen_clip = text_box.screen_space_clip_rect;
 
         // Position is now in local space (before transform), just account for scroll
         let content_left = -text_box.scroll_offset().0;
@@ -519,15 +537,20 @@ impl TextRenderer {
 
         let transform = text_box.transform();
 
+        // Create BoxData for decorations
+        let box_index = self.text_renderer.box_data.len() as u32;
+        let box_data = create_box_data(clip_rect, content_left, content_top, transform, screen_clip);
+        self.text_renderer.box_data.push(box_data);
+
         text_box.selection().geometry_with(&text_box.layout, |rect, _line_i| {
-            self.text_renderer.add_selection_rect(rect, content_left, content_top, selection_color, clip_rect, transform);
+            self.text_renderer.add_selection_rect(rect, content_left, content_top, selection_color, clip_rect, box_index);
         });
 
         let show_cursor = show_cursor && text_box.selection().is_collapsed();
         if show_cursor {
             let size = CURSOR_WIDTH;
             let cursor_rect = text_box.selection().focus().geometry(&text_box.layout, size);
-            self.text_renderer.add_selection_rect(cursor_rect, content_left, content_top, cursor_color, clip_rect, transform);
+            self.text_renderer.add_selection_rect(cursor_rect, content_left, content_top, cursor_color, clip_rect, box_index);
         }
         self.text_renderer.needs_gpu_sync = true;
     }
@@ -632,14 +655,14 @@ impl ContextlessTextRenderer {
 
         // Calculate total number of quads
         let required_size = (self.quads.len() * std::mem::size_of::<GlyphQuad>()) as u64;
-        
+
         // Grow shared vertex buffer if needed
         if self.vertex_buffer.size() < required_size {
             let min_size = u64::max(required_size, INITIAL_BUFFER_SIZE);
             let growth_size = min_size * 3 / 2;
             let current_growth = self.vertex_buffer.size() * 3 / 2;
             let new_size = u64::max(growth_size, current_growth);
-            
+
             self.vertex_buffer = create_vertex_buffer(device, new_size);
             self.recreate_bind_group(device);
         }
@@ -648,6 +671,24 @@ impl ContextlessTextRenderer {
         if !self.quads.is_empty() {
             let bytes: &[u8] = bytemuck::cast_slice(&self.quads);
             queue.write_buffer(&self.vertex_buffer, 0, bytes);
+        }
+
+        // Grow box_data buffer if needed
+        let box_data_required_size = (self.box_data.len() * std::mem::size_of::<BoxData>()) as u64;
+        if self.box_data_buffer.size() < box_data_required_size {
+            let min_size = u64::max(box_data_required_size, 1024 * std::mem::size_of::<BoxData>() as u64);
+            let growth_size = min_size * 3 / 2;
+            let current_growth = self.box_data_buffer.size() * 3 / 2;
+            let new_size = u64::max(growth_size, current_growth);
+
+            self.box_data_buffer = create_box_data_buffer(device, new_size);
+            self.recreate_bind_group(device);
+        }
+
+        // Write all box_data to buffer
+        if !self.box_data.is_empty() {
+            let bytes: &[u8] = bytemuck::cast_slice(&self.box_data);
+            queue.write_buffer(&self.box_data_buffer, 0, bytes);
         }
 
         self.needs_gpu_sync = false;
@@ -662,6 +703,7 @@ impl ContextlessTextRenderer {
     pub fn clear(&mut self) {
         self.frame += 1;
         self.quads.clear();
+        self.box_data.clear();
         self.needs_gpu_sync = true;
     }
 
@@ -675,7 +717,12 @@ impl ContextlessTextRenderer {
     }
 
 
-    fn prepare_layout(&mut self, layout: &Layout<ColorBrush>, scale_cx: &mut ScaleContext, left: f32, top: f32, clip_rect: Option<parley::BoundingBox>, fade: bool, depth: f32, transform: Transform2D) {
+    fn prepare_layout(&mut self, layout: &Layout<ColorBrush>, scale_cx: &mut ScaleContext, left: f32, top: f32, clip_rect: Option<parley::BoundingBox>, fade: bool, depth: f32, transform: Transform2D, screen_clip: Option<(f32, f32, f32, f32)>) {
+        // Create BoxData for this text box
+        let box_index = self.box_data.len() as u32;
+        let box_data = create_box_data(clip_rect, left, top, transform, screen_clip);
+        self.box_data.push(box_data);
+
         let (clip_top, clip_bottom) = if let Some(clip) = clip_rect {
             (top + clip.y0 as f32, top + clip.y1 as f32)
         } else {
@@ -697,7 +744,7 @@ impl ContextlessTextRenderer {
             for item in line.items() {
                 match item {
                     PositionedLayoutItem::GlyphRun(glyph_run) => {
-                        self.prepare_glyph_run(&glyph_run, scale_cx, left, top, clip_rect, fade, depth, transform);
+                        self.prepare_glyph_run(&glyph_run, scale_cx, left, top, clip_rect, fade, depth, box_index);
                     }
                     PositionedLayoutItem::InlineBox(_inline_box) => {}
                 }
@@ -714,7 +761,7 @@ impl ContextlessTextRenderer {
         clip_rect: Option<parley::BoundingBox>,
         fade: bool,
         depth: f32,
-        transform: Transform2D,
+        box_index: u32,
     ) {
         let mut run_x = left + glyph_run.offset();
         let run_y = top + glyph_run.baseline();
@@ -758,7 +805,7 @@ impl ContextlessTextRenderer {
 
             if let Some(stored_glyph) = self.glyph_cache.get(&glyph_ctx.key()) {
                 if let Some(stored_glyph) = stored_glyph {
-                    let quad = make_quad(&glyph_ctx, stored_glyph, depth, transform);
+                    let quad = make_quad(&glyph_ctx, stored_glyph, depth, box_index);
                     if let Some(clipped_quad) = clip_quad(quad, left, top, clip_rect, fade) {
                         self.quads.push(clipped_quad);
                     }
@@ -775,7 +822,7 @@ impl ContextlessTextRenderer {
                             .build()
                     );
                 }
-                if let Some((quad, _stored_glyph)) = self.prepare_glyph(&glyph_ctx, scaler.as_mut().unwrap(), depth, transform) {
+                if let Some((quad, _stored_glyph)) = self.prepare_glyph(&glyph_ctx, scaler.as_mut().unwrap(), depth, box_index) {
                     if let Some(clipped_quad) = clip_quad(quad, left, top, clip_rect, fade) {
                         self.quads.push(clipped_quad);
                     }
@@ -924,7 +971,7 @@ impl ContextlessTextRenderer {
     // }
 
     /// Rasterizes the glyph in a texture atlas and returns a Quad that can be used to render it, or None if the glyph was just empty (like a space).
-    fn prepare_glyph(&mut self, glyph: &GlyphWithContext, scaler: &mut Scaler, depth: f32, transform: Transform2D) -> Option<(GlyphQuad, StoredGlyph)> {
+    fn prepare_glyph(&mut self, glyph: &GlyphWithContext, scaler: &mut Scaler, depth: f32, box_index: u32) -> Option<(GlyphQuad, StoredGlyph)> {
         let (content, placement) = self._render_glyph(&glyph, scaler);
         let size = placement.size();
 
@@ -942,7 +989,7 @@ impl ContextlessTextRenderer {
         // Try to allocate on existing pages
         for page in 0..n_pages {
             if let Some(alloc) = self.pack_rectangle(size, content, page) {
-                return self.store_glyph(glyph, size, &alloc, page, &placement, content, depth, transform);
+                return self.store_glyph(glyph, size, &alloc, page, &placement, content, depth, box_index);
             }
 
             // Try evicting glyphs from previous frames and retry
@@ -950,7 +997,7 @@ impl ContextlessTextRenderer {
                 self.evict_old_glyphs();
 
                 if let Some(alloc) = self.pack_rectangle(size, content, page) {
-                    return self.store_glyph(glyph, size, &alloc, page, &placement, content, depth, transform);
+                    return self.store_glyph(glyph, size, &alloc, page, &placement, content, depth, box_index);
                 }
             }
         }
@@ -958,7 +1005,7 @@ impl ContextlessTextRenderer {
         // Create a new page and try to allocate there
         let new_page: usize = self.make_new_page(content);
         if let Some(alloc) = self.pack_rectangle(size, content, new_page) {
-            return self.store_glyph(glyph, size, &alloc, new_page, &placement, content, depth, transform);
+            return self.store_glyph(glyph, size, &alloc, new_page, &placement, content, depth, box_index);
         }
 
         // Glyph is too large to fit even in a new empty page. It's time to give up.
@@ -970,7 +1017,7 @@ impl ContextlessTextRenderer {
     
     // Helper method to store glyph once allocation is successful
     // todo: don't carry around `size`, alloc probably has the same data
-    fn store_glyph(&mut self, 
+    fn store_glyph(&mut self,
             glyph: &GlyphWithContext,
             size: Size2D<i32, UnknownUnit>,
             alloc: &Allocation,
@@ -978,12 +1025,12 @@ impl ContextlessTextRenderer {
             placement: &Placement,
             content_type: Content,
             depth: f32,
-            transform: Transform2D,
+            box_index: u32,
         ) -> Option<(GlyphQuad, StoredGlyph)> {
         self.copy_glyph_to_atlas(size, alloc, page, content_type);
         let stored_glyph = StoredGlyph::create(alloc, placement, page, self.frame, content_type);
         self.glyph_cache.push(glyph.key(), Some(stored_glyph));
-        let quad = make_quad(glyph, &stored_glyph, depth, transform);
+        let quad = make_quad(glyph, &stored_glyph, depth, box_index);
         Some((quad, stored_glyph))
     }
 

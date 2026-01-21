@@ -43,6 +43,7 @@ pub struct TextBox {
     pub(crate) height: f32,
     pub(crate) alignment: Alignment,
     pub(crate) clip_rect: Option<parley::BoundingBox>,
+    pub(crate) screen_space_clip_rect: Option<(f32, f32, f32, f32)>, // (min_x, min_y, max_x, max_y) in screen space
     pub(crate) fadeout_clipping: bool,
     pub(crate) auto_clip: bool,
     pub(crate) scroll_offset: (f32, f32),
@@ -131,6 +132,7 @@ impl TextBox {
             width: size.0,
             alignment: Default::default(),
             clip_rect: None,
+            screen_space_clip_rect: None,
             fadeout_clipping: false,
             auto_clip: false,
             scroll_offset: (0.0, 0.0),
@@ -782,6 +784,14 @@ impl TextBox {
     /// This clipping rectangle is in local space, not affected by the transform. 
     pub fn set_clip_rect(&mut self, clip_rect: Option<parley::BoundingBox>) {
         self.clip_rect = clip_rect;
+        self.shared_mut().text_changed = true;
+    }
+
+    /// Sets a screen-space clip rect (min_x, min_y, max_x, max_y).
+    /// Unlike the regular clip_rect, this one is applied in screen space in the fragment shader,
+    /// so it works correctly even when the text box is rotated.
+    pub fn set_screen_space_clip_rect(&mut self, clip_rect: Option<(f32, f32, f32, f32)>) {
+        self.screen_space_clip_rect = clip_rect;
         self.shared_mut().text_changed = true;
     }
 

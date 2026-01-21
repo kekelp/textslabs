@@ -1326,7 +1326,12 @@ impl TextEdit {
     pub fn set_clip_rect(&mut self, clip_rect: Option<parley::BoundingBox>) {
         self.text_box.set_clip_rect(clip_rect);
     }
-    
+
+    /// Sets the screen-space clipping rectangle for the text edit box.
+    pub fn set_screen_space_clip_rect(&mut self, clip_rect: Option<(f32, f32, f32, f32)>) {
+        self.text_box.set_screen_space_clip_rect(clip_rect);
+    }
+
     /// Sets whether the text fades out when it overflows the clip rectangle.
     pub fn set_fadeout_clipping(&mut self, fadeout_clipping: bool) {
         self.text_box.set_fadeout_clipping(fadeout_clipping);

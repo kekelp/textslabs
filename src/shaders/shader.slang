@@ -7,7 +7,7 @@ struct VertexOutput {
 }
 
 [shader("vertex")]
-VertexOutput vertexMain(
+ VertexOutput vertexMain(
     GlyphQuad input,
     uint vertexIndex: SV_VulkanVertexID,
     uint instanceIndex: SV_VulkanInstanceID,
@@ -28,5 +28,5 @@ VertexOutput vertexMain(
 
 [shader("fragment")]
 float4 fragmentMain(VertexOutput input): SV_Target {
-    return text_fragment_pure(input.quad, input.uv);
+    return text_fragment_pure(input.quad, input.uv, input.position);
 }
