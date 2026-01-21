@@ -1243,7 +1243,7 @@ impl TextEdit {
     }
     
     /// Returns the position of the text edit box.
-    pub fn pos(&self) -> (f64, f64) {
+    pub fn pos(&self) -> (f32, f32) {
         self.text_box.position()
     }
     
@@ -1306,7 +1306,12 @@ impl TextEdit {
     pub fn set_pos(&mut self, pos: (f64, f64)) {
         self.text_box.set_pos(pos);
     }
-    
+
+    /// Sets the position of the text edit box without updating the retained transform.
+    pub fn set_transformed_pos(&mut self, pos: (f64, f64)) {
+        self.text_box.set_transformed_pos(pos);
+    }
+
     /// Sets whether the text edit box is hidden.
     pub fn set_hidden(&mut self, hidden: bool) {
         self.text_box.set_hidden(hidden);
@@ -1479,7 +1484,16 @@ impl TextEdit {
     pub fn set_transform(&mut self, transform: Transform2D) {
         self.text_box.set_transform(transform);
     }
-    
+
+    /// Sets the transform of the text box without updating the retained transform.
+    pub fn set_transformed_transform(&mut self, transform: Transform2D) {
+        self.text_box.set_transformed_transform(transform);
+    }
+
+    /// Returns the current transform of the text box.
+    pub fn transform(&self) -> Transform2D {
+        self.text_box.transform()
+    }
 
     /// Sets the IME cursor area for this text edit.
     pub fn set_ime_cursor_area(&mut self, window: &Window) {
