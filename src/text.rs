@@ -90,6 +90,8 @@ pub(crate) struct Shared {
     pub cursor_blink_start: Option<Instant>,
     pub cursor_blink_animation_currently_visible: bool,
     pub cursor_blink_waker: Option<CursorBlinkWaker>,
+
+    pub window: Option<Weak<Window>>,
 }
 
 impl Shared {
@@ -377,19 +379,22 @@ impl Text {
                 cursor_blink_start: None,
                 cursor_blink_animation_currently_visible: false,
                 cursor_blink_waker: None,
+                window: None,
             }),
         }
     }
 
     /// Setup automatic cursor blink wakeup for applications that pause their event loops.
-    /// 
+    ///
     /// `window` is used to wake up the `winit` event loop automatically when it needs to redraw a blinking cursor.
-    /// 
+    /// It is also used to enable/disable IME when a text edit box gains or loses focus.
+    ///
     /// In applications that don't pause their event loops, like games, there is no need to call this method.
-    /// 
+    ///
     /// You can also handle cursor wakeups manually in your winit event loop with winit's `ControlFlow::WaitUntil` and [`Text::time_until_next_cursor_blink`]. See the `event_loop_smart.rs` example.
     pub fn set_auto_wakeup(&mut self, window: Arc<Window>) {
         self.shared.cursor_blink_waker = Some(CursorBlinkWaker::new(Arc::downgrade(&window)));
+        self.shared.window = Some(Arc::downgrade(&window));
     }
 
 
@@ -1203,7 +1208,7 @@ impl Text {
 
     fn refocus(&mut self, new_focus: Option<AnyBox>) {
         let focus_changed = new_focus != self.shared.focused;
-        
+
         if focus_changed {
             if let Some(old_focus) = self.shared.focused {
                 self.remove_focus(old_focus);
@@ -1217,10 +1222,19 @@ impl Text {
                 self.shared.accesskit_focus_tracker.old_focus = old_focus_ak_id;
                 self.shared.accesskit_focus_tracker.event_number = self.shared.current_event_number;
             }
+
+            // Enable/disable IME based on whether a text edit is focused
+            // Todo: what if the user wants to do his own IME stuff?
+            if let Some(weak_window) = &self.shared.window {
+                if let Some(window) = weak_window.upgrade() {
+                    let ime_allowed = matches!(new_focus, Some(AnyBox::TextEdit(_)));
+                    window.set_ime_allowed(ime_allowed);
+                }
+            }
         }
 
         self.shared.focused = new_focus;
-        
+
         if focus_changed {
             // todo: could skip some rerenders here if the old focus wasn't editable and had collapsed selection.
             self.shared.decorations_changed = true;
