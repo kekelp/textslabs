@@ -60,6 +60,10 @@ pub struct TextBox {
     /// Tracks quad storage for fast scrolling
     pub(crate) quad_storage: QuadStorage,
 
+    /// Optional explicit hitbox in local space (min_x, min_y, max_x, max_y).
+    /// If set, hit_full_rect and hit_bounding_box will use this instead of the default behavior.
+    pub(crate) explicit_hitbox: Option<(f32, f32, f32, f32)>,
+
     /// Unsafe raw pointer to the shared state
     pub(crate) shared_backref: NonNull<Shared>,
     /// Copy of the key that this textbox corresponds to. (or the parent text_edit_box! That's a bit messy).
@@ -141,6 +145,7 @@ impl TextBox {
             can_hide: false,
             window_id: None,
             quad_storage: QuadStorage::default(),
+            explicit_hitbox: None,
             shared_backref,
             key: DefaultKey::null() // Remember to fill it in later, I guess.
         }
@@ -154,6 +159,16 @@ impl TextBox {
 
         let offset = (local_pos.x as f64, local_pos.y as f64);
 
+        // If explicit hitbox is set, use it
+        if let Some((min_x, min_y, max_x, max_y)) = self.explicit_hitbox {
+            let hit = offset.0 >= min_x as f64
+                && offset.0 <= max_x as f64
+                && offset.1 >= min_y as f64
+                && offset.1 <= max_y as f64;
+            return hit;
+        }
+
+        // Default behavior
         let hit = offset.0 > -X_TOLERANCE
             && offset.0 < self.max_advance as f64 + X_TOLERANCE
             && offset.1 > 0.0
@@ -795,6 +810,19 @@ impl TextBox {
         self.shared_mut().text_changed = true;
     }
 
+    /// Sets an explicit hitbox for hit detection in local space (min_x, min_y, max_x, max_y).
+    ///
+    /// When set, `hit_full_rect` and `hit_bounding_box` will use this hitbox instead of
+    /// computing one from the text box dimensions or layout.
+    pub fn set_hitbox(&mut self, hitbox: Option<(f32, f32, f32, f32)>) {
+        self.explicit_hitbox = hitbox;
+    }
+
+    /// Returns the explicit hitbox if set.
+    pub fn hitbox(&self) -> Option<(f32, f32, f32, f32)> {
+        self.explicit_hitbox
+    }
+
     /// Sets whether the text is rendered with an alpha fade when it overflows the clip rectangle.
     pub fn set_fadeout_clipping(&mut self, fadeout_clipping: bool) {
         self.fadeout_clipping = fadeout_clipping;
@@ -1248,6 +1276,16 @@ impl Ext1 for TextBox {
 
         let offset = (local_pos.x as f64, local_pos.y as f64);
 
+        // If explicit hitbox is set, use it
+        if let Some((min_x, min_y, max_x, max_y)) = self.explicit_hitbox {
+            let hit = offset.0 >= min_x as f64
+                && offset.0 <= max_x as f64
+                && offset.1 >= min_y as f64
+                && offset.1 <= max_y as f64;
+            return hit;
+        }
+
+        // Default behavior
         let hit = offset.0 > -X_TOLERANCE
             && offset.0 < self.layout.full_width() as f64 + X_TOLERANCE
             && offset.1 > 0.0

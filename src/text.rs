@@ -40,7 +40,7 @@ pub struct Text {
     pub(crate) text_boxes: SlotMap<DefaultKey, TextBox>,
     pub(crate) text_edits: SlotMap<DefaultKey, TextEdit>,
 
-    // Box to have a stable address
+    // Box to have a stable address for the backref pointers
     pub(crate) shared: Box<Shared>,
 
     pub(crate) style_version_id_counter: u64,

@@ -1332,6 +1332,19 @@ impl TextEdit {
         self.text_box.set_screen_space_clip_rect(clip_rect);
     }
 
+    /// Sets an explicit hitbox for hit detection in local space (min_x, min_y, max_x, max_y).
+    ///
+    /// When set, hit detection will use this hitbox instead of computing one from
+    /// the text edit box dimensions.
+    pub fn set_hitbox(&mut self, hitbox: Option<(f32, f32, f32, f32)>) {
+        self.text_box.set_hitbox(hitbox);
+    }
+
+    /// Returns the explicit hitbox if set.
+    pub fn hitbox(&self) -> Option<(f32, f32, f32, f32)> {
+        self.text_box.hitbox()
+    }
+
     /// Sets whether the text fades out when it overflows the clip rectangle.
     pub fn set_fadeout_clipping(&mut self, fadeout_clipping: bool) {
         self.text_box.set_fadeout_clipping(fadeout_clipping);
