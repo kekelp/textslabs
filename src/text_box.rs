@@ -97,7 +97,7 @@ pub(crate) fn original_default_style() -> TextStyle2 {
     TextStyle2 { 
         brush: ColorBrush([255,255,255,255]),
         font_size: 24.0,
-        overflow_wrap: OverflowWrap::Anywhere,
+        overflow_wrap: OverflowWrap::Normal,
         ..Default::default()
     }
 }
