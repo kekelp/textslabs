@@ -16,10 +16,7 @@ strip = "debuginfo"
 opt-level = 3
 
 [dependencies]
-# parley = { git = "https://github.com/linebender/parley", rev = "93a2faa" }
-parley = { path = "../../../clones/parley/parley" }
-# parley = { git = "https://github.com/kekelp/parley", rev = "c4b6da8" }
-# parley = "0.6.0"
+parley = { git = "https://github.com/kekelp/parley"}
 wgpu = { version = "27", default-features = true, features = ["spirv"] }
 etagere = "0.2.10"
 lru = { version = "0.12.1", default-features = false }

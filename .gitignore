@@ -1,4 +1,5 @@
 /target
+/.cargo
 notes.md
 flamegraph.svg
 perf.data
