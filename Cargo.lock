@@ -665,9 +665,6 @@ name = "color"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a18ef4657441fb193b65f34dc39b3781f0dfec23d3bd94d0eeb4e88cde421edb"
-dependencies = [
- "bytemuck",
-]
 
 [[package]]
 name = "color_quant"
@@ -1014,15 +1011,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "fearless_simd"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8fb2907d1f08b2b316b9223ced5b0e89d87028ba8deae9764741dba8ff7f3903"
-dependencies = [
- "bytemuck",
-]
-
-[[package]]
 name = "fixedbitset"
 version = "0.5.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1290,16 +1278,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "guillotiere"
-version = "0.6.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b62d5865c036cb1393e23c50693df631d3f5d7bcca4c04fe4cc0fd592e74a782"
-dependencies = [
- "euclid",
- "svg_fmt",
-]
-
-[[package]]
 name = "half"
 version = "2.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1329,8 +1307,6 @@ version = "0.15.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9229cfe53dfd69f0609a49f65461bd93001ea1ef889cd5529dd176593f5338a1"
 dependencies = [
- "allocator-api2",
- "equivalent",
  "foldhash 0.1.5",
 ]
 
@@ -1521,17 +1497,6 @@ name = "kurbo"
 version = "0.11.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c62026ae44756f8a599ba21140f350303d4f08dcdcc71b5ad9c9bb8128c13c62"
-dependencies = [
- "arrayvec",
- "euclid",
- "smallvec",
-]
-
-[[package]]
-name = "kurbo"
-version = "0.12.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ce9729cc38c18d86123ab736fd2e7151763ba226ac2490ec092d1dd148825e32"
 dependencies = [
  "arrayvec",
  "euclid",
@@ -2280,20 +2245,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1f9529efd019889b2a205193c14ffb6e2839b54ed9d2720674f10f4b04d87ac9"
 dependencies = [
  "color",
- "kurbo 0.11.3",
- "smallvec",
-]
-
-[[package]]
-name = "peniko"
-version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b3c76095c9a636173600478e0373218c7b955335048c2bcd12dc6a79657649d8"
-dependencies = [
- "bytemuck",
- "color",
- "kurbo 0.12.0",
- "linebender_resource_handle",
+ "kurbo",
  "smallvec",
 ]
 
@@ -3001,14 +2953,12 @@ dependencies = [
  "lazy_static",
  "lru",
  "parley",
- "peniko 0.4.0",
+ "peniko",
  "pollster",
  "rustc-hash 2.1.1",
  "slotmap",
  "smallvec",
  "swash",
- "vello_common",
- "vello_hybrid",
  "wgpu",
  "wgpu-profiler",
  "winit",
@@ -3211,41 +3161,6 @@ dependencies = [
  "num-traits",
  "wasm-bindgen",
 ]
-
-[[package]]
-name = "vello_common"
-version = "0.0.4"
-source = "git+https://github.com/linebender/vello#5d6bf90d7384353c8a2d9993c041807042796443"
-dependencies = [
- "bytemuck",
- "fearless_simd",
- "hashbrown 0.15.5",
- "log",
- "peniko 0.5.0",
- "png",
- "skrifa",
- "smallvec",
-]
-
-[[package]]
-name = "vello_hybrid"
-version = "0.0.4"
-source = "git+https://github.com/linebender/vello#5d6bf90d7384353c8a2d9993c041807042796443"
-dependencies = [
- "bytemuck",
- "guillotiere",
- "hashbrown 0.15.5",
- "log",
- "thiserror 2.0.16",
- "vello_common",
- "vello_sparse_shaders",
- "wgpu",
-]
-
-[[package]]
-name = "vello_sparse_shaders"
-version = "0.0.4"
-source = "git+https://github.com/linebender/vello#5d6bf90d7384353c8a2d9993c041807042796443"
 
 [[package]]
 name = "version-compare"

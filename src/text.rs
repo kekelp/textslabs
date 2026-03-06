@@ -600,7 +600,6 @@ impl Text {
         }
     }
 
-
     /// Refresh a text edit box, causing it to stay visible even if [`Text::advance_frame_and_hide_boxes()`] was called.
     /// 
     /// Part of the "declarative" interface.
@@ -609,54 +608,6 @@ impl Text {
             text_edit.text_box.last_frame_touched = self.current_visibility_frame;
         }
     }
-
-
-    // /// Remove all text boxes that were made outdated by [`Text::advance_frame_and_hide_boxes()`], were not refreshed with [`Text::refresh_text_box()`], and were not set to remain as hidden with [`TextBoxMut::set_can_hide()`].
-    // /// 
-    // /// Because [`Text::remove_old_nodes()`] mass-removes text boxes without consuming their handles, the handles become "dangling" and should not be reused. Using them in functions like [`Text::get_text_box()`] or [`Text::remove_text_box()`] will cause panics or incorrect results.
-    // /// 
-    // /// Only use this function if the structs holding the handles are managed in a way where you can be confident that the handles won't be kept around and reused.
-    // /// 
-    // /// On the other hand, it's fine to use the declarative system for *hiding* text boxes, but sticking to imperative [`Text::remove_text_box()`] calls to remove them.
-    // /// 
-    // /// [`Text::remove_old_nodes()`] is the only function that breaks the "no dangling handles" promise. If you use imperative [`Text::remove_text_box()`] calls and avoid `remove_old_nodes()`, then there is no way for the handle system to break.
-    // /// 
-
-    // pub fn remove_old_nodes(&mut self) {
-    //     // Clear focus if the focused text box will be removed
-    //     if let Some(focused) = self.shared.focused {
-    //         let should_clear_focus = match focused {
-    //             AnyBox::TextBox(i) => {
-    //                 if let Some(text_box) = self.text_boxes.get(i) {
-    //                     text_box.last_frame_touched != self.current_visibility_frame && !text_box.can_hide
-    //                 } else {
-    //                     true // Text box doesn't exist
-    //                 }
-    //             }
-    //             AnyBox::TextEdit(i) => {
-    //                 if let Some((_text_edit, text_box)) = self.text_edits.get(i) {
-    //                     text_box.last_frame_touched != self.current_visibility_frame && !text_box.can_hide
-    //                 } else {
-    //                     true // Text edit doesn't exist
-    //                 }
-    //             }
-    //         };
-            
-    //         if should_clear_focus {
-    //             self.shared.focused = None;
-    //         }
-    //     }
-
-    //     // Remove text boxes that are outdated and allowed to be removed
-    //     self.text_boxes.retain(|_, text_box| {
-    //         text_box.last_frame_touched == self.current_visibility_frame || text_box.can_hide
-    //     });
-
-
-    //     self.text_edits.retain(|_, (_text_edit, text_box)| {
-    //         text_box.last_frame_touched == self.current_visibility_frame || text_box.can_hide
-    //     });
-    // }
 
     /// Remove a text box.
     /// 
@@ -805,6 +756,11 @@ impl Text {
         return self.shared.decorations_range;
     }
 
+    /// Get the range of quads corresponding to the text decorations (editing cursor and selection rectangles)
+    pub fn decorations_range(&self) -> (usize, usize) {
+        return self.shared.decorations_range;
+    }
+
     pub(crate) fn prepare_all_impl(&mut self, text_renderer: &mut TextRenderer, window_id: WindowId, window_size: (f32, f32)) {
 
         text_renderer.update_resolution(window_size.0, window_size.1);
@@ -830,9 +786,10 @@ impl Text {
             text_renderer.clear_decorations_only();
         }
 
+
         // Prepare text layout for all text boxes/edits
-        if !self.shared.text_changed {
-            if !self.scrolled_moved_indices.is_empty() {
+        if ! self.shared.text_changed {
+            if ! self.scrolled_moved_indices.is_empty() {
                 if !self.handle_scroll_fast_path(text_renderer) {
                     // Fast path failed due to overflow, fall back to full prepare
                     text_renderer.clear();
@@ -893,39 +850,22 @@ impl Text {
         }
     }
 
-    /// Reset internal change tracking.
-    /// 
-    /// This function must be called after rendering.
-    pub fn clear_changes(&mut self) {
-        self.clear_finished_scroll_animations();
-
-        self.shared.text_changed = false;
-        self.shared.decorations_changed = false;
-        self.using_frame_based_visibility = false;
-
-        // Reset all windows to unprepared for next frame
-        for window_info in &mut self.shared.windows {
-            window_info.prepared = false;
-        }
-
-        self.shared.scrolled = self.get_max_animation_duration().is_some();
-    }
-
     /// Fast path for handling scroll-only changes by moving quads in-place.
     /// Since the quad positions are packed as i16 for speed and gpu alignment, if the user is scrolling through a massive scroll area, there's a chance that the i16s will overflow. In that case, this function returns false, so that the caller should fall back to a normal prepare.
     fn handle_scroll_fast_path(&mut self, text_renderer: &mut TextRenderer) -> bool {
+        println!("Scroll fast path");
         for any_box in &self.scrolled_moved_indices {
             match any_box {
                 AnyBox::TextEdit(i) => {
                     if let Some(text_edit) = self.text_edits.get_mut(*i) {
-                        if !move_quads_for_scroll(text_renderer, &mut text_edit.text_box.quad_storage, text_edit.text_box.scroll_offset) {
+                        if ! move_quads_for_scroll(text_renderer, &mut text_edit.text_box.quad_storage, text_edit.text_box.scroll_offset) {
                             return false;
                         }
                     }
                 },
                 AnyBox::TextBox(i) => {
                     if let Some(text_box) = self.text_boxes.get_mut(*i) {
-                        if !move_quads_for_scroll(text_renderer, &mut text_box.quad_storage, text_box.scroll_offset) {
+                        if ! move_quads_for_scroll(text_renderer, &mut text_box.quad_storage, text_box.scroll_offset) {
                             return false;
                         }
                     }
