@@ -291,7 +291,8 @@ impl ContextlessTextRenderer {
             // cached_scaler: None,
             vertex_buffer,
             box_data_buffer,
-            needs_gpu_sync: true,
+            needs_glyph_sync: true,
+            needs_box_data_sync: true,
             needs_texture_array_rebuild: false,
         };
     }

@@ -70,7 +70,8 @@ pub(crate) struct ContextlessTextRenderer {
 
     pub(crate) vertex_buffer: Buffer,
     pub(crate) box_data_buffer: Buffer,
-    pub(crate) needs_gpu_sync: bool,
+    pub(crate) needs_glyph_sync: bool,
+    pub(crate) needs_box_data_sync: bool,
     pub(crate) needs_texture_array_rebuild: bool,
 }
 
@@ -428,7 +429,8 @@ impl TextRenderer {
     /// Prepare an individual parley layout for rendering at the specified position.
     pub fn prepare_layout(&mut self, layout: &Layout<ColorBrush>, left: f32, top: f32, clip_rect: Option<parley::BoundingBox>, fade: bool, depth: f32) {
         self.text_renderer.prepare_layout(layout, &mut self.scale_cx, left, top, clip_rect, fade, depth, Transform2D::identity(), None);
-        self.text_renderer.needs_gpu_sync = true;
+        self.text_renderer.needs_glyph_sync = true;
+        self.text_renderer.needs_box_data_sync = true;
     }
 
     /// Prepare a single text box.
@@ -450,7 +452,8 @@ impl TextRenderer {
         let box_index = self.text_renderer.box_data.len() as u32;
 
         self.text_renderer.prepare_layout(&text_box.layout, &mut self.scale_cx, content_left, content_top, clip_rect, fade, text_box.depth, text_box.transform(), screen_clip);
-        self.text_renderer.needs_gpu_sync = true;
+        self.text_renderer.needs_glyph_sync = true;
+        self.text_renderer.needs_box_data_sync = true;
 
         // Update quad storage with new ranges
         let scroll_offset = text_box.scroll_offset();
@@ -485,7 +488,8 @@ impl TextRenderer {
         let box_index = self.text_renderer.box_data.len() as u32;
 
         self.text_renderer.prepare_layout(&text_edit.text_box.layout, &mut self.scale_cx, content_left, content_top, clip_rect, fade, text_edit.text_box.depth, text_edit.text_box.transform(), screen_clip);
-        self.text_renderer.needs_gpu_sync = true;
+        self.text_renderer.needs_glyph_sync = true;
+        self.text_renderer.needs_box_data_sync = true;
 
         // Update quad storage with new ranges
         let scroll_offset = text_edit.scroll_offset();
@@ -493,9 +497,9 @@ impl TextRenderer {
     }
 
     /// Prepare decorations (selection and cursor) for a text box.
+    /// Reuses the text box's existing BoxData (via quad_storage.box_index) for efficient scroll handling.
     pub fn prepare_text_box_decorations(&mut self, text_box: &TextBox, show_cursor: bool) {
         let clip_rect = text_box.effective_clip_rect();
-        let screen_clip = text_box.screen_space_clip_rect;
 
         // Position is now in local space (before transform), just account for scroll
         let content_left = -text_box.scroll_offset().0;
@@ -504,12 +508,9 @@ impl TextRenderer {
         let selection_color = 0x33_33_ff_aa;
         let cursor_color = 0xee_ee_ee_ff;
 
-        let transform = text_box.transform();
-
-        // Create BoxData for decorations
-        let box_index = self.text_renderer.box_data.len() as u32;
-        let box_data = create_box_data(clip_rect, content_left, content_top, transform, screen_clip);
-        self.text_renderer.box_data.push(box_data);
+        // Reuse the text box's BoxData instead of creating a new one.
+        // This way, when scroll updates BoxData.translation, decorations move with the text.
+        let box_index = text_box.quad_storage.box_index.unwrap_or(0);
 
         text_box.selection().geometry_with(&text_box.layout, |rect, _line_i| {
             self.text_renderer.add_selection_rect(rect, content_left, content_top, selection_color, clip_rect, box_index);
@@ -521,7 +522,8 @@ impl TextRenderer {
             let cursor_rect = text_box.selection().focus().geometry(&text_box.layout, size);
             self.text_renderer.add_selection_rect(cursor_rect, content_left, content_top, cursor_color, clip_rect, box_index);
         }
-        self.text_renderer.needs_gpu_sync = true;
+        self.text_renderer.needs_glyph_sync = true;
+        self.text_renderer.needs_box_data_sync = true;
     }
 
     /// Load the render data to the GPU.
@@ -607,7 +609,7 @@ impl ContextlessTextRenderer {
     }
 
     pub fn load_to_gpu(&mut self, device: &Device, queue: &Queue) {
-        if !self.needs_gpu_sync && !self.needs_texture_array_rebuild {
+        if !self.needs_glyph_sync && !self.needs_box_data_sync && !self.needs_texture_array_rebuild {
             return;
         }
 
@@ -623,45 +625,53 @@ impl ContextlessTextRenderer {
             self.update_texture_arrays(queue);
         }
 
-        // Calculate total number of quads
-        let required_size = (self.quads.len() * std::mem::size_of::<GlyphQuad>()) as u64;
+        // Sync quads buffer if needed
+        if self.needs_glyph_sync {
+            let required_size = (self.quads.len() * std::mem::size_of::<GlyphQuad>()) as u64;
 
-        // Grow shared vertex buffer if needed
-        if self.vertex_buffer.size() < required_size {
-            let min_size = u64::max(required_size, INITIAL_BUFFER_SIZE);
-            let growth_size = min_size * 3 / 2;
-            let current_growth = self.vertex_buffer.size() * 3 / 2;
-            let new_size = u64::max(growth_size, current_growth);
+            // Grow shared vertex buffer if needed
+            if self.vertex_buffer.size() < required_size {
+                let min_size = u64::max(required_size, INITIAL_BUFFER_SIZE);
+                let growth_size = min_size * 3 / 2;
+                let current_growth = self.vertex_buffer.size() * 3 / 2;
+                let new_size = u64::max(growth_size, current_growth);
 
-            self.vertex_buffer = create_vertex_buffer(device, new_size);
-            self.recreate_bind_group(device);
+                self.vertex_buffer = create_vertex_buffer(device, new_size);
+                self.recreate_bind_group(device);
+            }
+
+            // Write all quads to vertex buffer
+            if !self.quads.is_empty() {
+                let bytes: &[u8] = bytemuck::cast_slice(&self.quads);
+                queue.write_buffer(&self.vertex_buffer, 0, bytes);
+            }
+
+            self.needs_glyph_sync = false;
         }
 
-        // Write all quads to vertex buffer
-        if !self.quads.is_empty() {
-            let bytes: &[u8] = bytemuck::cast_slice(&self.quads);
-            queue.write_buffer(&self.vertex_buffer, 0, bytes);
+        // Sync box_data buffer if needed
+        if self.needs_box_data_sync {
+            let box_data_required_size = (self.box_data.len() * std::mem::size_of::<BoxData>()) as u64;
+
+            // Grow box_data buffer if needed
+            if self.box_data_buffer.size() < box_data_required_size {
+                let min_size = u64::max(box_data_required_size, 1024 * std::mem::size_of::<BoxData>() as u64);
+                let growth_size = min_size * 3 / 2;
+                let current_growth = self.box_data_buffer.size() * 3 / 2;
+                let new_size = u64::max(growth_size, current_growth);
+
+                self.box_data_buffer = create_box_data_buffer(device, new_size);
+                self.recreate_bind_group(device);
+            }
+
+            // Write all box_data to buffer
+            if !self.box_data.is_empty() {
+                let bytes: &[u8] = bytemuck::cast_slice(&self.box_data);
+                queue.write_buffer(&self.box_data_buffer, 0, bytes);
+            }
+
+            self.needs_box_data_sync = false;
         }
-
-        // Grow box_data buffer if needed
-        let box_data_required_size = (self.box_data.len() * std::mem::size_of::<BoxData>()) as u64;
-        if self.box_data_buffer.size() < box_data_required_size {
-            let min_size = u64::max(box_data_required_size, 1024 * std::mem::size_of::<BoxData>() as u64);
-            let growth_size = min_size * 3 / 2;
-            let current_growth = self.box_data_buffer.size() * 3 / 2;
-            let new_size = u64::max(growth_size, current_growth);
-
-            self.box_data_buffer = create_box_data_buffer(device, new_size);
-            self.recreate_bind_group(device);
-        }
-
-        // Write all box_data to buffer
-        if !self.box_data.is_empty() {
-            let bytes: &[u8] = bytemuck::cast_slice(&self.box_data);
-            queue.write_buffer(&self.box_data_buffer, 0, bytes);
-        }
-
-        self.needs_gpu_sync = false;
     }
 
 
@@ -674,7 +684,6 @@ impl ContextlessTextRenderer {
         self.frame += 1;
         self.quads.clear();
         self.box_data.clear();
-        self.needs_gpu_sync = true;
     }
 
     pub fn clear_decorations(&mut self) {
@@ -683,7 +692,7 @@ impl ContextlessTextRenderer {
         self.quads.retain(|quad| {
             get_content_type(unpack_flags_rust(quad.flags_and_page)) != CONTENT_TYPE_DECORATION
         });
-        self.needs_gpu_sync = true;
+        self.needs_glyph_sync = true;
     }
 
     /// Adjust BoxData for scroll: translation and clip_rect. Used for scroll fast path.
@@ -700,8 +709,6 @@ impl ContextlessTextRenderer {
             box_data.clip_rect_x[1] += delta_x;
             box_data.clip_rect_y[0] += delta_y;
             box_data.clip_rect_y[1] += delta_y;
-
-            self.needs_gpu_sync = true;
         }
     }
 

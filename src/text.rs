@@ -712,8 +712,9 @@ impl Text {
     pub fn prepare_decorations_for_window(&mut self, text_renderer: &mut TextRenderer, window_id: WindowId) -> (usize, usize) {
         let show_cursor = self.shared.cursor_blink_animation_currently_visible;
 
-        // Decorations are prepared after the text. This matters for the quad ranges for the scroll fast path.
-        if self.shared.decorations_changed || self.shared.text_changed  || !self.scrolled_moved_indices.is_empty() {
+        // Decorations share BoxData with text, so they only need re-preparing when
+        // text or selection changes - not on scroll (BoxData update handles that).
+        if self.shared.decorations_changed || self.shared.text_changed {
             let start_index = text_renderer.quads().len();
             if let Some(focused) = self.shared.focused {
                 // For multi-window, only prepare decorations if the focused element belongs to this window
@@ -765,8 +766,8 @@ impl Text {
 
         text_renderer.update_resolution(window_size.0, window_size.1);
 
-        // todo: not sure if this works correctly with multi-window.           
-        if ! self.shared.text_changed && self.using_frame_based_visibility {
+        // todo: not sure if this works correctly with multi-window.
+        if !self.shared.text_changed && self.using_frame_based_visibility {
             // see if any text boxes were just hidden
             for (_i, text_edit) in self.text_edits.iter_mut() {
                 if text_edit.text_box.last_frame_touched == self.current_visibility_frame - 1 {
@@ -779,52 +780,50 @@ impl Text {
                 }
             }
         }
-        
+
         if self.shared.text_changed {
+            // Full clear and re-prepare everything
             text_renderer.clear();
-        } else if self.shared.decorations_changed || !self.scrolled_moved_indices.is_empty() {
+        } else if self.shared.decorations_changed && self.scrolled_moved_indices.is_empty() {
+            // Only decorations changed (selection, cursor) - clear decoration quads only
             text_renderer.clear_decorations_only();
-        }
+        } else if !self.scrolled_moved_indices.is_empty() {
+            // Scroll only - just update BoxData, no clearing needed.
+            // Decorations share BoxData with text, so they move together.
 
-
-        // Prepare text layout for all text boxes/edits
-        if ! self.shared.text_changed {
-            if ! self.scrolled_moved_indices.is_empty() {
-                if !self.handle_scroll_fast_path(text_renderer) {
-                    // Fast path failed due to overflow, fall back to full prepare
-                    text_renderer.clear();
-                    // Set text_changed to trigger full prepare
-                    self.shared.text_changed = true;
-                }
+            if !self.handle_scroll_fast_path(text_renderer) {
+                // Fast path failed (tolerance exceeded), fall back to full prepare
+                text_renderer.clear();
+                self.shared.text_changed = true;
             }
         }
-        
+
+        // Prepare text layout for all text boxes/edits (only if text_changed)
         if self.shared.text_changed {
             let current_frame = self.current_visibility_frame;
-            if self.shared.text_changed {
-                for (_key, text_edit) in self.text_edits.iter_mut() {
-                    if !text_edit.text_box.hidden() && text_edit.text_box.last_frame_touched == current_frame {
-                        // For multi-window, only render if this text edit belongs to this window (or has no window restriction)
-                        let should_render = text_edit.text_box.window_id.is_none() || text_edit.text_box.window_id == Some(window_id);
-                        if should_render {
-                            text_renderer.prepare_text_edit_layout(text_edit);
-                        }
+            for (_key, text_edit) in self.text_edits.iter_mut() {
+                if !text_edit.text_box.hidden() && text_edit.text_box.last_frame_touched == current_frame {
+                    let should_render = text_edit.text_box.window_id.is_none() || text_edit.text_box.window_id == Some(window_id);
+                    if should_render {
+                        text_renderer.prepare_text_edit_layout(text_edit);
                     }
                 }
+            }
 
-                for (_key, mut text_box) in self.text_boxes.iter_mut() {
-                    if !text_box.hidden() && text_box.last_frame_touched == current_frame {
-                        // For multi-window: Only render if this text box belongs to this window (or has no window restriction)
-                        let should_render = text_box.window_id.is_none() || text_box.window_id == Some(window_id);
-                        if should_render {
-                            text_renderer.prepare_text_box_layout(&mut text_box);
-                        }
+            for (_key, mut text_box) in self.text_boxes.iter_mut() {
+                if !text_box.hidden() && text_box.last_frame_touched == current_frame {
+                    let should_render = text_box.window_id.is_none() || text_box.window_id == Some(window_id);
+                    if should_render {
+                        text_renderer.prepare_text_box_layout(&mut text_box);
                     }
                 }
             }
         }
 
-        self.prepare_decorations_for_window(text_renderer, window_id);
+        // Prepare decorations only if text or decorations changed (not for scroll-only)
+        if self.shared.text_changed || self.shared.decorations_changed {
+            self.prepare_decorations_for_window(text_renderer, window_id);
+        }
 
         // Multi-window: mark prepared and check if all windows done.
         let should_clear_flags = {
@@ -854,6 +853,7 @@ impl Text {
     /// Returns false if scroll has exceeded the tolerance from the base position (line culling),
     /// in which case the caller should fall back to a full re-prepare.
     fn handle_scroll_fast_path(&mut self, text_renderer: &mut TextRenderer) -> bool {
+        text_renderer.text_renderer.needs_box_data_sync = true;
         for any_box in &self.scrolled_moved_indices {
             match any_box {
                 AnyBox::TextEdit(i) => {
@@ -872,6 +872,7 @@ impl Text {
                 },
             }
         }
+        text_renderer.text_renderer.needs_box_data_sync = true;
         true
     }
 
