@@ -74,10 +74,12 @@ pub struct TextBox {
 pub(crate) struct QuadStorage {
     /// Range into the text renderer quads. If None, it doesn't mean that there are no quads, but rather that the text box was never prepared.
     pub quad_range: Option<(usize, usize)>,
-    /// The scroll offset used when this quad data was generated
-    pub last_offset: (f32, f32),
-    /// The original scroll offset when the quads were first prepared (not moved)
-    pub original_offset: (f32, f32),
+    /// Index into the text renderer's box_data array for this text box
+    pub box_index: Option<u32>,
+    /// The scroll offset when quads were prepared (for tolerance check)
+    pub base_scroll: (f32, f32),
+    /// The scroll offset currently reflected in BoxData translation (for incremental delta)
+    pub last_scroll: (f32, f32),
 }
 
 

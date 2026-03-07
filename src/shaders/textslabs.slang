@@ -1,13 +1,11 @@
 struct BoxData {
-    uint2 clip_rect_packed;
-    float translation_x;
-    float translation_y;
+    float2 clip_rect_x;
+    float2 clip_rect_y;
+    float2 translation;
     float rotation;
     float scale;
-    float screen_clip_min_x;
-    float screen_clip_min_y;
-    float screen_clip_max_x;
-    float screen_clip_max_y;
+    float2 screen_clip_x;
+    float2 screen_clip_y;
 }
 
 struct GlyphQuad {
@@ -125,11 +123,7 @@ void text_vertex(
     float2 quad_pos = split_i16(quad.pos_packed);
     float2 dim = split(quad.dim_packed);
 
-    // Apply clipping
-    float2 clip_xy = split_i16(box.clip_rect_packed.x);
-    float2 clip_wh = split_i16(box.clip_rect_packed.y);
-    float4 clip_rect = float4(clip_xy.x, clip_xy.y, clip_wh.x, clip_wh.y);
-
+    float4 clip_rect = float4(box.clip_rect_x.x, box.clip_rect_y.x, box.clip_rect_x.y, box.clip_rect_y.y);
     ClipResult clip_result = apply_clipping(quad_pos, dim, clip_rect, uv01);
 
     // Apply transform: first scale, then rotate, then translate
@@ -147,7 +141,7 @@ void text_vertex(
     );
 
     // Translate
-    float2 transformed_pos = rotated_pos + float2(box.translation_x, box.translation_y);
+    float2 transformed_pos = rotated_pos + box.translation;
 
     // Convert to NDC
     float2 ndc = (transformed_pos / resolution) * 2.0 - 1.0;
@@ -165,8 +159,8 @@ float4 text_fragment_pure(GlyphQuad quad, float2 uv, float4 frag_coord): SV_Targ
     // Apply screen-space clipping using built-in fragment position
     // frag_coord.xy is in pixel coordinates (screen space)
     BoxData box = textslabs.box_data[quad.box_index];
-    if (frag_coord.x < box.screen_clip_min_x || frag_coord.x > box.screen_clip_max_x ||
-        frag_coord.y < box.screen_clip_min_y || frag_coord.y > box.screen_clip_max_y) {
+    if (frag_coord.x < box.screen_clip_x.x || frag_coord.x > box.screen_clip_x.y ||
+        frag_coord.y < box.screen_clip_y.x || frag_coord.y > box.screen_clip_y.y) {
         discard;
     }
 

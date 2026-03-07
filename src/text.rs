@@ -850,22 +850,22 @@ impl Text {
         }
     }
 
-    /// Fast path for handling scroll-only changes by moving quads in-place.
-    /// Since the quad positions are packed as i16 for speed and gpu alignment, if the user is scrolling through a massive scroll area, there's a chance that the i16s will overflow. In that case, this function returns false, so that the caller should fall back to a normal prepare.
+    /// Fast path for handling scroll-only changes by adjusting BoxData translation.
+    /// Returns false if scroll has exceeded the tolerance from the base position (line culling),
+    /// in which case the caller should fall back to a full re-prepare.
     fn handle_scroll_fast_path(&mut self, text_renderer: &mut TextRenderer) -> bool {
-        println!("Scroll fast path");
         for any_box in &self.scrolled_moved_indices {
             match any_box {
                 AnyBox::TextEdit(i) => {
                     if let Some(text_edit) = self.text_edits.get_mut(*i) {
-                        if ! move_quads_for_scroll(text_renderer, &mut text_edit.text_box.quad_storage, text_edit.text_box.scroll_offset) {
+                        if ! update_scroll(text_renderer, &mut text_edit.text_box.quad_storage, text_edit.text_box.scroll_offset) {
                             return false;
                         }
                     }
                 },
                 AnyBox::TextBox(i) => {
                     if let Some(text_box) = self.text_boxes.get_mut(*i) {
-                        if ! move_quads_for_scroll(text_renderer, &mut text_box.quad_storage, text_box.scroll_offset) {
+                        if ! update_scroll(text_renderer, &mut text_box.quad_storage, text_box.scroll_offset) {
                             return false;
                         }
                     }
@@ -1736,35 +1736,32 @@ impl Text {
     }
 }
 
-fn move_quads_for_scroll(text_renderer: &mut TextRenderer, quad_storage: &mut QuadStorage, current_offset: (f32, f32)) -> bool {
-    // Check if we've scrolled too far
-    let distance_from_original_x = (current_offset.0 - quad_storage.original_offset.0).abs();
-    let distance_from_original_y = (current_offset.1 - quad_storage.original_offset.1).abs();
+/// Update scroll by adjusting BoxData translation instead of modifying quad positions.
+/// Returns false if scroll has exceeded the tolerance from the base position (line culling boundary),
+/// in which case a full re-prepare is needed to get the correct lines.
+fn update_scroll(text_renderer: &mut TextRenderer, quad_storage: &mut QuadStorage, current_scroll: (f32, f32)) -> bool {
+    // Check if we've scrolled too far from the base (line culling tolerance)
+    let distance_x = (current_scroll.0 - quad_storage.base_scroll.0).abs();
+    let distance_y = (current_scroll.1 - quad_storage.base_scroll.1).abs();
 
     // Use the same tolerance as line culling
     const SCROLL_TOLERANCE: f32 = 200.0;
 
-    if distance_from_original_x > SCROLL_TOLERANCE || distance_from_original_y > SCROLL_TOLERANCE {
-        return false; // Too far from original, need to reprepare
+    if distance_x > SCROLL_TOLERANCE || distance_y > SCROLL_TOLERANCE {
+        return false; // Too far from base, need to re-prepare with new scroll
     }
 
-    let delta_x = current_offset.0 - quad_storage.last_offset.0;
-    let delta_y = current_offset.1 - quad_storage.last_offset.1;
+    // Compute delta from last scroll position
+    let delta_x = current_scroll.0 - quad_storage.last_scroll.0;
+    let delta_y = current_scroll.1 - quad_storage.last_scroll.1;
 
-    // Use rounded deltas
-    let delta_x_rounded = delta_x.round();
-    let delta_y_rounded = delta_y.round();
-
-    if let Some((start, end)) = quad_storage.quad_range {
-        for quad in &mut text_renderer.text_renderer.quads[start..end] {
-            if !quad.adjust_position(delta_x_rounded as i32, delta_y_rounded as i32) {
-                return false; // Overflow detected, abort fast path
-            }
-        }
+    // Adjust BoxData translation and clip_rect for scroll
+    if let Some(box_index) = quad_storage.box_index {
+        text_renderer.adjust_box_for_scroll(box_index, delta_x, delta_y);
     }
 
-    quad_storage.last_offset.0 += delta_x_rounded;
-    quad_storage.last_offset.1 += delta_y_rounded;
+    // Update last_scroll to track the current state
+    quad_storage.last_scroll = current_scroll;
     true
 }
 

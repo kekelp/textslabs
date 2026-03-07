@@ -208,15 +208,13 @@ fn quantize<const N: u8>(pos: f32) -> (i32, f32, SubpixelBin::<N>) {
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Zeroable, Pod)]
 pub struct BoxData {
-    pub clip_rect_packed: [u32; 2],       // 8 bytes - pack i16 pairs into u32s (local space)
-    pub translation_x: f32,               // 4 bytes
-    pub translation_y: f32,               // 4 bytes
+    pub clip_rect_x: [f32; 2],            // 8 bytes - (x0, x1) in local space
+    pub clip_rect_y: [f32; 2],            // 8 bytes - (y0, y1) in local space
+    pub translation: [f32; 2],            // 8 bytes
     pub rotation: f32,                    // 4 bytes - rotation in radians
     pub scale: f32,                       // 4 bytes
-    pub screen_clip_min_x: f32,           // 4 bytes - screen-space clip rect min x
-    pub screen_clip_min_y: f32,           // 4 bytes - screen-space clip rect min y
-    pub screen_clip_max_x: f32,           // 4 bytes - screen-space clip rect max x
-    pub screen_clip_max_y: f32,           // 4 bytes - screen-space clip rect max y
+    pub screen_clip_x: [f32; 2],          // 8 bytes - (min_x, max_x) in screen space
+    pub screen_clip_y: [f32; 2],          // 8 bytes - (min_y, max_y) in screen space
 }
 
 /// The struct corresponding to the gpu-side representation of a text glyph.
@@ -232,26 +230,6 @@ pub struct GlyphQuad {
     pub flags_and_page: u32,              // 4 bytes - flags (24 bits) + page_index (8 bits)
     pub box_index: u32,                   // 4 bytes - index into box_data array
     pub _padding: u32,                    // 4 bytes - padding for alignment
-}
-
-impl GlyphQuad {
-    /// Adjust the position by the given delta, returning false if overflow would occur
-    pub fn adjust_position(&mut self, delta_x: i32, delta_y: i32) -> bool {
-        let (x, y) = unpack_pos_as_i32(self.pos_packed);
-        
-        let new_x = x - delta_x;  // Assuming the original code subtracts
-        let new_y = y - delta_y;
-        
-        // Check for i16 overflow/underflow.
-        // Feels a bit bad to do these checks all the time, but whatever.
-        if new_x < i16::MIN as i32 || new_x > i16::MAX as i32 ||
-           new_y < i16::MIN as i32 || new_y > i16::MAX as i32 {
-            return false; // Overflow would occur, abort
-        }
-        
-        self.pos_packed = pack_i32_pair_as_u16(new_x, new_y);
-        true // Success
-    }
 }
 
 // Helper functions to pack/unpack u16 pairs into u32
@@ -271,20 +249,6 @@ fn pack_i32_pair_as_u16(a: i32, b: i32) -> u32 {
     (a_i16 as u16 as u32) | ((b_i16 as u16 as u32) << 16)
 }
 
-// Unpack u32 to two i32 coordinates (i16 bit patterns -> i32)
-fn unpack_pos_as_i32(packed: u32) -> (i32, i32) {
-    let x_u16 = (packed & 0xFFFF) as u16;
-    let y_u16 = ((packed >> 16) & 0xFFFF) as u16;
-    let x = x_u16 as i16 as i32;
-    let y = y_u16 as i16 as i32;
-    (x, y)
-}
-
-// Helper functions to pack/unpack i16 pairs into u32
-fn pack_i16_pair(a: i32, b: i32) -> u32 {
-    ((a as u16) as u32) | (((b as u16) as u32) << 16)
-}
-
 // Pack flags (24 bits) and page_index (8 bits) into u32
 fn pack_flags_and_page(flags: u32, page_index: u32) -> u32 {
     (flags & 0xFFFFFF) | ((page_index & 0xFF) << 24)
@@ -301,33 +265,31 @@ fn unpack_page_index_rust(flags_and_page: u32) -> u32 {
 }
 
 fn create_box_data(clip_rect: Option<parley::BoundingBox>, left: f32, top: f32, transform: Transform2D, screen_clip: Option<(f32, f32, f32, f32)>) -> BoxData {
-    let clip_rect_packed = if let Some(clip) = clip_rect {
-        let clip_x0 = (left + clip.x0 as f32) as i32;
-        let clip_y0 = (top + clip.y0 as f32) as i32;
-        let clip_x1 = (left + clip.x1 as f32) as i32;
-        let clip_y1 = (top + clip.y1 as f32) as i32;
-
-        [
-            pack_i16_pair(clip_x0.clamp(i16::MIN as i32, i16::MAX as i32), clip_y0.clamp(i16::MIN as i32, i16::MAX as i32)),
-            pack_i16_pair(clip_x1.clamp(i16::MIN as i32, i16::MAX as i32), clip_y1.clamp(i16::MIN as i32, i16::MAX as i32))
-        ]
+    let (clip_rect_x, clip_rect_y) = if let Some(clip) = clip_rect {
+        (
+            [left + clip.x0 as f32, left + clip.x1 as f32],
+            [top + clip.y0 as f32, top + clip.y1 as f32],
+        )
     } else {
-        [pack_i16_pair(0, 0), pack_i16_pair(32767, 32767)]
+        (
+            [f32::NEG_INFINITY, f32::INFINITY],
+            [f32::NEG_INFINITY, f32::INFINITY],
+        )
     };
 
-    let (screen_clip_min_x, screen_clip_min_y, screen_clip_max_x, screen_clip_max_y) =
-        screen_clip.unwrap_or((f32::NEG_INFINITY, f32::NEG_INFINITY, f32::INFINITY, f32::INFINITY));
+    let (screen_clip_x, screen_clip_y) = match screen_clip {
+        Some((min_x, min_y, max_x, max_y)) => ([min_x, max_x], [min_y, max_y]),
+        None => ([f32::NEG_INFINITY, f32::INFINITY], [f32::NEG_INFINITY, f32::INFINITY]),
+    };
 
     BoxData {
-        clip_rect_packed,
-        translation_x: transform.translation.0,
-        translation_y: transform.translation.1,
+        clip_rect_x,
+        clip_rect_y,
+        translation: [transform.translation.0, transform.translation.1],
         rotation: transform.rotation,
         scale: transform.scale,
-        screen_clip_min_x,
-        screen_clip_min_y,
-        screen_clip_max_x,
-        screen_clip_max_y,
+        screen_clip_x,
+        screen_clip_y,
     }
 }
 
@@ -458,6 +420,11 @@ impl TextRenderer {
         self.text_renderer.clear_decorations();
     }
 
+    /// Adjust BoxData for scroll: translation and clip_rect. Used for scroll fast path.
+    pub fn adjust_box_for_scroll(&mut self, box_index: u32, delta_x: f32, delta_y: f32) {
+        self.text_renderer.adjust_box_for_scroll(box_index, delta_x, delta_y);
+    }
+
     /// Prepare an individual parley layout for rendering at the specified position.
     pub fn prepare_layout(&mut self, layout: &Layout<ColorBrush>, left: f32, top: f32, clip_rect: Option<parley::BoundingBox>, fade: bool, depth: f32) {
         self.text_renderer.prepare_layout(layout, &mut self.scale_cx, left, top, clip_rect, fade, depth, Transform2D::identity(), None);
@@ -480,13 +447,14 @@ impl TextRenderer {
         let content_top = -text_box.scroll_offset().1;
 
         let start_index = self.text_renderer.quads.len();
+        let box_index = self.text_renderer.box_data.len() as u32;
 
         self.text_renderer.prepare_layout(&text_box.layout, &mut self.scale_cx, content_left, content_top, clip_rect, fade, text_box.depth, text_box.transform(), screen_clip);
         self.text_renderer.needs_gpu_sync = true;
 
         // Update quad storage with new ranges
         let scroll_offset = text_box.scroll_offset();
-        self.capture_quad_ranges_after(&mut text_box.quad_storage, scroll_offset, start_index);
+        self.capture_quad_ranges_after(&mut text_box.quad_storage, scroll_offset, start_index, box_index);
     }
 
     /// Prepare a text edit layout for rendering with scrolling and clipping support.
@@ -514,13 +482,14 @@ impl TextRenderer {
         let content_top = -text_edit.scroll_offset().1;
 
         let start_index = self.text_renderer.quads.len();
+        let box_index = self.text_renderer.box_data.len() as u32;
 
         self.text_renderer.prepare_layout(&text_edit.text_box.layout, &mut self.scale_cx, content_left, content_top, clip_rect, fade, text_edit.text_box.depth, text_edit.text_box.transform(), screen_clip);
         self.text_renderer.needs_gpu_sync = true;
 
         // Update quad storage with new ranges
         let scroll_offset = text_edit.scroll_offset();
-        self.capture_quad_ranges_after(&mut text_edit.text_box.quad_storage, scroll_offset, start_index);
+        self.capture_quad_ranges_after(&mut text_edit.text_box.quad_storage, scroll_offset, start_index, box_index);
     }
 
     /// Prepare decorations (selection and cursor) for a text box.
@@ -567,11 +536,12 @@ impl TextRenderer {
 
     
     /// Capture quad ranges after text rendering and populate QuadStorage
-    fn capture_quad_ranges_after(&mut self, quad_storage: &mut QuadStorage, current_offset: (f32, f32), start_index: usize) {
+    fn capture_quad_ranges_after(&mut self, quad_storage: &mut QuadStorage, current_offset: (f32, f32), start_index: usize, box_index: u32) {
         let end_index = self.text_renderer.quads.len();
         quad_storage.quad_range = Some((start_index, end_index));
-        quad_storage.last_offset = current_offset;
-        quad_storage.original_offset = current_offset;
+        quad_storage.box_index = Some(box_index);
+        quad_storage.base_scroll = current_offset;
+        quad_storage.last_scroll = current_offset;
     }
 
     /// Get the vertex buffer for external rendering
@@ -708,7 +678,7 @@ impl ContextlessTextRenderer {
     }
 
     pub fn clear_decorations(&mut self) {
-        // Since decorations are now mixed with regular quads, 
+        // Since decorations are now mixed with regular quads,
         // we need to filter them out by content type
         self.quads.retain(|quad| {
             get_content_type(unpack_flags_rust(quad.flags_and_page)) != CONTENT_TYPE_DECORATION
@@ -716,6 +686,24 @@ impl ContextlessTextRenderer {
         self.needs_gpu_sync = true;
     }
 
+    /// Adjust BoxData for scroll: translation and clip_rect. Used for scroll fast path.
+    /// When scrolling by delta, translation is adjusted by -delta (content moves opposite to scroll),
+    /// and clip_rect is adjusted by +delta (viewport moves with scroll in local space).
+    pub fn adjust_box_for_scroll(&mut self, box_index: u32, delta_x: f32, delta_y: f32) {
+        if let Some(box_data) = self.box_data.get_mut(box_index as usize) {
+            // Adjust translation (subtract because scroll increase = content moves up/left)
+            box_data.translation[0] -= delta_x;
+            box_data.translation[1] -= delta_y;
+
+            // Adjust clip_rect (add because viewport moves in scroll direction in local space)
+            box_data.clip_rect_x[0] += delta_x;
+            box_data.clip_rect_x[1] += delta_x;
+            box_data.clip_rect_y[0] += delta_y;
+            box_data.clip_rect_y[1] += delta_y;
+
+            self.needs_gpu_sync = true;
+        }
+    }
 
     fn prepare_layout(&mut self, layout: &Layout<ColorBrush>, scale_cx: &mut ScaleContext, left: f32, top: f32, clip_rect: Option<parley::BoundingBox>, fade: bool, depth: f32, transform: Transform2D, screen_clip: Option<(f32, f32, f32, f32)>) {
         // Create BoxData for this text box
