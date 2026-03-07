@@ -1345,11 +1345,6 @@ impl TextEdit {
         self.text_box.hitbox()
     }
 
-    /// Sets whether the text fades out when it overflows the clip rectangle.
-    pub fn set_fadeout_clipping(&mut self, fadeout_clipping: bool) {
-        self.text_box.set_fadeout_clipping(fadeout_clipping);
-    }
-    
     /// Sets the scroll offset for the text edit box.
     pub fn set_scroll_offset(&mut self, offset: (f32, f32)) {
         self.text_box.set_scroll_offset(offset);

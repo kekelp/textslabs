@@ -34,8 +34,6 @@ pub struct TextBox {
 
     pub(crate) needs_relayout: bool,
     pub transform: Transform2D,
-    // todo: remove this crap
-    pub retained_transform: Transform2D,
     pub(crate) max_advance: f32,
     pub(crate) depth: f32,
     pub(crate) selection: Selection,
@@ -127,7 +125,6 @@ impl TextBox {
             selectable: true,
             needs_relayout: true,
             transform: position,
-            retained_transform: position,
             max_advance: size.0,
             height: size.1,
             depth,
@@ -711,30 +708,42 @@ impl TextBox {
 
     /// Sets the position of the text box.
     pub fn set_pos(&mut self, pos: (f64, f64)) {
-        self.transform.translation = (pos.0 as f32, pos.1 as f32);
-        self.retained_transform.translation = (pos.0 as f32, pos.1 as f32);
-        self.shared_mut().text_changed = true;
+        let new_translation = (pos.0 as f32, pos.1 as f32);
+        self.transform.translation = new_translation;
     }
 
     /// Sets the position of the text box without updating the retained transform.
     pub fn set_transformed_pos(&mut self, pos: (f64, f64)) {
-        self.transform.translation = (pos.0 as f32, pos.1 as f32);
+        let new_translation = (pos.0 as f32, pos.1 as f32);
+        if self.transform.translation == new_translation {
+            return;
+        }
+        self.transform.translation = new_translation;
         self.shared_mut().text_changed = true;
     }
 
     /// Sets the transform of the text box.
     pub fn set_transform(&mut self, transform: Transform2D) {
+        if self.transform.translation == transform.translation
+            && self.transform.rotation == transform.rotation
+            && self.transform.scale == transform.scale
+        {
+            return;
+        }
         self.transform.translation = transform.translation;
         self.transform.rotation = transform.rotation;
         self.transform.scale = transform.scale;
-        self.retained_transform.translation = transform.translation;
-        self.retained_transform.rotation = transform.rotation;
-        self.retained_transform.scale = transform.scale;
         self.shared_mut().text_changed = true;
     }
 
     /// Sets the transform of the text box without updating the retained transform.
     pub fn set_transformed_transform(&mut self, transform: Transform2D) {
+        if self.transform.translation == transform.translation
+            && self.transform.rotation == transform.rotation
+            && self.transform.scale == transform.scale
+        {
+            return;
+        }
         self.transform.translation = transform.translation;
         self.transform.rotation = transform.rotation;
         self.transform.scale = transform.scale;
@@ -752,52 +761,50 @@ impl TextBox {
 
     /// Sets the translation (position) of the text box.
     pub fn set_translation(&mut self, x: f32, y: f32) {
-        self.transform.translation = (x, y);
-        self.retained_transform.translation = (x, y);
-        self.shared_mut().text_changed = true;
-    }
-
-    /// Sets the translation (position) of the text box without updating the retained transform.
-    pub fn set_transformed_translation(&mut self, x: f32, y: f32) {
+        if self.transform.translation == (x, y) {
+            return;
+        }
         self.transform.translation = (x, y);
         self.shared_mut().text_changed = true;
     }
 
     /// Sets the rotation of the text box in radians.
     pub fn set_rotation(&mut self, radians: f32) {
-        self.transform.rotation = radians;
-        self.retained_transform.rotation = radians;
-        self.shared_mut().text_changed = true;
-    }
-
-    /// Sets the rotation of the text box in radians without updating the retained transform.
-    pub fn set_transformed_rotation(&mut self, radians: f32) {
+        if self.transform.rotation == radians {
+            return;
+        }
         self.transform.rotation = radians;
         self.shared_mut().text_changed = true;
     }
 
     /// Hides or unhides the text box.
     pub(crate) fn set_hidden(&mut self, hidden: bool) {
-        if self.hidden != hidden {
-            self.hidden = hidden;
-
-            if hidden {
-                self.reset_selection();
-            }
+        if self.hidden == hidden {
+            return;
+        }
+        self.hidden = hidden;
+        if hidden {
+            self.reset_selection();
         }
         self.shared_mut().text_changed = true;
     }
 
     /// Sets the depth (z-order) of the text box.
     pub fn set_depth(&mut self, depth: f32) {
+        if self.depth == depth {
+            return;
+        }
         self.depth = depth;
         self.shared_mut().text_changed = true;
     }
 
     /// Sets the clipping rectangle for the text box.
-    /// 
-    /// This clipping rectangle is in local space, not affected by the transform. 
+    ///
+    /// This clipping rectangle is in local space, not affected by the transform.
     pub fn set_clip_rect(&mut self, clip_rect: Option<parley::BoundingBox>) {
+        if self.clip_rect == clip_rect {
+            return;
+        }
         self.clip_rect = clip_rect;
         self.shared_mut().text_changed = true;
     }
@@ -806,6 +813,9 @@ impl TextBox {
     /// Unlike the regular clip_rect, this one is applied in screen space in the fragment shader,
     /// so it works correctly even when the text box is rotated.
     pub fn set_screen_space_clip_rect(&mut self, clip_rect: Option<(f32, f32, f32, f32)>) {
+        if self.screen_space_clip_rect == clip_rect {
+            return;
+        }
         self.screen_space_clip_rect = clip_rect;
         self.shared_mut().text_changed = true;
     }
@@ -823,20 +833,21 @@ impl TextBox {
         self.explicit_hitbox
     }
 
-    /// Sets whether the text is rendered with an alpha fade when it overflows the clip rectangle.
-    pub fn set_fadeout_clipping(&mut self, fadeout_clipping: bool) {
-        self.fadeout_clipping = fadeout_clipping;
-        self.shared_mut().text_changed = true;
-    }
 
     /// Sets the scroll offset for the text box.
     pub fn set_scroll_offset(&mut self, offset: (f32, f32)) {
+        if self.scroll_offset == offset {
+            return;
+        }
         self.scroll_offset = offset;
         self.shared_mut().text_changed = true;
     }
 
     /// Sets the style for the text box.
     pub fn set_style(&mut self, style: &StyleHandle) {
+        if self.style.key == style.key {
+            return;
+        }
         self.style = style.sneak_clone();
         self.style_version = self.style_version();
         self.needs_relayout = true;
@@ -937,6 +948,9 @@ impl TextBox {
 
     /// Sets the text alignment.
     pub fn set_alignment(&mut self, alignment: Alignment) {
+        if self.alignment == alignment {
+            return;
+        }
         self.alignment = alignment;
         self.needs_relayout = true;
         self.shared_mut().text_changed = true;
@@ -945,14 +959,9 @@ impl TextBox {
     // todo: scale factor was meant to be a different thing?
     /// Sets the scale factor for the text.
     pub fn set_scale(&mut self, scale: f32) {
-        self.transform.scale = scale;
-        self.retained_transform.scale = scale;
-        self.needs_relayout = true;
-        self.shared_mut().text_changed = true;
-    }
-
-    /// Sets the scale factor for the text without updating the retained transform.
-    pub fn set_transformed_scale(&mut self, scale: f32) {
+        if self.transform.scale == scale {
+            return;
+        }
         self.transform.scale = scale;
         self.needs_relayout = true;
         self.shared_mut().text_changed = true;
