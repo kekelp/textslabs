@@ -30,7 +30,6 @@ struct State {
     surface_config: SurfaceConfiguration,
     window: Arc<Window>,
 
-    text_renderer: TextRenderer,
     text: Text,
 
     text_edit_handle: TextEditHandle,
@@ -54,7 +53,7 @@ impl State {
             .unwrap();
         surface.configure(&device, &surface_config);
 
-        let mut text = Text::new();
+        let mut text = Text::new(&device, &queue, surface_config.format);
         
         // Create a text edit in the center of the screen (which will be in the occluded right half)
         let text_edit_handle = text.add_text_edit(
@@ -67,15 +66,12 @@ impl State {
             1.0, // Behind the occluding rectangle (depth 0.5)
         );
 
-        let text_renderer = TextRenderer::new(&device, &queue, surface_config.format);
-
         Self {
             device,
             queue,
             surface,
             surface_config,
             window,
-            text_renderer,
             text,
             text_edit_handle,
             cursor_pos: (0.0, 0.0),
@@ -101,8 +97,7 @@ impl State {
                 let frame = self.surface.get_current_texture().unwrap();
                 let view = frame.texture.create_view(&TextureViewDescriptor::default());
 
-                self.text.prepare_all(&mut self.text_renderer);
-                self.text_renderer.load_to_gpu(&self.device, &self.queue);
+                self.text.prepare_all();
 
                 let mut encoder = self.device.create_command_encoder(&CommandEncoderDescriptor { label: None });
                 {
@@ -119,7 +114,7 @@ impl State {
                         ..Default::default()
                     });
 
-                    self.text_renderer.render(&mut pass);
+                    self.text.render(&mut pass);
                 }
 
                 self.queue.submit(Some(encoder.finish()));

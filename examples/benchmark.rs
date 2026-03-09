@@ -18,7 +18,6 @@ struct State {
     surface: Surface<'static>,
     surface_config: SurfaceConfiguration,
     text: Text,
-    text_renderer: TextRenderer,
     header: TextBoxHandle,
     first_frame_stats: TextBoxHandle,
     avg_stats: TextBoxHandle,
@@ -61,8 +60,7 @@ impl State {
         surface_config.present_mode = PresentMode::Immediate;
         surface.configure(&device, &surface_config);
 
-        let text_renderer = TextRenderer::new(&device, &queue, surface_config.format);
-        let mut text = Text::new();
+        let mut text = Text::new(&device, &queue, surface_config.format);
 
         let big_style = text.add_style(TextStyle {
             font_size: 24.0,
@@ -192,7 +190,6 @@ impl State {
             surface_config,
             window,
             text,
-            text_renderer,
             first_frame_stats,
             avg_stats,
             header,
@@ -359,15 +356,13 @@ impl winit::application::ApplicationHandler for Application {
 
                 // Render
                 let prepare_start = Instant::now();
-                state.text.prepare_all(&mut state.text_renderer);
+                state.text.prepare_all();
                 let prepare_time = prepare_start.elapsed();
                 state.total_prepare_time += prepare_time;
 
                 if let Some(first_prepare_start) = prepare_time_for_first_frame {
                     state.first_prepare_time = Some(first_prepare_start.elapsed());
                 }
-
-                state.text_renderer.load_to_gpu(&state.device, &state.queue);
 
                 let surface_texture = state.surface.get_current_texture().unwrap();
                 let mut encoder = state.device.create_command_encoder(&CommandEncoderDescriptor::default());
@@ -384,7 +379,7 @@ impl winit::application::ApplicationHandler for Application {
                         })],
                         ..Default::default()
                     });
-                    state.text_renderer.render(&mut pass);
+                    state.text.render(&mut pass);
                 }
 
                 state.gpu_profiler.end_query(&mut encoder, query);

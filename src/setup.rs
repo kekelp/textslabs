@@ -98,7 +98,8 @@ pub enum AtlasPageSize {
     WgpuMax,
 }
 impl AtlasPageSize {
-    fn size(self, device: &Device) -> u32 {
+    /// Get the size in pixels for this atlas page size option.
+    pub fn size(self, device: &Device) -> u32 {
         match self {
             AtlasPageSize::Flat(i) => i,
             AtlasPageSize::DownlevelWrbgl2Max => Limits::downlevel_defaults().max_texture_dimension_2d,
@@ -130,21 +131,21 @@ pub(crate) fn create_box_data_buffer(device: &Device, size: u64) -> Buffer {
 
 impl TextRenderer {
     /// Create a new TextRenderer with default parameters.
-    pub fn new(device: &Device, queue: &Queue, format: TextureFormat) -> Self {
+    pub fn new(device: Device, queue: Queue, format: TextureFormat) -> Self {
         Self::new_with_params(device, queue, format, None, TextRendererParams::default())
     }
-    
+
     /// Create a new TextRenderer with the specified parameters.
     pub fn new_with_params(
-        device: &Device,
-        queue: &Queue,
+        device: Device,
+        queue: Queue,
         format: TextureFormat,
         depth_stencil: Option<DepthStencilState>,
         params: TextRendererParams,
     ) -> Self {
         let srgb = format.is_srgb();
-        
-        let atlas_size = params.atlas_page_size.size(device);
+
+        let atlas_size = params.atlas_page_size.size(&device);
 
 
         let sampler = device.create_sampler(&SamplerDescriptor {
@@ -185,13 +186,6 @@ impl TextRenderer {
             ],
         };
 
-        let uniform_params = Params {
-            screen_resolution_width: 0.0,
-            screen_resolution_height: 0.0,
-            srgb: if srgb { 1 } else { 0 },
-            _pad: 0,
-        };
-
         let params_buffer = device.create_buffer(&BufferDescriptor {
             label: Some("params"),
             size: mem::size_of::<Params>() as u64,
@@ -201,8 +195,7 @@ impl TextRenderer {
 
         let bind_group_layout = device.create_bind_group_layout(&BIND_GROUP_LAYOUT_DESC);
 
-        let glyph_cache = LruCache::unbounded_with_hasher(BuildHasherDefault::<FxHasher>::default());
-
+        // Create initial empty atlas pages for initial bind group creation
         let mut mask_atlas_pages = vec![AtlasPage {
             image: GrayImage::from_pixel(atlas_size, atlas_size, Luma([0])),
             packer: BucketedAtlasAllocator::new(size2(atlas_size as i32, atlas_size as i32)),
@@ -250,23 +243,20 @@ impl TextRenderer {
             cache: None,
         });
 
-        let tmp_image = Image::new();
-        let frame = 1;
+        let vertex_buffer = create_vertex_buffer(&device, INITIAL_BUFFER_SIZE);
+        let box_data_buffer = create_box_data_buffer(&device, 1024 * std::mem::size_of::<BoxData>() as u64);
 
-        let vertex_buffer = create_vertex_buffer(device, INITIAL_BUFFER_SIZE);
-        let box_data_buffer = create_box_data_buffer(device, 1024 * std::mem::size_of::<BoxData>() as u64);
-        
         let (mask_texture_array, color_texture_array) = rebuild_texture_arrays(
-            device,
-            queue,
+            &device,
+            &queue,
             atlas_size,
             &mut mask_atlas_pages,
             &mut color_atlas_pages,
-            uniform_params.srgb != 0,
+            srgb,
         );
 
         let bind_group = create_bind_group(
-            device,
+            &device,
             &mask_texture_array,
             &color_texture_array,
             &vertex_buffer,
@@ -277,124 +267,25 @@ impl TextRenderer {
         );
 
         return Self {
-            frame,
+            device,
+            queue,
             atlas_size,
-            tmp_image,
-            mask_atlas_pages,
-            color_atlas_pages,
-            quads: Vec::with_capacity(1000),
-            box_data: Vec::with_capacity(100),
             mask_texture_array,
             color_texture_array,
             bind_group,
             pipeline,
             bind_group_layout,
             sampler,
-            params: uniform_params,
             params_buffer,
-            glyph_cache,
-            last_frame_evicted: 0,
-            // cached_scaler: None,
             vertex_buffer,
             box_data_buffer,
-            needs_glyph_sync: true,
-            needs_box_data_sync: true,
-            needs_texture_array_rebuild: false,
-            scale_cx: Some(ScaleContext::new()),
+            srgb,
         };
     }
 }
 
-impl TextRenderer {
-    pub(crate) fn rebuild_texture_arrays(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
-        let (mask_texture_array, color_texture_array) = rebuild_texture_arrays(
-            device,
-            queue,
-            self.atlas_size,
-            &mut self.mask_atlas_pages,
-            &mut self.color_atlas_pages,
-            self.params.srgb != 0,
-        );
 
-        self.mask_texture_array = mask_texture_array;
-        self.color_texture_array = color_texture_array;
-
-        // Rebuild bind group after textures are updated
-        self.recreate_bind_group(device);
-    }
-
-    pub(crate) fn update_texture_arrays(&mut self, queue: &wgpu::Queue) {
-        for (i, page) in self.mask_atlas_pages.iter_mut().enumerate() {
-            if page.needs_upload {
-                queue.write_texture(
-                    wgpu::TexelCopyTextureInfo {
-                        texture: &self.mask_texture_array,
-                        mip_level: 0,
-                        origin: wgpu::Origin3d { x: 0, y: 0, z: i as u32 },
-                        aspect: wgpu::TextureAspect::All,
-                    },
-                    &page.image.as_raw(),
-                    wgpu::TexelCopyBufferLayout {
-                        offset: 0,
-                        bytes_per_row: Some(page.image.width()),
-                        rows_per_image: None,
-                    },
-                    wgpu::Extent3d {
-                        width: page.image.width(),
-                        height: page.image.height(),
-                        depth_or_array_layers: 1,
-                    },
-                );
-                page.needs_upload = false;
-            }
-        }
-
-        // Update only dirty color texture array pages
-        for (i, page) in self.color_atlas_pages.iter_mut().enumerate() {
-            if page.needs_upload {
-                queue.write_texture(
-                    wgpu::TexelCopyTextureInfo {
-                        texture: &self.color_texture_array,
-                        mip_level: 0,
-                        origin: wgpu::Origin3d { x: 0, y: 0, z: i as u32 },
-                        aspect: wgpu::TextureAspect::All,
-                    },
-                    &page.image.as_raw(),
-                    wgpu::TexelCopyBufferLayout {
-                        offset: 0,
-                        bytes_per_row: Some(page.image.width() * 4),
-                        rows_per_image: None,
-                    },
-                    wgpu::Extent3d {
-                        width: page.image.width(),
-                        height: page.image.height(),
-                        depth_or_array_layers: 1,
-                    },
-                );
-                page.needs_upload = false;
-            }
-        }
-    }
-    
-
-    pub(crate) fn recreate_bind_group(&mut self, device: &wgpu::Device) {
-        let bind_group = create_bind_group(
-            device,
-            &self.mask_texture_array,
-            &self.color_texture_array,
-            &self.vertex_buffer,
-            &self.sampler,
-            &self.params_buffer,
-            &self.box_data_buffer,
-            &self.bind_group_layout,
-        );
-
-        self.bind_group = bind_group;
-    }
-}
-
-
-fn create_bind_group(
+pub(crate) fn create_bind_group(
     device: &wgpu::Device,
     mask_texture_array: &wgpu::Texture,
     color_texture_array: &wgpu::Texture,
@@ -449,7 +340,7 @@ fn create_bind_group(
     })
 }
 
-fn rebuild_texture_arrays(
+pub(crate) fn rebuild_texture_arrays(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     atlas_size: u32,

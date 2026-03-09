@@ -34,8 +34,6 @@ pub(crate) struct StyleInner {
 
 
 /// Centralized struct that holds collections of [`TextBox`]es, [`TextEdit`]s, [`TextStyle2`]s.
-/// 
-/// For rendering, a [`TextRenderer`] is also needed.
 pub struct Text {
     pub(crate) text_boxes: SlotMap<DefaultKey, TextBox>,
     pub(crate) text_edits: SlotMap<DefaultKey, TextEdit>,
@@ -48,13 +46,17 @@ pub struct Text {
     pub(crate) input_state: TextInputState,
 
     pub(crate) mouse_hit_stack: Vec<(AnyBox, f32)>,
-    
+
     pub(crate) using_frame_based_visibility: bool,
-    
+
     pub(crate) scrolled_moved_indices: Vec<AnyBox>,
     pub(crate) scroll_animations: Vec<ScrollAnimation>,
 
     pub(crate) current_visibility_frame: u64,
+
+    pub(crate) render_data: RenderData,
+
+    pub(crate) renderer: TextRenderer,
 
     #[cfg(feature = "accessibility")]
     pub(crate) accesskit_id_to_text_handle_map: HashMap<NodeId, AnyBox>,
@@ -331,14 +333,29 @@ impl TextInputState {
 
 
 impl Text {
-    /// Create a new Text instance.
-    pub fn new() -> Self {
+    /// Create a new Text instance with a GPU renderer.
+    pub fn new(device: &Device, queue: &Queue, format: TextureFormat) -> Self {
+        Self::new_with_params(device, queue, format, None, TextRendererParams::default())
+    }
+
+    /// Create a new Text instance with custom renderer parameters.
+    pub fn new_with_params(
+        device: &Device,
+        queue: &Queue,
+        format: TextureFormat,
+        depth_stencil: Option<DepthStencilState>,
+        params: TextRendererParams,
+    ) -> Self {
         let mut styles = SlotMap::with_capacity_and_key(10);
         let default_style_key = styles.insert(StyleInner {
             text_style: original_default_style(),
             text_edit_style: TextEditStyle::default(),
             version: 0,
         });
+
+        let renderer = TextRenderer::new_with_params(device.clone(), queue.clone(), format, depth_stencil, params);
+        let mut render_data = RenderData::new();
+        render_data.set_srgb(format.is_srgb());
 
         Self {
             text_boxes: SlotMap::with_capacity(10),
@@ -350,10 +367,12 @@ impl Text {
             scroll_animations: Vec::new(),
             current_visibility_frame: 1,
             using_frame_based_visibility: false,
+            render_data,
+            renderer,
 
             #[cfg(feature = "accessibility")]
             accesskit_id_to_text_handle_map: HashMap::with_capacity(50),
-            
+
             shared: Box::new(Shared {
                 windows: Vec::with_capacity(1),
                 decorations_range: (0, 0),
@@ -397,6 +416,11 @@ impl Text {
         self.shared.window = Some(Arc::downgrade(&window));
     }
 
+    /// Render all prepared text using the provided render pass.
+    pub fn render(&mut self, pass: &mut RenderPass) {    
+        self.renderer.load_to_gpu(&mut self.render_data);
+        self.renderer.render(pass, &self.render_data);
+    }
 
     pub(crate) fn new_style_version(&mut self) -> u64 {
         self.style_version_id_counter += 1;
@@ -664,21 +688,21 @@ impl Text {
     }
 
 
-    /// Layout and rasterize all text belonging to a window, prepare the render data, and pass it to `TextRenderer`.
-    pub fn prepare_all_for_window(&mut self, text_renderer: &mut TextRenderer, window: &Window) {
+    /// Layout and rasterize all text belonging to a window, prepare the render data.
+    pub fn prepare_all_for_window(&mut self, window: &Window) {
         let window_id = window.id();
         let window_size = window.inner_size();
         let (width, height) = (window_size.width as f32, window_size.height as f32);
 
-        self.prepare_all_impl(text_renderer, window_id, (width, height));
+        self.prepare_all_impl(window_id, (width, height));
     }
 
-    /// Layout and rasterize all text, prepare the render data, and pass it to `TextRenderer`.
-    /// 
+    /// Layout and rasterize all text, prepare the render data.
+    ///
     /// This function is for single-window applications only. For multi-window, use [`Text::prepare_all_for_window`].
-    /// 
-    /// [`Text`] keeps track of all changes to text boxes internally. So this function can be called multiple times in same frame without issues, if needed. 
-    pub fn prepare_all(&mut self, text_renderer: &mut TextRenderer) {
+    ///
+    /// [`Text`] keeps track of all changes to text boxes internally. So this function can be called multiple times in same frame without issues, if needed.
+    pub fn prepare_all(&mut self) {
         let res = self.shared.windows.first().map(|w| (w.window_id, w.dimensions));
 
         // This is what we would want to do:
@@ -694,28 +718,28 @@ impl Text {
             return;
         };
 
-        self.prepare_all_impl(text_renderer, window_id, window_size);
+        self.prepare_all_impl(window_id, window_size);
     }
 
     /// Prepare decorations
-    pub fn prepare_decorations(&mut self, text_renderer: &mut TextRenderer) -> (usize, usize) {
+    pub fn prepare_decorations(&mut self) -> (usize, usize) {
         let res = self.shared.windows.first().map(|w| (w.window_id, w.dimensions));
 
         let Some((window_id, _)) = res else {
             return (0, 0);
         };
 
-        return self.prepare_decorations_for_window(text_renderer, window_id);
+        return self.prepare_decorations_for_window(window_id);
     }
 
     /// Prepare decorations for a window
-    pub fn prepare_decorations_for_window(&mut self, text_renderer: &mut TextRenderer, window_id: WindowId) -> (usize, usize) {
+    pub fn prepare_decorations_for_window(&mut self, window_id: WindowId) -> (usize, usize) {
         let show_cursor = self.shared.cursor_blink_animation_currently_visible;
 
         // Decorations share BoxData with text, so they only need re-preparing when
         // text or selection changes - not on scroll (BoxData update handles that).
         if self.shared.decorations_changed || self.shared.text_changed {
-            let start_index = text_renderer.quads().len();
+            let start_index = self.render_data.quads().len();
             if let Some(focused) = self.shared.focused {
                 // For multi-window, only prepare decorations if the focused element belongs to this window
                 let focused_belongs_to_window = match focused {
@@ -738,19 +762,17 @@ impl Text {
                 if focused_belongs_to_window {
                     match focused {
                         AnyBox::TextEdit(i) => {
-                            let handle = TextEditHandle { key: i };
-                            let text_edit = self.get_text_edit(&handle);
-                            text_renderer.prepare_text_box_decorations(&text_edit.text_box, show_cursor);
+                            let text_edit = &self.text_edits[i];
+                            self.render_data.prepare_text_box_decorations(&text_edit.text_box, show_cursor);
                         },
                         AnyBox::TextBox(i) => {
-                            let handle = TextBoxHandle { key: i };
-                            let text_box = self.get_text_box(&handle);
-                            text_renderer.prepare_text_box_decorations(&text_box, false);
+                            let text_box = &self.text_boxes[i];
+                            self.render_data.prepare_text_box_decorations(text_box, false);
                         },
                     }
                 }
             }
-            let end_index = text_renderer.quads().len();
+            let end_index = self.render_data.quads().len();
             self.shared.decorations_range = (start_index, end_index);
         }
 
@@ -762,9 +784,9 @@ impl Text {
         return self.shared.decorations_range;
     }
 
-    pub(crate) fn prepare_all_impl(&mut self, text_renderer: &mut TextRenderer, window_id: WindowId, window_size: (f32, f32)) {
+    pub(crate) fn prepare_all_impl(&mut self, window_id: WindowId, window_size: (f32, f32)) {
 
-        text_renderer.update_resolution(window_size.0, window_size.1);
+        self.render_data.update_resolution(window_size.0, window_size.1);
 
         // todo: not sure if this works correctly with multi-window.
         if !self.shared.text_changed && self.using_frame_based_visibility {
@@ -783,17 +805,17 @@ impl Text {
 
         if self.shared.text_changed {
             // Full clear and re-prepare everything
-            text_renderer.clear();
+            self.render_data.clear();
         } else if self.shared.decorations_changed && self.scrolled_moved_indices.is_empty() {
             // Only decorations changed (selection, cursor) - clear decoration quads only
-            text_renderer.clear_decorations();
+            self.render_data.clear_decorations();
         } else if !self.scrolled_moved_indices.is_empty() {
             // Scroll only - just update BoxData, no clearing needed.
             // Decorations share BoxData with text, so they move together.
 
-            if !self.handle_scroll_fast_path(text_renderer) {
+            if !self.handle_scroll_fast_path() {
                 // Fast path failed (tolerance exceeded), fall back to full prepare
-                text_renderer.clear();
+                self.render_data.clear();
                 self.shared.text_changed = true;
             }
         }
@@ -805,7 +827,7 @@ impl Text {
                 if !text_edit.text_box.hidden() && text_edit.text_box.last_frame_touched == current_frame {
                     let should_render = text_edit.text_box.window_id.is_none() || text_edit.text_box.window_id == Some(window_id);
                     if should_render {
-                        text_renderer.prepare_text_edit_layout(text_edit);
+                        self.render_data.prepare_text_edit_layout(text_edit);
                     }
                 }
             }
@@ -814,7 +836,7 @@ impl Text {
                 if !text_box.hidden() && text_box.last_frame_touched == current_frame {
                     let should_render = text_box.window_id.is_none() || text_box.window_id == Some(window_id);
                     if should_render {
-                        text_renderer.prepare_text_box_layout(&mut text_box);
+                        self.render_data.prepare_text_box_layout(&mut text_box);
                     }
                 }
             }
@@ -822,7 +844,7 @@ impl Text {
 
         // Prepare decorations only if text or decorations changed (not for scroll-only)
         if self.shared.text_changed || self.shared.decorations_changed {
-            self.prepare_decorations_for_window(text_renderer, window_id);
+            self.prepare_decorations_for_window(window_id);
         }
 
         // Multi-window: mark prepared and check if all windows done.
@@ -852,27 +874,27 @@ impl Text {
     /// Fast path for handling scroll-only changes by adjusting BoxData translation.
     /// Returns false if scroll has exceeded the tolerance from the base position (line culling),
     /// in which case the caller should fall back to a full re-prepare.
-    fn handle_scroll_fast_path(&mut self, text_renderer: &mut TextRenderer) -> bool {
-        text_renderer.needs_box_data_sync = true;
+    fn handle_scroll_fast_path(&mut self) -> bool {
+        self.render_data.needs_box_data_sync = true;
         for any_box in &self.scrolled_moved_indices {
             match any_box {
                 AnyBox::TextEdit(i) => {
                     if let Some(text_edit) = self.text_edits.get_mut(*i) {
-                        if ! update_scroll(text_renderer, &mut text_edit.text_box.quad_storage, text_edit.text_box.scroll_offset) {
+                        if ! update_scroll(&mut self.render_data, &mut text_edit.text_box.quad_storage, text_edit.text_box.scroll_offset) {
                             return false;
                         }
                     }
                 },
                 AnyBox::TextBox(i) => {
                     if let Some(text_box) = self.text_boxes.get_mut(*i) {
-                        if ! update_scroll(text_renderer, &mut text_box.quad_storage, text_box.scroll_offset) {
+                        if ! update_scroll(&mut self.render_data, &mut text_box.quad_storage, text_box.scroll_offset) {
                             return false;
                         }
                     }
                 },
             }
         }
-        text_renderer.needs_box_data_sync = true;
+        self.render_data.needs_box_data_sync = true;
         true
     }
 
@@ -1740,7 +1762,7 @@ impl Text {
 /// Update scroll by adjusting BoxData translation instead of modifying quad positions.
 /// Returns false if scroll has exceeded the tolerance from the base position (line culling boundary),
 /// in which case a full re-prepare is needed to get the correct lines.
-fn update_scroll(text_renderer: &mut TextRenderer, quad_storage: &mut QuadStorage, current_scroll: (f32, f32)) -> bool {
+fn update_scroll(render_data: &mut RenderData, quad_storage: &mut QuadStorage, current_scroll: (f32, f32)) -> bool {
     // Check if we've scrolled too far from the base (line culling tolerance)
     let distance_x = (current_scroll.0 - quad_storage.base_scroll.0).abs();
     let distance_y = (current_scroll.1 - quad_storage.base_scroll.1).abs();
@@ -1758,7 +1780,7 @@ fn update_scroll(text_renderer: &mut TextRenderer, quad_storage: &mut QuadStorag
 
     // Adjust BoxData translation and clip_rect for scroll
     if let Some(box_index) = quad_storage.box_index {
-        text_renderer.adjust_box_for_scroll(box_index, delta_x, delta_y);
+        render_data.adjust_box_for_scroll(box_index, delta_x, delta_y);
     }
 
     // Update last_scroll to track the current state

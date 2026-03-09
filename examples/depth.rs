@@ -26,7 +26,6 @@ struct State {
     surface_config: SurfaceConfiguration,
     window: Arc<Window>,
 
-    text_renderer: TextRenderer,
     text: Text,
 
     triangle_pipeline: RenderPipeline,
@@ -87,17 +86,9 @@ impl State {
             stencil: StencilState::default(),
             bias: DepthBiasState::default(),
         };
-        
-        let text_renderer = TextRenderer::new_with_params(
-            &device, 
-            &queue, 
-            surface_config.format,
-            Some(text_depth_stencil_state),
-            TextRendererParams::default()
-        );
 
         let text_depth = 0.5;
-        let mut text = Text::new();
+        let mut text = Text::new(&device, &queue, surface_config.format);
         let _text_handle = text.add_text_box(
             "Text rendering supports basic depth testing, but this isn't enough to draw multiple semitransparent objects both behind and in front of text. The third triangle is rendered in a separate draw call.    Text rendering supports basic depth testing, but this isn't enough to draw multiple semitransparent objects both behind and in front of text. The third triangle is rendered in a separate draw call.    Text rendering supports basic depth testing, but this isn't enough to draw multiple semitransparent objects both behind and in front of text. The third triangle is rendered in a separate draw call.    Text rendering supports basic depth testing, but this isn't enough to draw multiple semitransparent objects both behind and in front of text. The third triangle is rendered in a separate draw call.    ",
             (50.0, 50.0),
@@ -198,7 +189,6 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
             surface,
             surface_config,
             window,
-            text_renderer,
             text,
             triangle_pipeline,
             triangle_vertex_buffer,
@@ -237,8 +227,7 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
         let view = frame.texture.create_view(&TextureViewDescriptor::default());
 
         // Prepare text rendering
-        self.text.prepare_all(&mut self.text_renderer);
-        self.text_renderer.load_to_gpu(&self.device, &self.queue);
+        self.text.prepare_all();
 
         let mut encoder = self.device.create_command_encoder(&CommandEncoderDescriptor {
             label: Some("render encoder"),
@@ -277,7 +266,7 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
             render_pass.set_vertex_buffer(0, self.triangle_vertex_buffer.slice(..));
             render_pass.draw(0..6, 0..1);
 
-            self.text_renderer.render(&mut render_pass);
+            self.render();
 
             render_pass.set_pipeline(&self.triangle_pipeline);
             render_pass.set_vertex_buffer(0, self.triangle_vertex_buffer.slice(..));

@@ -128,8 +128,11 @@
 mod setup;
 pub use setup::*;
 
+mod render_data;
+pub use render_data::*;
+
 mod text_renderer;
-pub use text_renderer::*;
+pub(crate) use text_renderer::*;
 
 mod text;
 pub use text::*;

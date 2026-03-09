@@ -15,7 +15,6 @@ struct State {
     surface: Surface<'static>,
     surface_config: SurfaceConfiguration,
     text: Text,
-    text_renderer: TextRenderer,
 }
 
 impl State {
@@ -27,11 +26,10 @@ impl State {
         let surface_config = surface.get_default_config(&adapter, window.inner_size().width, window.inner_size().height).unwrap();
         surface.configure(&device, &surface_config);
 
-        let text_renderer = TextRenderer::new(&device, &queue, surface_config.format);
-        let mut text = Text::new();
+        let mut text = Text::new(&device, &queue, surface_config.format);
         let _text_edit_handle = text.add_text_edit("Type here...".to_string(), (50.0, 50.0), (400.0, 200.0), 0.0);
 
-        Self { device, queue, surface, surface_config, window, text, text_renderer }
+        Self { device, queue, surface, surface_config, window, text, }
     }
 }
 
@@ -60,9 +58,8 @@ impl winit::application::ApplicationHandler for Application {
                 state.surface.configure(&state.device, &state.surface_config);
             }
             WindowEvent::RedrawRequested => {
-                state.text.prepare_all(&mut state.text_renderer);
-                state.text_renderer.load_to_gpu(&state.device, &state.queue);
-        
+                state.text.prepare_all();
+
                 let surface_texture = state.surface.get_current_texture().unwrap();
                 let mut encoder = state.device.create_command_encoder(&CommandEncoderDescriptor::default());
                 {
@@ -75,7 +72,7 @@ impl winit::application::ApplicationHandler for Application {
                         })],
                         ..Default::default()
                     });
-                    state.text_renderer.render(&mut pass);
+                    state.text.render(&mut pass);
                 }
         
                 state.queue.submit(Some(encoder.finish()));

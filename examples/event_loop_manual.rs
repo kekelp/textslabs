@@ -31,7 +31,6 @@ struct State {
     surface_config: SurfaceConfiguration,
     window: Arc<Window>,
 
-    text_renderer: TextRenderer,
     text: Text,
 
     _text_edit: TextEditHandle,
@@ -70,9 +69,7 @@ impl State {
 
         surface.configure(&device, &surface_config);
 
-        let text_renderer = TextRenderer::new(&device, &queue, surface_format);
-
-        let mut text = Text::new();
+        let mut text = Text::new(&device, &queue, surface_format);
         
         let text_edit = text.add_text_edit("This is a text edit box with a bunch of text that can be scrolled. Use the mouse wheel to get a smooth scroll animation. Focus this text box to see cursor blinking managed by the event loop timing.".to_string(), (50.0, 50.0), (400.0, 80.0), 0.0,);
         let text_box = text.add_text_box("This is a regular non-editable text box.", (50.0, 180.0), (500.0, 120.0), 0.0,);
@@ -83,7 +80,6 @@ impl State {
             surface,
             surface_config,
             window,
-            text_renderer,
             text,
             _text_edit: text_edit,
             _text_box: text_box,
@@ -93,8 +89,7 @@ impl State {
     fn render(&mut self) {
         println!("Rerender at {:?}", std::time::Instant::now());
         
-        self.text.prepare_all(&mut self.text_renderer);
-        self.text_renderer.load_to_gpu(&self.device, &self.queue);
+        self.text.prepare_all();
 
         let surface_texture = self.surface.get_current_texture().unwrap();
         let view = surface_texture.texture.create_view(&TextureViewDescriptor::default());
@@ -120,7 +115,7 @@ impl State {
                 ..Default::default()
             });
 
-            self.text_renderer.render(&mut render_pass);
+            self.text.render(&mut render_pass);
         }
 
         self.queue.submit(std::iter::once(encoder.finish()));

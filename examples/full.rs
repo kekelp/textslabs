@@ -24,7 +24,6 @@ struct State {
     surface_config: SurfaceConfiguration,
     window: Arc<Window>,
 
-    text_renderer: TextRenderer,
     text: Text,
 
     single_line_input: TextEditHandle,
@@ -51,7 +50,7 @@ impl State {
         surface.configure(&device, &surface_config);
 
         let white = [255,0,0,255];
-        let mut text = Text::new();
+        let mut text = Text::new(&device, &queue, surface_config.format);
         
         // Create a style
         let big_text_style_handle = text.add_style(TextStyle {
@@ -126,7 +125,6 @@ impl State {
             }
         );
 
-        let text_renderer = TextRenderer::new(&device, &queue, surface_config.format);
 
         Self {
             device,
@@ -134,7 +132,6 @@ impl State {
             surface,
             surface_config,
             window,
-            text_renderer,
             text,
 
             single_line_input,
@@ -160,9 +157,7 @@ impl State {
             }
             WindowEvent::RedrawRequested => {
                 // Prepare the cpu-side text data for rendering.
-                self.text.prepare_all(&mut self.text_renderer);
-                // Load the text renderer's data on the gpu.
-                self.text_renderer.load_to_gpu(&self.device, &self.queue);
+                self.text.prepare_all();
 
                 // A bunch of wgpu boilerplate to be able to draw on the screen.
                 let surface_texture = self.surface.get_current_texture().unwrap();
@@ -183,7 +178,7 @@ impl State {
                     });
 
                     // Finally, render the text on the screen.
-                    self.text_renderer.render(&mut pass);
+                    self.text.render(&mut pass);
                 }
 
                 // More boilerplate.

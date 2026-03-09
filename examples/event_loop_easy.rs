@@ -39,7 +39,6 @@ struct State {
     surface_config: SurfaceConfiguration,
     window: Arc<Window>,
 
-    text_renderer: TextRenderer,
     text: Text,
 
     _text_edit: TextEditHandle,
@@ -79,9 +78,7 @@ impl State {
 
         surface.configure(&device, &surface_config);
 
-        let text_renderer = TextRenderer::new(&device, &queue, surface_format);
-
-        let mut text = Text::new();
+        let mut text = Text::new(&device, &queue, surface_format);
         let new_arc_clone = window.clone();
         text.set_auto_wakeup(new_arc_clone);
         
@@ -94,7 +91,6 @@ impl State {
             surface,
             surface_config,
             window,
-            text_renderer,
             text,
             _text_edit: text_edit,
             _text_box: text_box,
@@ -104,8 +100,7 @@ impl State {
     fn render(&mut self) {
         println!("Rerender at {:?}", std::time::Instant::now());
         
-        self.text.prepare_all(&mut self.text_renderer);
-        self.text_renderer.load_to_gpu(&self.device, &self.queue);
+        self.text.prepare_all();
 
         let surface_texture = self.surface.get_current_texture().unwrap();
         let view = surface_texture
@@ -133,7 +128,7 @@ impl State {
                 ..Default::default()
             });
 
-            self.text_renderer.render(&mut render_pass);
+            self.text.render(&mut render_pass);
         }
 
         self.queue.submit(std::iter::once(encoder.finish()));

@@ -19,7 +19,6 @@ struct WindowState {
     surface: wgpu::Surface<'static>,
     surface_config: SurfaceConfiguration,
     window: Arc<Window>,
-    text_renderer: TextRenderer,
 }
 
 struct State {
@@ -35,7 +34,7 @@ impl State {
         let adapter = pollster::block_on(instance.request_adapter(&RequestAdapterOptions::default())).unwrap();
         let (device, queue) = pollster::block_on(adapter.request_device(&DeviceDescriptor::default())).unwrap();
         
-        let mut text = Text::new();
+        let mut text = Text::new(&device, &queue, surface_config.format);
         
         let mut window_states = Vec::new();
         for (i, window) in windows.into_iter().enumerate() {
