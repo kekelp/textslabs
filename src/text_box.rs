@@ -77,7 +77,7 @@ pub(crate) struct QuadStorage {
     pub box_index: Option<u32>,
     /// The scroll offset when quads were prepared (for tolerance check)
     pub base_scroll: (f32, f32),
-    /// The scroll offset currently reflected in BoxData translation (for incremental delta)
+    /// The scroll offset currently reflected in BoxGpu translation (for incremental delta)
     pub last_scroll: (f32, f32),
 }
 

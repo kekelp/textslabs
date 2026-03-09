@@ -1,4 +1,4 @@
-struct BoxData {
+struct BoxGpu {
     float2 clip_rect_x;
     float2 clip_rect_y;
     float2 translation;
@@ -32,7 +32,7 @@ struct TextSlabs {
     SamplerState atlas_sampler;
     StructuredBuffer<GlyphQuad> quads;
     ConstantBuffer<Params> params;
-    StructuredBuffer<BoxData> box_data;
+    StructuredBuffer<BoxGpu> box_data;
 }
 
 ParameterBlock<TextSlabs> textslabs;
@@ -114,7 +114,7 @@ void text_vertex(
     out float2 uv
 ) {
     GlyphQuad quad = textslabs.quads[instanceIndex];
-    BoxData box = textslabs.box_data[quad.box_index];
+    BoxGpu box = textslabs.box_data[quad.box_index];
 
     float2 uv01 = float2(
         vertexIndex & 1u,
@@ -157,7 +157,7 @@ void text_vertex(
 float4 text_fragment_pure(GlyphQuad quad, float2 uv, float4 frag_coord): SV_Target {
     // Apply screen-space clipping using built-in fragment position
     // frag_coord.xy is in pixel coordinates (screen space)
-    BoxData box = textslabs.box_data[quad.box_index];
+    BoxGpu box = textslabs.box_data[quad.box_index];
     if (frag_coord.x < box.screen_clip_x.x || frag_coord.x > box.screen_clip_x.y ||
         frag_coord.y < box.screen_clip_y.x || frag_coord.y > box.screen_clip_y.y) {
         discard;

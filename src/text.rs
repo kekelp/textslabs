@@ -736,8 +736,8 @@ impl Text {
     pub fn prepare_decorations_for_window(&mut self, window_id: WindowId) -> (usize, usize) {
         let show_cursor = self.shared.cursor_blink_animation_currently_visible;
 
-        // Decorations share BoxData with text, so they only need re-preparing when
-        // text or selection changes - not on scroll (BoxData update handles that).
+        // Decorations share BoxGpu with text, so they only need re-preparing when
+        // text or selection changes - not on scroll (BoxGpu update handles that).
         if self.shared.decorations_changed || self.shared.text_changed {
             let start_index = self.render_data.glyph_quads().len();
             if let Some(focused) = self.shared.focused {
@@ -810,8 +810,8 @@ impl Text {
             // Only decorations changed (selection, cursor) - clear decoration quads only
             self.render_data.clear_decorations();
         } else if !self.scrolled_moved_indices.is_empty() {
-            // Scroll only - just update BoxData, no clearing needed.
-            // Decorations share BoxData with text, so they move together.
+            // Scroll only - just update BoxGpu, no clearing needed.
+            // Decorations share BoxGpu with text, so they move together.
 
             if !self.handle_scroll_fast_path() {
                 // Fast path failed (tolerance exceeded), fall back to full prepare
@@ -871,7 +871,7 @@ impl Text {
         }
     }
 
-    /// Fast path for handling scroll-only changes by adjusting BoxData translation.
+    /// Fast path for handling scroll-only changes by adjusting BoxGpu translation.
     /// Returns false if scroll has exceeded the tolerance from the base position (line culling),
     /// in which case the caller should fall back to a full re-prepare.
     fn handle_scroll_fast_path(&mut self) -> bool {
@@ -1759,7 +1759,7 @@ impl Text {
     }
 }
 
-/// Update scroll by adjusting BoxData translation instead of modifying quad positions.
+/// Update scroll by adjusting BoxGpu translation instead of modifying quad positions.
 /// Returns false if scroll has exceeded the tolerance from the base position (line culling boundary),
 /// in which case a full re-prepare is needed to get the correct lines.
 fn update_scroll(render_data: &mut RenderData, quad_storage: &mut QuadStorage, current_scroll: (f32, f32)) -> bool {
@@ -1778,7 +1778,7 @@ fn update_scroll(render_data: &mut RenderData, quad_storage: &mut QuadStorage, c
     let delta_x = current_scroll.0 - quad_storage.last_scroll.0;
     let delta_y = current_scroll.1 - quad_storage.last_scroll.1;
 
-    // Adjust BoxData translation and clip_rect for scroll
+    // Adjust BoxGpu translation and clip_rect for scroll
     if let Some(box_index) = quad_storage.box_index {
         render_data.adjust_box_for_scroll(box_index, delta_x, delta_y);
     }

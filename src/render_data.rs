@@ -467,7 +467,7 @@ impl RenderData {
         &self.glyph_quads
     }
 
-    /// Adjust BoxData for scroll fast path: updates scroll_offset and clip_rect.
+    /// Adjust BoxGpu for scroll fast path: updates scroll_offset and clip_rect.
     pub fn adjust_box_for_scroll(&mut self, box_index: u32, delta_x: f32, delta_y: f32) {
         if let Some(box_data) = self.box_data.get_mut(box_index as usize) {
             box_data.scroll_offset[0] += delta_x;
@@ -548,7 +548,7 @@ impl RenderData {
     }
 
     /// Prepare decorations (selection and cursor) for a text box.
-    /// Reuses the text box's existing BoxData (via quad_storage.box_index) for efficient scroll handling.
+    /// Reuses the text box's existing BoxGpu (via quad_storage.box_index) for efficient scroll handling.
     pub fn prepare_text_box_decorations(&mut self, text_box: &TextBox, show_cursor: bool) {
         // effective_clip_rect() is already in layout-local coordinates (includes scroll)
         let clip_rect = text_box.effective_clip_rect();
@@ -556,8 +556,8 @@ impl RenderData {
         let selection_color = 0x33_33_ff_aa;
         let cursor_color = 0xee_ee_ee_ff;
 
-        // Reuse the text box's BoxData instead of creating a new one.
-        // This way, when scroll updates BoxData.scroll_offset, decorations move with the text.
+        // Reuse the text box's BoxGpu instead of creating a new one.
+        // This way, when scroll updates BoxGpu.scroll_offset, decorations move with the text.
         let box_index = text_box.quad_storage.box_index.unwrap_or(0);
 
         text_box.selection().geometry_with(&text_box.layout, |rect, _line_i| {
@@ -584,7 +584,7 @@ impl RenderData {
     }
 
     fn prepare_layout(&mut self, layout: &Layout<ColorBrush>, scroll_offset: (f32, f32), clip_rect: Option<parley::BoundingBox>, depth: f32, transform: Transform2D, screen_clip: Option<(f32, f32, f32, f32)>) {
-        // Create BoxData for this text box
+        // Create BoxGpu for this text box
         let box_index = self.box_data.len() as u32;
         let box_data = create_box_data(clip_rect, scroll_offset, transform, screen_clip);
         self.box_data.push(box_data);
