@@ -73,7 +73,7 @@ impl TextRenderer {
         pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
 
         // Calculate total instance count
-        let total_instances = render_data.quads.len();
+        let total_instances = render_data.glyph_quads.len();
 
         if total_instances > 0 {
             // Single draw call for all instances
@@ -101,7 +101,7 @@ impl TextRenderer {
 
         // Sync quads buffer if needed
         if render_data.needs_glyph_sync {
-            let required_size = (render_data.quads.len() * std::mem::size_of::<GlyphQuad>()) as u64;
+            let required_size = (render_data.glyph_quads.len() * std::mem::size_of::<GlyphQuad>()) as u64;
 
             // Grow shared vertex buffer if needed
             if self.vertex_buffer.size() < required_size {
@@ -115,8 +115,8 @@ impl TextRenderer {
             }
 
             // Write all quads to vertex buffer
-            if !render_data.quads.is_empty() {
-                let bytes: &[u8] = bytemuck::cast_slice(&render_data.quads);
+            if !render_data.glyph_quads.is_empty() {
+                let bytes: &[u8] = bytemuck::cast_slice(&render_data.glyph_quads);
                 self.queue.write_buffer(&self.vertex_buffer, 0, bytes);
             }
 
@@ -125,11 +125,11 @@ impl TextRenderer {
 
         // Sync box_data buffer if needed
         if render_data.needs_box_data_sync {
-            let box_data_required_size = (render_data.box_data.len() * std::mem::size_of::<BoxData>()) as u64;
+            let box_data_required_size = (render_data.box_data.len() * std::mem::size_of::<BoxGpu>()) as u64;
 
             // Grow box_data buffer if needed
             if self.box_data_buffer.size() < box_data_required_size {
-                let min_size = u64::max(box_data_required_size, 1024 * std::mem::size_of::<BoxData>() as u64);
+                let min_size = u64::max(box_data_required_size, 1024 * std::mem::size_of::<BoxGpu>() as u64);
                 let growth_size = min_size * 3 / 2;
                 let current_growth = self.box_data_buffer.size() * 3 / 2;
                 let new_size = u64::max(growth_size, current_growth);

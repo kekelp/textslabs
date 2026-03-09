@@ -244,7 +244,7 @@ impl TextRenderer {
         });
 
         let vertex_buffer = create_vertex_buffer(&device, INITIAL_BUFFER_SIZE);
-        let box_data_buffer = create_box_data_buffer(&device, 1024 * std::mem::size_of::<BoxData>() as u64);
+        let box_data_buffer = create_box_data_buffer(&device, 1024 * std::mem::size_of::<BoxGpu>() as u64);
 
         let (mask_texture_array, color_texture_array) = rebuild_texture_arrays(
             &device,

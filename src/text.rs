@@ -739,7 +739,7 @@ impl Text {
         // Decorations share BoxData with text, so they only need re-preparing when
         // text or selection changes - not on scroll (BoxData update handles that).
         if self.shared.decorations_changed || self.shared.text_changed {
-            let start_index = self.render_data.quads().len();
+            let start_index = self.render_data.glyph_quads().len();
             if let Some(focused) = self.shared.focused {
                 // For multi-window, only prepare decorations if the focused element belongs to this window
                 let focused_belongs_to_window = match focused {
@@ -772,7 +772,7 @@ impl Text {
                     }
                 }
             }
-            let end_index = self.render_data.quads().len();
+            let end_index = self.render_data.glyph_quads().len();
             self.shared.decorations_range = (start_index, end_index);
         }
 

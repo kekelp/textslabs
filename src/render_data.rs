@@ -69,7 +69,7 @@ fn quantize<const N: u8>(pos: f32) -> (i32, f32, SubpixelBin::<N>) {
 #[allow(missing_docs)]
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Zeroable, Pod)]
-pub struct BoxData {
+pub struct BoxGpu {
     pub clip_rect_x: [f32; 2],            // 8 bytes - (x0, x1) in local space
     pub clip_rect_y: [f32; 2],            // 8 bytes - (y0, y1) in local space
     pub translation: [f32; 2],            // 8 bytes
@@ -122,7 +122,7 @@ fn unpack_flags_rust(flags_and_page: u32) -> u32 {
     flags_and_page & 0xFFFFFF
 }
 
-fn create_box_data(clip_rect: Option<parley::BoundingBox>, scroll_offset: (f32, f32), transform: Transform2D, screen_clip: Option<(f32, f32, f32, f32)>) -> BoxData {
+fn create_box_data(clip_rect: Option<parley::BoundingBox>, scroll_offset: (f32, f32), transform: Transform2D, screen_clip: Option<(f32, f32, f32, f32)>) -> BoxGpu {
     // clip_rect from effective_clip_rect() is already in layout-local coordinates (includes scroll_offset)
     let (clip_rect_x, clip_rect_y) = if let Some(clip) = clip_rect {
         (
@@ -141,7 +141,7 @@ fn create_box_data(clip_rect: Option<parley::BoundingBox>, scroll_offset: (f32, 
         None => ([f32::NEG_INFINITY, f32::INFINITY], [f32::NEG_INFINITY, f32::INFINITY]),
     };
 
-    BoxData {
+    BoxGpu {
         clip_rect_x,
         clip_rect_y,
         translation: [transform.translation.0, transform.translation.1],
@@ -307,8 +307,8 @@ pub struct RenderData {
     pub(crate) mask_atlas_pages: Vec<AtlasPage<GrayImage>>,
     pub(crate) color_atlas_pages: Vec<AtlasPage<RgbaImage>>,
 
-    pub(crate) quads: Vec<GlyphQuad>,
-    pub(crate) box_data: Vec<BoxData>,
+    pub(crate) glyph_quads: Vec<GlyphQuad>,
+    pub(crate) box_data: Vec<BoxGpu>,
 
     pub(crate) params: Params,
     pub(crate) atlas_size: u32,
@@ -351,7 +351,7 @@ impl RenderData {
             last_frame_evicted: 0,
             mask_atlas_pages,
             color_atlas_pages,
-            quads: Vec::with_capacity(1000),
+            glyph_quads: Vec::with_capacity(1000),
             box_data: Vec::with_capacity(100),
             params: Params {
                 screen_resolution_width: 0.0,
@@ -425,7 +425,7 @@ impl RenderData {
             }
         }
 
-        let quad = GlyphQuad {
+        let glyph_quad = GlyphQuad {
             pos_packed: pack_i32_pair_as_u16(x0, y0),
             dim_packed: pack_u16_pair((x1 - x0) as u32, (y1 - y0) as u32),
             uv_origin_packed: pack_u16_pair(0, 0),
@@ -435,13 +435,13 @@ impl RenderData {
             box_index,
             _padding: 0,
         };
-        self.quads.push(quad);
+        self.glyph_quads.push(glyph_quad);
     }
 
     /// Clear all render data for text and decorations from the renderer.
     pub fn clear(&mut self) {
         self.frame += 1;
-        self.quads.clear();
+        self.glyph_quads.clear();
         self.box_data.clear();
         self.clear_decorations();
     }
@@ -450,7 +450,7 @@ impl RenderData {
     pub fn clear_decorations(&mut self) {
         // Since decorations are now mixed with regular quads,
         // we need to filter them out by content type
-        self.quads.retain(|quad| {
+        self.glyph_quads.retain(|quad| {
             get_content_type(unpack_flags_rust(quad.flags_and_page)) != CONTENT_TYPE_DECORATION
         });
         self.needs_glyph_sync = true;
@@ -462,9 +462,9 @@ impl RenderData {
         self.params.screen_resolution_height = height;
     }
 
-    /// Get the quads buffer for external rendering
-    pub fn quads(&self) -> &[GlyphQuad] {
-        &self.quads
+    /// Get the glyph quads buffer for external rendering
+    pub fn glyph_quads(&self) -> &[GlyphQuad] {
+        &self.glyph_quads
     }
 
     /// Adjust BoxData for scroll fast path: updates scroll_offset and clip_rect.
@@ -504,7 +504,7 @@ impl RenderData {
         let screen_clip = text_box.screen_space_clip_rect;
         let scroll_offset = text_box.scroll_offset();
 
-        let start_index = self.quads.len();
+        let start_index = self.glyph_quads.len();
         let box_index = self.box_data.len() as u32;
 
         self.prepare_layout(&text_box.layout, scroll_offset, clip_rect, text_box.depth, text_box.transform(), screen_clip);
@@ -512,7 +512,7 @@ impl RenderData {
         self.needs_box_data_sync = true;
 
         // Update quad storage with new ranges
-        self.capture_quad_ranges_after(&mut text_box.quad_storage, scroll_offset, start_index, box_index);
+        self.capture_glyph_quad_ranges_after(&mut text_box.quad_storage, scroll_offset, start_index, box_index);
     }
 
     /// Prepare a text edit layout for rendering with scrolling and clipping support.
@@ -536,7 +536,7 @@ impl RenderData {
         let screen_clip = text_edit.text_box.screen_space_clip_rect;
         let scroll_offset = text_edit.scroll_offset();
 
-        let start_index = self.quads.len();
+        let start_index = self.glyph_quads.len();
         let box_index = self.box_data.len() as u32;
 
         self.prepare_layout(&text_edit.text_box.layout, scroll_offset, clip_rect, text_edit.text_box.depth, text_edit.text_box.transform(), screen_clip);
@@ -544,7 +544,7 @@ impl RenderData {
         self.needs_box_data_sync = true;
 
         // Update quad storage with new ranges
-        self.capture_quad_ranges_after(&mut text_edit.text_box.quad_storage, scroll_offset, start_index, box_index);
+        self.capture_glyph_quad_ranges_after(&mut text_edit.text_box.quad_storage, scroll_offset, start_index, box_index);
     }
 
     /// Prepare decorations (selection and cursor) for a text box.
@@ -575,8 +575,8 @@ impl RenderData {
     }
 
     /// Capture quad ranges after text rendering and populate QuadStorage
-    fn capture_quad_ranges_after(&mut self, quad_storage: &mut QuadStorage, current_offset: (f32, f32), start_index: usize, box_index: u32) {
-        let end_index = self.quads.len();
+    fn capture_glyph_quad_ranges_after(&mut self, quad_storage: &mut QuadStorage, current_offset: (f32, f32), start_index: usize, box_index: u32) {
+        let end_index = self.glyph_quads.len();
         quad_storage.quad_range = Some((start_index, end_index));
         quad_storage.box_index = Some(box_index);
         quad_storage.base_scroll = current_offset;
@@ -646,7 +646,7 @@ impl RenderData {
             if let Some(stored_glyph) = self.glyph_cache.get(&glyph_ctx.key()) {
                 if let Some(stored_glyph) = stored_glyph {
                     let quad = make_quad(&glyph_ctx, stored_glyph, depth, box_index);
-                    self.quads.push(quad);
+                    self.glyph_quads.push(quad);
                 }
             } else {
                 // Lazily initialize to skip the cost when all glyphs are cached.
@@ -661,7 +661,7 @@ impl RenderData {
                     );
                 }
                 if let Some((quad, _stored_glyph)) = self.prepare_glyph(&glyph_ctx, scaler.as_mut().unwrap(), depth, box_index) {
-                    self.quads.push(quad);
+                    self.glyph_quads.push(quad);
                 }
             }
 
