@@ -67,19 +67,19 @@ impl<T: GpuSlabItem> GpuSlab<T> {
 }
 
 
-impl GpuSlabItem for crate::BoxData {
-    fn next_free(&self) -> Option<usize> {
-        if self.slab_metadata == u32::MAX {
-            None
-        } else {
-            Some(self.slab_metadata as usize)
-        }
-    }
+// impl GpuSlabItem for crate::BoxData {
+//     fn next_free(&self) -> Option<usize> {
+//         if self.slab_metadata == u32::MAX {
+//             None
+//         } else {
+//             Some(self.slab_metadata as usize)
+//         }
+//     }
 
-    fn set_next_free(&mut self, i: Option<usize>) {
-        match i {
-            Some(i) => self.slab_metadata = i as u32,
-            None => self.slab_metadata = u32::MAX,
-        }
-    }
-}
+//     fn set_next_free(&mut self, i: Option<usize>) {
+//         match i {
+//             Some(i) => self.slab_metadata = i as u32,
+//             None => self.slab_metadata = u32::MAX,
+//         }
+//     }
+// }

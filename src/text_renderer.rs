@@ -29,14 +29,8 @@ fn get_content_type(flags: u32) -> u32 {
 /// 
 /// `TextRenderer` supports only one texture format at a time.
 pub struct TextRenderer {
-    pub(crate) text_renderer: ContextlessTextRenderer,
-    pub(crate) scale_cx: ScaleContext,
-}
-
-// This split is needed because of partial borrows
-pub(crate) struct ContextlessTextRenderer {
-    pub frame: u64,
-    pub tmp_image: Image,
+    pub(crate) frame: u64,
+    pub(crate) tmp_image: Image,
 
     pub(crate) glyph_cache: LruCache<GlyphKey, Option<StoredGlyph>, BuildHasherDefault<FxHasher>>,
     pub(crate) last_frame_evicted: u64,
@@ -50,15 +44,15 @@ pub(crate) struct ContextlessTextRenderer {
     // Combined texture arrays and single bind group
     pub(crate) mask_texture_array: Texture,
     pub(crate) color_texture_array: Texture,
-    pub bind_group_layout: BindGroupLayout,
+    pub(crate) bind_group_layout: BindGroupLayout,
     pub(crate) bind_group: BindGroup,
 
-    pub params: Params,
-    pub sampler: Sampler,
-    pub params_buffer: Buffer,
+    pub(crate) params: Params,
+    pub(crate) sampler: Sampler,
+    pub(crate) params_buffer: Buffer,
 
-    pub pipeline: RenderPipeline,
-    pub atlas_size: u32,
+    pub(crate) pipeline: RenderPipeline,
+    pub(crate) atlas_size: u32,
 
     // pub(crate) cached_scaler: Option<CachedScaler>,
 
@@ -67,6 +61,8 @@ pub(crate) struct ContextlessTextRenderer {
     pub(crate) needs_glyph_sync: bool,
     pub(crate) needs_box_data_sync: bool,
     pub(crate) needs_texture_array_rebuild: bool,
+
+    pub(crate) scale_cx: Option<ScaleContext>,
 }
 
 // pub(crate) struct CachedScaler {
@@ -83,7 +79,7 @@ pub(crate) struct AtlasPage<ImageType> {
 
 
 
-impl ContextlessTextRenderer {
+impl TextRenderer {
     // for now, we're evicting both masks and colors at the same time even if only one spills over
     // separating them would mean that they can't share the same cache and it would make things more complex 
     fn evict_old_glyphs(&mut self) {
@@ -354,63 +350,32 @@ pub(crate) struct Params {
     pub _pad: u32,
 }
 
-impl TextRenderer {    
-    /// Create a new TextRenderer with custom parameters.
-    pub fn new_with_params(
-        device: &Device,
-        _queue: &Queue,
-        format: TextureFormat,
-        depth_stencil: Option<DepthStencilState>,
-        params: TextRendererParams,
-    ) -> Self {
-        Self {
-            scale_cx: ScaleContext::new(),
-            text_renderer: ContextlessTextRenderer::new_with_params(device, _queue, format, depth_stencil, params),
-        }
-    }
-
-    /// Create a new TextRenderer with default parameters.
-    pub fn new(device: &Device, queue: &Queue, format: TextureFormat) -> Self {
-        Self::new_with_params(device, queue, format, None, TextRendererParams::default())
-    }
+impl TextRenderer {
 
     /// Returns the source of the composable text shader.
     pub fn composable_shader_source() -> &'static str {
         include_str!("shaders/textslabs.slang")
     }
 
-    /// Update the screen resolution for text rendering
-    pub fn update_resolution(&mut self, width: f32, height: f32) {
-        self.text_renderer.update_resolution(width, height);
-    }
-
     /// Clear all render data for text and decorations from the renderer.
     pub fn clear(&mut self) {
-        self.text_renderer.clear();
-        self.text_renderer.clear_decorations();
-    }
-
-    /// Clear only the render data for decorations, leaving text intact.
-    pub fn clear_decorations_only(&mut self) {
-        self.text_renderer.clear_decorations();
-    }
-
-    /// Adjust BoxData for scroll: translation and clip_rect. Used for scroll fast path.
-    pub fn adjust_box_for_scroll(&mut self, box_index: u32, delta_x: f32, delta_y: f32) {
-        self.text_renderer.adjust_box_for_scroll(box_index, delta_x, delta_y);
+        self.frame += 1;
+        self.quads.clear();
+        self.box_data.clear();
+        self.clear_decorations();
     }
 
     /// Prepare an individual parley layout for rendering at the specified position.
-    pub fn prepare_layout(&mut self, layout: &Layout<ColorBrush>, left: f32, top: f32, clip_rect: Option<parley::BoundingBox>, depth: f32) {
+    pub fn prepare_parley_layout(&mut self, layout: &Layout<ColorBrush>, left: f32, top: f32, clip_rect: Option<parley::BoundingBox>, depth: f32) {
 
         let transform = Transform2D {
             translation: (left, top),
             rotation: 0.0,
             scale: 1.0,
         };
-        self.text_renderer.prepare_layout(layout, &mut self.scale_cx, (0.0, 0.0), clip_rect, depth, transform, None);
-        self.text_renderer.needs_glyph_sync = true;
-        self.text_renderer.needs_box_data_sync = true;
+        self.prepare_layout(layout, (0.0, 0.0), clip_rect, depth, transform, None);
+        self.needs_glyph_sync = true;
+        self.needs_box_data_sync = true;
     }
 
     /// Prepare a single text box.
@@ -425,12 +390,12 @@ impl TextRenderer {
         let screen_clip = text_box.screen_space_clip_rect;
         let scroll_offset = text_box.scroll_offset();
 
-        let start_index = self.text_renderer.quads.len();
-        let box_index = self.text_renderer.box_data.len() as u32;
+        let start_index = self.quads.len();
+        let box_index = self.box_data.len() as u32;
 
-        self.text_renderer.prepare_layout(&text_box.layout, &mut self.scale_cx, scroll_offset, clip_rect, text_box.depth, text_box.transform(), screen_clip);
-        self.text_renderer.needs_glyph_sync = true;
-        self.text_renderer.needs_box_data_sync = true;
+        self.prepare_layout(&text_box.layout, scroll_offset, clip_rect, text_box.depth, text_box.transform(), screen_clip);
+        self.needs_glyph_sync = true;
+        self.needs_box_data_sync = true;
 
         // Update quad storage with new ranges
         self.capture_quad_ranges_after(&mut text_box.quad_storage, scroll_offset, start_index, box_index);
@@ -457,12 +422,12 @@ impl TextRenderer {
         let screen_clip = text_edit.text_box.screen_space_clip_rect;
         let scroll_offset = text_edit.scroll_offset();
 
-        let start_index = self.text_renderer.quads.len();
-        let box_index = self.text_renderer.box_data.len() as u32;
+        let start_index = self.quads.len();
+        let box_index = self.box_data.len() as u32;
 
-        self.text_renderer.prepare_layout(&text_edit.text_box.layout, &mut self.scale_cx, scroll_offset, clip_rect, text_edit.text_box.depth, text_edit.text_box.transform(), screen_clip);
-        self.text_renderer.needs_glyph_sync = true;
-        self.text_renderer.needs_box_data_sync = true;
+        self.prepare_layout(&text_edit.text_box.layout, scroll_offset, clip_rect, text_edit.text_box.depth, text_edit.text_box.transform(), screen_clip);
+        self.needs_glyph_sync = true;
+        self.needs_box_data_sync = true;
 
         // Update quad storage with new ranges
         self.capture_quad_ranges_after(&mut text_edit.text_box.quad_storage, scroll_offset, start_index, box_index);
@@ -482,33 +447,22 @@ impl TextRenderer {
         let box_index = text_box.quad_storage.box_index.unwrap_or(0);
 
         text_box.selection().geometry_with(&text_box.layout, |rect, _line_i| {
-            self.text_renderer.add_selection_rect(rect, selection_color, clip_rect, box_index);
+            self.add_selection_rect(rect, selection_color, clip_rect, box_index);
         });
 
         let show_cursor = show_cursor && text_box.selection().is_collapsed();
         if show_cursor {
             let size = CURSOR_WIDTH;
             let cursor_rect = text_box.selection().focus().geometry(&text_box.layout, size);
-            self.text_renderer.add_selection_rect(cursor_rect, cursor_color, clip_rect, box_index);
+            self.add_selection_rect(cursor_rect, cursor_color, clip_rect, box_index);
         }
-        self.text_renderer.needs_glyph_sync = true;
-        self.text_renderer.needs_box_data_sync = true;
+        self.needs_glyph_sync = true;
+        self.needs_box_data_sync = true;
     }
-
-    /// Load the render data to the GPU.
-    pub fn load_to_gpu(&mut self, device: &Device, queue: &Queue) {
-        self.text_renderer.load_to_gpu(device, queue);
-    }
-
-    /// Render all prepared text using the provided render pass.
-    pub fn render(&self, pass: &mut RenderPass<'_>) {
-        self.text_renderer.render(pass);
-    }
-
     
     /// Capture quad ranges after text rendering and populate QuadStorage
     fn capture_quad_ranges_after(&mut self, quad_storage: &mut QuadStorage, current_offset: (f32, f32), start_index: usize, box_index: u32) {
-        let end_index = self.text_renderer.quads.len();
+        let end_index = self.quads.len();
         quad_storage.quad_range = Some((start_index, end_index));
         quad_storage.box_index = Some(box_index);
         quad_storage.base_scroll = current_offset;
@@ -517,42 +471,42 @@ impl TextRenderer {
 
     /// Get the vertex buffer for external rendering
     pub fn vertex_buffer(&self) -> &Buffer {
-        &self.text_renderer.vertex_buffer
+        &self.vertex_buffer
     }
 
     /// Get the bind group for external rendering.
     pub fn bind_group(&self) -> BindGroup {
-        self.text_renderer.bind_group.clone()
+        self.bind_group.clone()
     }
 
     /// Get the bind group layout for external rendering.
     pub fn bind_group_layout(&self) -> BindGroupLayout {
-        self.text_renderer.bind_group_layout.clone()
+        self.bind_group_layout.clone()
     }
 
     /// Get the quads buffer for external rendering
     pub fn quads(&self) -> &[GlyphQuad] {
-        &self.text_renderer.quads
+        &self.quads
     }
 
     /// Get the render pipeline for external rendering
     pub fn pipeline(&self) -> &RenderPipeline {
-        &self.text_renderer.pipeline
+        &self.pipeline
     }
 
     /// Get mask texture array for external rendering
     pub fn mask_texture_array(&self) -> &Texture {
-        &self.text_renderer.mask_texture_array
+        &self.mask_texture_array
     }
 
     /// Get color texture array for external rendering  
     pub fn color_texture_array(&self) -> &Texture {
-        &self.text_renderer.color_texture_array
+        &self.color_texture_array
     }
 
     /// Get the atlas sampler for external rendering
     pub fn sampler(&self) -> &Sampler {
-        &self.text_renderer.sampler
+        &self.sampler
     }
 }
 
@@ -562,7 +516,8 @@ const SOURCES: &[Source; 3] = &[
     Source::Outline,
 ];
 
-impl ContextlessTextRenderer {
+impl TextRenderer {
+        /// Render all prepared text using the provided render pass.
     pub fn render(&self, pass: &mut RenderPass<'_>) {
         pass.set_pipeline(&self.pipeline);
         pass.set_bind_group(0, &self.bind_group, &[]);
@@ -577,6 +532,7 @@ impl ContextlessTextRenderer {
         }
     }
 
+    /// Load the render data to the GPU.
     pub fn load_to_gpu(&mut self, device: &Device, queue: &Queue) {
         if !self.needs_glyph_sync && !self.needs_box_data_sync && !self.needs_texture_array_rebuild {
             return;
@@ -643,17 +599,13 @@ impl ContextlessTextRenderer {
         }
     }
 
-
+    /// Update the screen resolution in the text renderer.
     pub fn update_resolution(&mut self, width: f32, height: f32) {
         self.params.screen_resolution_width = width;
         self.params.screen_resolution_height = height;
     }
 
-    pub fn clear(&mut self) {
-        self.frame += 1;
-        self.quads.clear();
-        self.box_data.clear();
-    }
+    /// Clear the render data for decorations.
 
     pub fn clear_decorations(&mut self) {
         // Since decorations are now mixed with regular quads,
@@ -677,7 +629,7 @@ impl ContextlessTextRenderer {
         }
     }
 
-    fn prepare_layout(&mut self, layout: &Layout<ColorBrush>, scale_cx: &mut ScaleContext, scroll_offset: (f32, f32), clip_rect: Option<parley::BoundingBox>, depth: f32, transform: Transform2D, screen_clip: Option<(f32, f32, f32, f32)>) {
+    fn prepare_layout(&mut self, layout: &Layout<ColorBrush>, scroll_offset: (f32, f32), clip_rect: Option<parley::BoundingBox>, depth: f32, transform: Transform2D, screen_clip: Option<(f32, f32, f32, f32)>) {
         // Create BoxData for this text box
         let box_index = self.box_data.len() as u32;
         let box_data = create_box_data(clip_rect, scroll_offset, transform, screen_clip);
@@ -705,7 +657,7 @@ impl ContextlessTextRenderer {
             for item in line.items() {
                 match item {
                     PositionedLayoutItem::GlyphRun(glyph_run) => {
-                        self.prepare_glyph_run(&glyph_run, scale_cx, depth, box_index);
+                        self.prepare_glyph_run(&glyph_run, depth, box_index);
                     }
                     PositionedLayoutItem::InlineBox(_inline_box) => {}
                 }
@@ -716,7 +668,6 @@ impl ContextlessTextRenderer {
     fn prepare_glyph_run(
         &mut self,
         glyph_run: &GlyphRun<'_, ColorBrush>,
-        scale_cx: &mut ScaleContext,
         depth: f32,
         box_index: u32,
     ) {
@@ -755,6 +706,8 @@ impl ContextlessTextRenderer {
         //     });
         // }
 
+        // partial borrow humiliation ritual
+        let mut scale_cx = self.scale_cx.take().unwrap();
         let mut scaler: Option<Scaler> = None;
 
         for glyph in glyph_run.glyphs() {
@@ -785,21 +738,8 @@ impl ContextlessTextRenderer {
             run_x += glyph.advance;
         }
 
-        // Draw decorations: underline & strikethrough
-        // let style = glyph_run.style();
-        // let run_metrics = run.metrics();
-        // if let Some(decoration) = &style.underline {
-        //     let offset = decoration.offset.unwrap_or(run_metrics.underline_offset);
-        //     let size = decoration.size.unwrap_or(run_metrics.underline_size);
-        //     render_decoration(img, glyph_run, decoration.brush, offset, size, padding);
-        // }
-        // if let Some(decoration) = &style.strikethrough {
-        //     let offset = decoration
-        //         .offset
-        //         .unwrap_or(run_metrics.strikethrough_offset);
-        //     let size = decoration.size.unwrap_or(run_metrics.strikethrough_size);
-        //     render_decoration(img, glyph_run, decoration.brush, offset, size, padding);
-        // }
+        // put it back
+        self.scale_cx = Some(scale_cx);
     }
 
     fn copy_glyph_to_atlas(&mut self, size: Size2D<i32, UnknownUnit>, alloc: &Allocation, page: usize, content_type: Content) {

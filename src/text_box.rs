@@ -33,7 +33,7 @@ pub struct TextBox {
     pub(crate) accesskit_id: Option<accesskit::NodeId>,
 
     pub(crate) needs_relayout: bool,
-    pub transform: Transform2D,
+    pub(crate) transform: Transform2D,
     pub(crate) max_advance: f32,
     pub(crate) depth: f32,
     pub(crate) selection: Selection,

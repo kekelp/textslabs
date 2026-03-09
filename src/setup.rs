@@ -128,7 +128,13 @@ pub(crate) fn create_box_data_buffer(device: &Device, size: u64) -> Buffer {
 }
 
 
-impl ContextlessTextRenderer {
+impl TextRenderer {
+    /// Create a new TextRenderer with default parameters.
+    pub fn new(device: &Device, queue: &Queue, format: TextureFormat) -> Self {
+        Self::new_with_params(device, queue, format, None, TextRendererParams::default())
+    }
+    
+    /// Create a new TextRenderer with the specified parameters.
     pub fn new_with_params(
         device: &Device,
         queue: &Queue,
@@ -294,11 +300,12 @@ impl ContextlessTextRenderer {
             needs_glyph_sync: true,
             needs_box_data_sync: true,
             needs_texture_array_rebuild: false,
+            scale_cx: Some(ScaleContext::new()),
         };
     }
 }
 
-impl ContextlessTextRenderer {
+impl TextRenderer {
     pub(crate) fn rebuild_texture_arrays(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
         let (mask_texture_array, color_texture_array) = rebuild_texture_arrays(
             device,

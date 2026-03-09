@@ -786,7 +786,7 @@ impl Text {
             text_renderer.clear();
         } else if self.shared.decorations_changed && self.scrolled_moved_indices.is_empty() {
             // Only decorations changed (selection, cursor) - clear decoration quads only
-            text_renderer.clear_decorations_only();
+            text_renderer.clear_decorations();
         } else if !self.scrolled_moved_indices.is_empty() {
             // Scroll only - just update BoxData, no clearing needed.
             // Decorations share BoxData with text, so they move together.
@@ -853,7 +853,7 @@ impl Text {
     /// Returns false if scroll has exceeded the tolerance from the base position (line culling),
     /// in which case the caller should fall back to a full re-prepare.
     fn handle_scroll_fast_path(&mut self, text_renderer: &mut TextRenderer) -> bool {
-        text_renderer.text_renderer.needs_box_data_sync = true;
+        text_renderer.needs_box_data_sync = true;
         for any_box in &self.scrolled_moved_indices {
             match any_box {
                 AnyBox::TextEdit(i) => {
@@ -872,7 +872,7 @@ impl Text {
                 },
             }
         }
-        text_renderer.text_renderer.needs_box_data_sync = true;
+        text_renderer.needs_box_data_sync = true;
         true
     }
 
