@@ -1,70 +1,85 @@
-/// Trait implemented by user types to expose slab metadata stored inside the struct.
-trait GpuSlabItem {
-    /// Index of next free item in the free list.
-    fn next_free(&self) -> u32;
-    fn set_next_free(&mut self, idx: u32);
-
-    /// Whether this slot is currently occupied.
-    /// 
-    /// It's okay to provide "fake" implementations of these under certain circumstances. 
-    fn occupied(&self) -> bool;
-    fn set_occupied(&mut self, v: bool);
+/// Intrusive slab for use on GPU.
+/// 
+/// This is a simplified slab that doesn't even track occupied/unoccupied slots.
+pub struct GpuSlab<T: GpuSlabItem> {
+    items: Vec<T>,
+    first_free: Option<usize>,
 }
 
-/// Intrusive slab with no per-item metadata stored externally.
-struct GpuSlab<T: GpuSlabItem> {
-    items: Vec<T>,
-    free_head: Option<u32>,
+/// Trait implemented by user types to expose slab metadata stored inside the struct.
+pub trait GpuSlabItem {
+    /// Index of next free item in the free list.
+    fn next_free(&self) -> Option<usize>;
+    fn set_next_free(&mut self, i: Option<usize>);
 }
 
 impl<T: GpuSlabItem> GpuSlab<T> {
     /// Create a new empty `GpuSlab` with at least the specified capacity.
     pub fn with_capacity(capacity: usize) -> Self {
-        Self { items: Vec::with_capacity(capacity), free_head: None }
+        Self { items: Vec::with_capacity(capacity), first_free: None }
     }
 
     /// Insert an item in the slab and return an index into it.
     /// 
     /// The index is stable and guaranteed to be valid until [`GpuSlab::remove()`] is called on it.
-    pub fn insert(&mut self, mut item: T) -> u32 {
-        item.set_occupied(true);
-
-        if let Some(head) = self.free_head {
-            let idx = head as usize;
-            let next = self.items[idx].next_free();
-            self.free_head = (next != u32::MAX).then_some(next);
-
-            self.items[idx] = item;
-            idx as u32
+    pub fn insert(&mut self, item: T) -> usize {
+        if let Some(first) = self.first_free {
+            let next = self.items[first].next_free();
+            self.first_free = next;
+            self.items[first] = item;
+            return first
         } else {
-            let idx = self.items.len() as u32;
+            let idx = self.items.len();
             self.items.push(item);
-            idx
+            return idx
         }
     }
 
     /// Remove an item.
-    pub fn remove(&mut self, idx: u32) {
-        let i = idx as usize;
+    /// 
+    /// Removing an already-removed item will either panic or cause incorrect behavior.
+    pub fn remove(&mut self, i: usize) {
         let item = &mut self.items[i];
-        item.set_occupied(false);
-
-        let next = self.free_head.unwrap_or(u32::MAX);
+        let next = self.first_free;
         item.set_next_free(next);
-        self.free_head = Some(idx);
+        self.first_free = Some(i);
     }
 
-    pub fn get(&self, idx: u32) -> Option<&T> {
-        let item = self.items.get(idx as usize)?;
-        item.occupied().then_some(item)
+    /// Get a reference to an item.
+    pub fn get(&self, i: usize) -> &T {
+        return self.items.get(i).unwrap();
     }
 
-    pub fn get_mut(&mut self, idx: u32) -> Option<&mut T> {
-        let item = self.items.get_mut(idx as usize)?;
-        item.occupied().then_some(item)
+    /// Get a mutable reference to an item.
+    pub fn get_mut(&mut self, i: usize) -> &mut T {
+        return self.items.get_mut(i).unwrap();
     }
 
-    pub fn as_slice(&self, idx: u32) -> &[T] {
+    /// Get a reference to the item storage as a slice, including both occupied and unoccupied items.
+    pub fn as_slice(&self) -> &[T] {
         &self.items
+    }
+
+    /// Get a reference to the item storage as a slice, including both occupied and unoccupied items.
+    pub fn len(&self) -> usize {
+        self.items.len()
+    }
+}
+
+
+impl GpuSlabItem for crate::BoxData {
+    fn next_free(&self) -> Option<usize> {
+        if self.slab_metadata == u32::MAX {
+            None
+        } else {
+            Some(self.slab_metadata as usize)
+        }
+    }
+
+    fn set_next_free(&mut self, i: Option<usize>) {
+        match i {
+            Some(i) => self.slab_metadata = i as u32,
+            None => self.slab_metadata = u32::MAX,
+        }
     }
 }
