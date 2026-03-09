@@ -8,6 +8,7 @@ struct BoxGpu {
     float2 screen_clip_y;
     float2 scroll_offset;
     uint slab_metadata;
+    uint _padding;
 }
 
 struct GlyphQuad {

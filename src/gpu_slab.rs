@@ -1,15 +1,16 @@
 /// Intrusive slab for use on GPU.
 /// 
 /// This is a simplified slab that doesn't even track occupied/unoccupied slots.
-pub struct GpuSlab<T: GpuSlabItem> {
+pub(crate) struct GpuSlab<T: GpuSlabItem> {
     items: Vec<T>,
     first_free: Option<usize>,
 }
 
 /// Trait implemented by user types to expose slab metadata stored inside the struct.
-pub trait GpuSlabItem {
+pub(crate) trait GpuSlabItem {
     /// Index of next free item in the free list.
     fn next_free(&self) -> Option<usize>;
+    /// Set the index of next free item in the free list.
     fn set_next_free(&mut self, i: Option<usize>);
 }
 
@@ -22,6 +23,7 @@ impl<T: GpuSlabItem> GpuSlab<T> {
     /// Insert an item in the slab and return an index into it.
     /// 
     /// The index is stable and guaranteed to be valid until [`GpuSlab::remove()`] is called on it.
+    #[must_use]
     pub fn insert(&mut self, item: T) -> usize {
         if let Some(first) = self.first_free {
             let next = self.items[first].next_free();
@@ -46,7 +48,7 @@ impl<T: GpuSlabItem> GpuSlab<T> {
     }
 
     /// Get a reference to an item.
-    pub fn get(&self, i: usize) -> &T {
+    pub fn _get(&self, i: usize) -> &T {
         return self.items.get(i).unwrap();
     }
 

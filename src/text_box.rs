@@ -74,7 +74,7 @@ pub(crate) struct QuadStorage {
     /// Range into the text renderer quads. If None, it doesn't mean that there are no quads, but rather that the text box was never prepared.
     pub quad_range: Option<(usize, usize)>,
     /// Index into the text renderer's box_data array for this text box
-    pub box_index: Option<u32>,
+    pub box_index: usize,
     /// The scroll offset when quads were prepared (for tolerance check)
     pub base_scroll: (f32, f32),
     /// The scroll offset currently reflected in BoxGpu translation (for incremental delta)

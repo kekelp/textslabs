@@ -1,5 +1,34 @@
 use crate::*;
 
+/// CPU-side rendering data for text preparation.
+///
+/// This struct holds all the data needed to prepare text for rendering,
+/// including glyph caching, atlas management, and render buffers.
+///
+/// The actual GPU resources are managed by [`TextRenderer`].
+pub struct RenderData {
+    pub(crate) frame: u64,
+    pub(crate) tmp_image: Image,
+
+    pub(crate) glyph_cache: LruCache<GlyphKey, Option<StoredGlyph>, BuildHasherDefault<FxHasher>>,
+    pub(crate) last_frame_evicted: u64,
+
+    pub(crate) mask_atlas_pages: Vec<AtlasPage<GrayImage>>,
+    pub(crate) color_atlas_pages: Vec<AtlasPage<RgbaImage>>,
+
+    pub(crate) glyph_quads: Vec<GlyphQuad>,
+    pub(crate) box_data: GpuSlab<BoxGpu>,
+
+    pub(crate) params: Params,
+    pub(crate) atlas_size: u32,
+
+    pub(crate) needs_glyph_sync: bool,
+    pub(crate) needs_box_data_sync: bool,
+    pub(crate) needs_texture_array_rebuild: bool,
+
+    pub(crate) scale_cx: Option<ScaleContext>,
+}
+
 // Content type constants
 const CONTENT_TYPE_MASK: u32 = 0;
 const CONTENT_TYPE_COLOR: u32 = 1;
@@ -79,6 +108,7 @@ pub struct BoxGpu {
     pub screen_clip_y: [f32; 2],          // 8 bytes - (min_y, max_y) in screen space
     pub scroll_offset: [f32; 2],          // 8 bytes - scroll offset applied before transform
     pub slab_metadata: u32,
+    pub _padding: u32,
 }
 
 impl GpuSlabItem for BoxGpu {
@@ -169,6 +199,7 @@ fn create_box_data(clip_rect: Option<parley::BoundingBox>, scroll_offset: (f32, 
         screen_clip_y,
         scroll_offset: [scroll_offset.0, scroll_offset.1],
         slab_metadata: 0,
+        _padding: 0,
     }
 }
 
@@ -310,35 +341,6 @@ impl UselessTrait2 for Placement {
     }
 }
 
-/// CPU-side rendering data for text preparation.
-///
-/// This struct holds all the data needed to prepare text for rendering,
-/// including glyph caching, atlas management, and render buffers.
-///
-/// The actual GPU resources are managed by [`TextRenderer`].
-pub struct RenderData {
-    pub(crate) frame: u64,
-    pub(crate) tmp_image: Image,
-
-    pub(crate) glyph_cache: LruCache<GlyphKey, Option<StoredGlyph>, BuildHasherDefault<FxHasher>>,
-    pub(crate) last_frame_evicted: u64,
-
-    pub(crate) mask_atlas_pages: Vec<AtlasPage<GrayImage>>,
-    pub(crate) color_atlas_pages: Vec<AtlasPage<RgbaImage>>,
-
-    pub(crate) glyph_quads: Vec<GlyphQuad>,
-    pub(crate) box_data: Vec<BoxGpu>,
-
-    pub(crate) params: Params,
-    pub(crate) atlas_size: u32,
-
-    pub(crate) needs_glyph_sync: bool,
-    pub(crate) needs_box_data_sync: bool,
-    pub(crate) needs_texture_array_rebuild: bool,
-
-    pub(crate) scale_cx: Option<ScaleContext>,
-}
-
 impl RenderData {
     /// Create a new RenderData with default parameters.
     pub fn new() -> Self {
@@ -371,7 +373,7 @@ impl RenderData {
             mask_atlas_pages,
             color_atlas_pages,
             glyph_quads: Vec::with_capacity(1000),
-            box_data: Vec::with_capacity(100),
+            box_data: GpuSlab::with_capacity(30),
             params: Params {
                 screen_resolution_width: 0.0,
                 screen_resolution_height: 0.0,
@@ -461,7 +463,6 @@ impl RenderData {
     pub fn clear(&mut self) {
         self.frame += 1;
         self.glyph_quads.clear();
-        self.box_data.clear();
         self.clear_decorations();
     }
 
@@ -487,51 +488,15 @@ impl RenderData {
     }
 
     /// Adjust BoxGpu for scroll fast path: updates scroll_offset and clip_rect.
-    pub fn adjust_box_for_scroll(&mut self, box_index: u32, delta_x: f32, delta_y: f32) {
-        if let Some(box_data) = self.box_data.get_mut(box_index as usize) {
-            box_data.scroll_offset[0] += delta_x;
-            box_data.scroll_offset[1] += delta_y;
-            // clip_rect is in layout-local coordinates, so it also moves with scroll
-            box_data.clip_rect_x[0] += delta_x;
-            box_data.clip_rect_x[1] += delta_x;
-            box_data.clip_rect_y[0] += delta_y;
-            box_data.clip_rect_y[1] += delta_y;
-        }
-    }
-
-    /// Prepare an individual parley layout for rendering at the specified position.
-    pub fn prepare_parley_layout(&mut self, layout: &Layout<ColorBrush>, left: f32, top: f32, clip_rect: Option<parley::BoundingBox>, depth: f32) {
-
-        let transform = Transform2D {
-            translation: (left, top),
-            rotation: 0.0,
-            scale: 1.0,
-        };
-        self.prepare_layout(layout, (0.0, 0.0), clip_rect, depth, transform, None);
-        self.needs_glyph_sync = true;
-        self.needs_box_data_sync = true;
-    }
-
-    /// Prepare a single text box.
-    pub fn prepare_text_box_layout(&mut self, text_box: &mut TextBox) {
-        if text_box.hidden() {
-            return;
-        }
-        text_box.refresh_layout();
-
-        let clip_rect = text_box.effective_clip_rect();
-        let screen_clip = text_box.screen_space_clip_rect;
-        let scroll_offset = text_box.scroll_offset();
-
-        let start_index = self.glyph_quads.len();
-        let box_index = self.box_data.len() as u32;
-
-        self.prepare_layout(&text_box.layout, scroll_offset, clip_rect, text_box.depth, text_box.transform(), screen_clip);
-        self.needs_glyph_sync = true;
-        self.needs_box_data_sync = true;
-
-        // Update quad storage with new ranges
-        self.capture_glyph_quad_ranges_after(&mut text_box.quad_storage, scroll_offset, start_index, box_index);
+    pub fn adjust_box_for_scroll(&mut self, box_index: usize, delta_x: f32, delta_y: f32) {
+        let box_data = self.box_data.get_mut(box_index);
+        box_data.scroll_offset[0] += delta_x;
+        box_data.scroll_offset[1] += delta_y;
+        // clip_rect is in layout-local coordinates, so it also moves with scroll
+        box_data.clip_rect_x[0] += delta_x;
+        box_data.clip_rect_x[1] += delta_x;
+        box_data.clip_rect_y[0] += delta_y;
+        box_data.clip_rect_y[1] += delta_y;
     }
 
     /// Prepare a text edit layout for rendering with scrolling and clipping support.
@@ -551,19 +516,9 @@ impl RenderData {
 
         text_edit.refresh_layout();
 
-        let clip_rect = text_edit.text_box.effective_clip_rect();
-        let screen_clip = text_edit.text_box.screen_space_clip_rect;
-        let scroll_offset = text_edit.scroll_offset();
-
-        let start_index = self.glyph_quads.len();
-        let box_index = self.box_data.len() as u32;
-
-        self.prepare_layout(&text_edit.text_box.layout, scroll_offset, clip_rect, text_edit.text_box.depth, text_edit.text_box.transform(), screen_clip);
+        self.prepare_text_box_layout(&mut text_edit.text_box);
         self.needs_glyph_sync = true;
         self.needs_box_data_sync = true;
-
-        // Update quad storage with new ranges
-        self.capture_glyph_quad_ranges_after(&mut text_edit.text_box.quad_storage, scroll_offset, start_index, box_index);
     }
 
     /// Prepare decorations (selection and cursor) for a text box.
@@ -577,36 +532,50 @@ impl RenderData {
 
         // Reuse the text box's BoxGpu instead of creating a new one.
         // This way, when scroll updates BoxGpu.scroll_offset, decorations move with the text.
-        let box_index = text_box.quad_storage.box_index.unwrap_or(0);
+        let box_index = text_box.quad_storage.box_index;
 
         text_box.selection().geometry_with(&text_box.layout, |rect, _line_i| {
-            self.add_selection_rect(rect, selection_color, clip_rect, box_index);
+            self.add_selection_rect(rect, selection_color, clip_rect, box_index as u32);
         });
 
         let show_cursor = show_cursor && text_box.selection().is_collapsed();
         if show_cursor {
             let size = CURSOR_WIDTH;
             let cursor_rect = text_box.selection().focus().geometry(&text_box.layout, size);
-            self.add_selection_rect(cursor_rect, cursor_color, clip_rect, box_index);
+            self.add_selection_rect(cursor_rect, cursor_color, clip_rect, box_index as u32);
         }
         self.needs_glyph_sync = true;
         self.needs_box_data_sync = true;
     }
 
     /// Capture quad ranges after text rendering and populate QuadStorage
-    fn capture_glyph_quad_ranges_after(&mut self, quad_storage: &mut QuadStorage, current_offset: (f32, f32), start_index: usize, box_index: u32) {
+    fn capture_glyph_quad_ranges_after(&mut self, quad_storage: &mut QuadStorage, current_offset: (f32, f32), start_index: usize) {
         let end_index = self.glyph_quads.len();
         quad_storage.quad_range = Some((start_index, end_index));
-        quad_storage.box_index = Some(box_index);
         quad_storage.base_scroll = current_offset;
         quad_storage.last_scroll = current_offset;
     }
 
-    fn prepare_layout(&mut self, layout: &Layout<ColorBrush>, scroll_offset: (f32, f32), clip_rect: Option<parley::BoundingBox>, depth: f32, transform: Transform2D, screen_clip: Option<(f32, f32, f32, f32)>) {
+    pub(crate) fn prepare_text_box_layout(&mut self, text_box: &mut TextBox) {
+        if text_box.hidden() {
+            return;
+        }
+        text_box.refresh_layout();
+
+        let start_index = self.glyph_quads.len();
+        
+        let clip_rect = text_box.effective_clip_rect();
+        let screen_clip = text_box.screen_space_clip_rect;
+        let scroll_offset = text_box.scroll_offset();
+
         // Create BoxGpu for this text box
-        let box_index = self.box_data.len() as u32;
-        let box_data = create_box_data(clip_rect, scroll_offset, transform, screen_clip);
-        self.box_data.push(box_data);
+        let box_index = text_box.quad_storage.box_index;
+        *self.box_data.get_mut(box_index) = create_box_data(
+            clip_rect,
+            scroll_offset,
+            text_box.transform(),
+            screen_clip
+        );
 
         // Line culling: clip_rect is already in layout-local coordinates (includes scroll)
         let (clip_top, clip_bottom) = if let Some(clip) = clip_rect {
@@ -615,7 +584,7 @@ impl RenderData {
             (0.0, self.params.screen_resolution_height)
         };
 
-        for line in layout.lines() {
+        for line in text_box.layout.lines() {
             let metrics = line.metrics();
             let line_y = metrics.baseline;
 
@@ -630,12 +599,18 @@ impl RenderData {
             for item in line.items() {
                 match item {
                     PositionedLayoutItem::GlyphRun(glyph_run) => {
-                        self.prepare_glyph_run(&glyph_run, depth, box_index);
+                        self.prepare_glyph_run(&glyph_run, text_box.depth, box_index as u32);
                     }
                     PositionedLayoutItem::InlineBox(_inline_box) => {}
                 }
             }
         }
+
+        self.needs_glyph_sync = true;
+        self.needs_box_data_sync = true;
+
+        // Update quad storage with new ranges
+        self.capture_glyph_quad_ranges_after(&mut text_box.quad_storage, scroll_offset, start_index);
     }
 
     fn prepare_glyph_run(

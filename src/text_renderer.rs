@@ -139,8 +139,8 @@ impl TextRenderer {
             }
 
             // Write all box_data to buffer
-            if !render_data.box_data.is_empty() {
-                let bytes: &[u8] = bytemuck::cast_slice(&render_data.box_data);
+            if render_data.box_data.len() != 0 {
+                let bytes: &[u8] = bytemuck::cast_slice(&render_data.box_data.as_slice());
                 self.queue.write_buffer(&self.box_data_buffer, 0, bytes);
             }
 

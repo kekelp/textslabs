@@ -438,6 +438,10 @@ impl Text {
     pub fn add_text_box(&mut self, text: impl Into<Cow<'static, str>>, pos: (f64, f64), size: (f32, f32), depth: f32) -> TextBoxHandle {
         let shared_backref: NonNull<Shared> = NonNull::new(self.shared.deref_mut()).unwrap();
         let mut text_box = TextBox::new(text, pos, size, depth, self.shared.default_style_key, shared_backref);
+
+        let box_data_i = self.render_data.box_data.insert(BoxGpu::zeroed());
+        text_box.quad_storage.box_index = box_data_i;
+
         text_box.last_frame_touched = self.current_visibility_frame;
         text_box.style_version = self.shared.styles[text_box.style.key].version;
         let key = self.text_boxes.insert(text_box);
@@ -456,7 +460,11 @@ impl Text {
     #[must_use]
     pub fn add_text_edit(&mut self, text: String, pos: (f64, f64), size: (f32, f32), depth: f32) -> TextEditHandle {
         let shared_backref: NonNull<Shared> = NonNull::new(self.shared.deref_mut()).unwrap();
-        let mut text_edit= TextEdit::new(text, pos, size, depth, self.shared.default_style_key, shared_backref);
+        let mut text_edit = TextEdit::new(text, pos, size, depth, self.shared.default_style_key, shared_backref);
+
+        let box_data_i = self.render_data.box_data.insert(BoxGpu::zeroed());
+        text_edit.text_box.quad_storage.box_index = box_data_i;
+
         text_edit.text_box.last_frame_touched = self.current_visibility_frame;
         text_edit.text_box.style_version = self.shared.styles[text_edit.text_box.style.key].version;
         let key = self.text_edits.insert(text_edit);
@@ -652,7 +660,11 @@ impl Text {
             }
         }
         
-        self.text_boxes.remove(handle.key);
+        let text_box = self.text_boxes.remove(handle.key).unwrap();
+        
+        let box_data_i = text_box.quad_storage.box_index;
+        self.render_data.box_data.remove(box_data_i);
+
         std::mem::forget(handle);
     }
 
@@ -676,7 +688,11 @@ impl Text {
             }
         }
         
-        self.text_edits.remove(handle.key);
+        let text_edit = self.text_edits.remove(handle.key).unwrap();
+
+        let box_data_i = text_edit.text_box.quad_storage.box_index;
+        self.render_data.box_data.remove(box_data_i);
+
         std::mem::forget(handle);
     }
 
@@ -1779,9 +1795,7 @@ fn update_scroll(render_data: &mut RenderData, quad_storage: &mut QuadStorage, c
     let delta_y = current_scroll.1 - quad_storage.last_scroll.1;
 
     // Adjust BoxGpu translation and clip_rect for scroll
-    if let Some(box_index) = quad_storage.box_index {
-        render_data.adjust_box_for_scroll(box_index, delta_x, delta_y);
-    }
+    render_data.adjust_box_for_scroll(quad_storage.box_index, delta_x, delta_y);
 
     // Update last_scroll to track the current state
     quad_storage.last_scroll = current_scroll;
