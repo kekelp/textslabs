@@ -112,21 +112,19 @@ impl ContextlessTextRenderer {
         self.last_frame_evicted != current_frame
     }
 
-    fn add_selection_rect(&mut self, rect: parley::BoundingBox, left: f32, top: f32, color: u32, clip_rect: Option<parley::BoundingBox>, box_index: u32) {
-        let left = left as i32;
-        let top = top as i32;
-
-        let mut x0 = left + rect.x0 as i32;
-        let mut x1 = left + rect.x1 as i32;
-        let mut y0 = top + rect.y0 as i32;
-        let mut y1 = top + rect.y1 as i32;
+    fn add_selection_rect(&mut self, rect: parley::BoundingBox, color: u32, clip_rect: Option<parley::BoundingBox>, box_index: u32) {
+        // Positions in layout-local coordinates
+        let mut x0 = rect.x0 as i32;
+        let mut x1 = rect.x1 as i32;
+        let mut y0 = rect.y0 as i32;
+        let mut y1 = rect.y1 as i32;
 
         // Apply clipping if clip_rect is provided
         if let Some(clip) = clip_rect {
-            let clip_x0 = left + clip.x0 as i32;
-            let clip_x1 = left + clip.x1 as i32;
-            let clip_y0 = top + clip.y0 as i32;
-            let clip_y1 = top + clip.y1 as i32;
+            let clip_x0 = clip.x0 as i32;
+            let clip_x1 = clip.x1 as i32;
+            let clip_y0 = clip.y0 as i32;
+            let clip_y1 = clip.y1 as i32;
 
             x0 = x0.max(clip_x0);
             x1 = x1.min(clip_x1);
@@ -210,6 +208,7 @@ pub struct BoxData {
     pub scale: f32,                       // 4 bytes
     pub screen_clip_x: [f32; 2],          // 8 bytes - (min_x, max_x) in screen space
     pub screen_clip_y: [f32; 2],          // 8 bytes - (min_y, max_y) in screen space
+    pub scroll_offset: [f32; 2],          // 8 bytes - scroll offset applied before transform
 }
 
 /// The struct corresponding to the gpu-side representation of a text glyph.
@@ -254,11 +253,12 @@ fn unpack_flags_rust(flags_and_page: u32) -> u32 {
     flags_and_page & 0xFFFFFF
 }
 
-fn create_box_data(clip_rect: Option<parley::BoundingBox>, left: f32, top: f32, transform: Transform2D, screen_clip: Option<(f32, f32, f32, f32)>) -> BoxData {
+fn create_box_data(clip_rect: Option<parley::BoundingBox>, scroll_offset: (f32, f32), transform: Transform2D, screen_clip: Option<(f32, f32, f32, f32)>) -> BoxData {
+    // clip_rect from effective_clip_rect() is already in layout-local coordinates (includes scroll_offset)
     let (clip_rect_x, clip_rect_y) = if let Some(clip) = clip_rect {
         (
-            [left + clip.x0 as f32, left + clip.x1 as f32],
-            [top + clip.y0 as f32, top + clip.y1 as f32],
+            [clip.x0 as f32, clip.x1 as f32],
+            [clip.y0 as f32, clip.y1 as f32],
         )
     } else {
         (
@@ -280,6 +280,7 @@ fn create_box_data(clip_rect: Option<parley::BoundingBox>, left: f32, top: f32, 
         scale: transform.scale,
         screen_clip_x,
         screen_clip_y,
+        scroll_offset: [scroll_offset.0, scroll_offset.1],
     }
 }
 
@@ -401,7 +402,13 @@ impl TextRenderer {
 
     /// Prepare an individual parley layout for rendering at the specified position.
     pub fn prepare_layout(&mut self, layout: &Layout<ColorBrush>, left: f32, top: f32, clip_rect: Option<parley::BoundingBox>, depth: f32) {
-        self.text_renderer.prepare_layout(layout, &mut self.scale_cx, left, top, clip_rect, depth, Transform2D::identity(), None);
+
+        let transform = Transform2D {
+            translation: (left, top),
+            rotation: 0.0,
+            scale: 1.0,
+        };
+        self.text_renderer.prepare_layout(layout, &mut self.scale_cx, (0.0, 0.0), clip_rect, depth, transform, None);
         self.text_renderer.needs_glyph_sync = true;
         self.text_renderer.needs_box_data_sync = true;
     }
@@ -416,19 +423,16 @@ impl TextRenderer {
 
         let clip_rect = text_box.effective_clip_rect();
         let screen_clip = text_box.screen_space_clip_rect;
-
-        let content_left = -text_box.scroll_offset().0;
-        let content_top = -text_box.scroll_offset().1;
+        let scroll_offset = text_box.scroll_offset();
 
         let start_index = self.text_renderer.quads.len();
         let box_index = self.text_renderer.box_data.len() as u32;
 
-        self.text_renderer.prepare_layout(&text_box.layout, &mut self.scale_cx, content_left, content_top, clip_rect, text_box.depth, text_box.transform(), screen_clip);
+        self.text_renderer.prepare_layout(&text_box.layout, &mut self.scale_cx, scroll_offset, clip_rect, text_box.depth, text_box.transform(), screen_clip);
         self.text_renderer.needs_glyph_sync = true;
         self.text_renderer.needs_box_data_sync = true;
 
         // Update quad storage with new ranges
-        let scroll_offset = text_box.scroll_offset();
         self.capture_quad_ranges_after(&mut text_box.quad_storage, scroll_offset, start_index, box_index);
     }
 
@@ -451,47 +455,41 @@ impl TextRenderer {
 
         let clip_rect = text_edit.text_box.effective_clip_rect();
         let screen_clip = text_edit.text_box.screen_space_clip_rect;
-
-        let content_left = -text_edit.scroll_offset().0;
-        let content_top = -text_edit.scroll_offset().1;
+        let scroll_offset = text_edit.scroll_offset();
 
         let start_index = self.text_renderer.quads.len();
         let box_index = self.text_renderer.box_data.len() as u32;
 
-        self.text_renderer.prepare_layout(&text_edit.text_box.layout, &mut self.scale_cx, content_left, content_top, clip_rect, text_edit.text_box.depth, text_edit.text_box.transform(), screen_clip);
+        self.text_renderer.prepare_layout(&text_edit.text_box.layout, &mut self.scale_cx, scroll_offset, clip_rect, text_edit.text_box.depth, text_edit.text_box.transform(), screen_clip);
         self.text_renderer.needs_glyph_sync = true;
         self.text_renderer.needs_box_data_sync = true;
 
         // Update quad storage with new ranges
-        let scroll_offset = text_edit.scroll_offset();
         self.capture_quad_ranges_after(&mut text_edit.text_box.quad_storage, scroll_offset, start_index, box_index);
     }
 
     /// Prepare decorations (selection and cursor) for a text box.
     /// Reuses the text box's existing BoxData (via quad_storage.box_index) for efficient scroll handling.
     pub fn prepare_text_box_decorations(&mut self, text_box: &TextBox, show_cursor: bool) {
+        // effective_clip_rect() is already in layout-local coordinates (includes scroll)
         let clip_rect = text_box.effective_clip_rect();
-
-        // Position is now in local space (before transform), just account for scroll
-        let content_left = -text_box.scroll_offset().0;
-        let content_top = -text_box.scroll_offset().1;
 
         let selection_color = 0x33_33_ff_aa;
         let cursor_color = 0xee_ee_ee_ff;
 
         // Reuse the text box's BoxData instead of creating a new one.
-        // This way, when scroll updates BoxData.translation, decorations move with the text.
+        // This way, when scroll updates BoxData.scroll_offset, decorations move with the text.
         let box_index = text_box.quad_storage.box_index.unwrap_or(0);
 
         text_box.selection().geometry_with(&text_box.layout, |rect, _line_i| {
-            self.text_renderer.add_selection_rect(rect, content_left, content_top, selection_color, clip_rect, box_index);
+            self.text_renderer.add_selection_rect(rect, selection_color, clip_rect, box_index);
         });
 
         let show_cursor = show_cursor && text_box.selection().is_collapsed();
         if show_cursor {
             let size = CURSOR_WIDTH;
             let cursor_rect = text_box.selection().focus().geometry(&text_box.layout, size);
-            self.text_renderer.add_selection_rect(cursor_rect, content_left, content_top, cursor_color, clip_rect, box_index);
+            self.text_renderer.add_selection_rect(cursor_rect, cursor_color, clip_rect, box_index);
         }
         self.text_renderer.needs_glyph_sync = true;
         self.text_renderer.needs_box_data_sync = true;
@@ -666,16 +664,12 @@ impl ContextlessTextRenderer {
         self.needs_glyph_sync = true;
     }
 
-    /// Adjust BoxData for scroll: translation and clip_rect. Used for scroll fast path.
-    /// When scrolling by delta, translation is adjusted by -delta (content moves opposite to scroll),
-    /// and clip_rect is adjusted by +delta (viewport moves with scroll in local space).
+    /// Adjust BoxData for scroll fast path: updates scroll_offset and clip_rect.
     pub fn adjust_box_for_scroll(&mut self, box_index: u32, delta_x: f32, delta_y: f32) {
         if let Some(box_data) = self.box_data.get_mut(box_index as usize) {
-            // Adjust translation (subtract because scroll increase = content moves up/left)
-            box_data.translation[0] -= delta_x;
-            box_data.translation[1] -= delta_y;
-
-            // Adjust clip_rect (add because viewport moves in scroll direction in local space)
+            box_data.scroll_offset[0] += delta_x;
+            box_data.scroll_offset[1] += delta_y;
+            // clip_rect is in layout-local coordinates, so it also moves with scroll
             box_data.clip_rect_x[0] += delta_x;
             box_data.clip_rect_x[1] += delta_x;
             box_data.clip_rect_y[0] += delta_y;
@@ -683,21 +677,22 @@ impl ContextlessTextRenderer {
         }
     }
 
-    fn prepare_layout(&mut self, layout: &Layout<ColorBrush>, scale_cx: &mut ScaleContext, left: f32, top: f32, clip_rect: Option<parley::BoundingBox>, depth: f32, transform: Transform2D, screen_clip: Option<(f32, f32, f32, f32)>) {
+    fn prepare_layout(&mut self, layout: &Layout<ColorBrush>, scale_cx: &mut ScaleContext, scroll_offset: (f32, f32), clip_rect: Option<parley::BoundingBox>, depth: f32, transform: Transform2D, screen_clip: Option<(f32, f32, f32, f32)>) {
         // Create BoxData for this text box
         let box_index = self.box_data.len() as u32;
-        let box_data = create_box_data(clip_rect, left, top, transform, screen_clip);
+        let box_data = create_box_data(clip_rect, scroll_offset, transform, screen_clip);
         self.box_data.push(box_data);
 
+        // Line culling: clip_rect is already in layout-local coordinates (includes scroll)
         let (clip_top, clip_bottom) = if let Some(clip) = clip_rect {
-            (top + clip.y0 as f32, top + clip.y1 as f32)
+            (clip.y0 as f32, clip.y1 as f32)
         } else {
             (0.0, self.params.screen_resolution_height)
         };
 
         for line in layout.lines() {
             let metrics = line.metrics();
-            let line_y = top + metrics.baseline;
+            let line_y = metrics.baseline;
 
             // Cull lines with tolerance to allow for scroll optimization
             let line_top = line_y - metrics.ascent;
@@ -710,7 +705,7 @@ impl ContextlessTextRenderer {
             for item in line.items() {
                 match item {
                     PositionedLayoutItem::GlyphRun(glyph_run) => {
-                        self.prepare_glyph_run(&glyph_run, scale_cx, left, top, depth, box_index);
+                        self.prepare_glyph_run(&glyph_run, scale_cx, depth, box_index);
                     }
                     PositionedLayoutItem::InlineBox(_inline_box) => {}
                 }
@@ -722,13 +717,11 @@ impl ContextlessTextRenderer {
         &mut self,
         glyph_run: &GlyphRun<'_, ColorBrush>,
         scale_cx: &mut ScaleContext,
-        left: f32,
-        top: f32,
         depth: f32,
         box_index: u32,
     ) {
-        let mut run_x = left + glyph_run.offset();
-        let run_y = top + glyph_run.baseline();
+        let mut run_x = glyph_run.offset();
+        let run_y = glyph_run.baseline();
         let style = glyph_run.style();
 
         let run = glyph_run.run();

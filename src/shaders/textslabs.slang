@@ -6,6 +6,7 @@ struct BoxData {
     float scale;
     float2 screen_clip_x;
     float2 screen_clip_y;
+    float2 scroll_offset;
 }
 
 struct GlyphQuad {
@@ -126,9 +127,7 @@ void text_vertex(
     float4 clip_rect = float4(box.clip_rect_x.x, box.clip_rect_y.x, box.clip_rect_x.y, box.clip_rect_y.y);
     ClipResult clip_result = apply_clipping(quad_pos, dim, clip_rect, uv01);
 
-    // Apply transform: first scale, then rotate, then translate
-    float2 pos = clip_result.position;
-
+    float2 pos = clip_result.position - box.scroll_offset;
     // Scale
     float2 scaled_pos = pos * box.scale;
 
