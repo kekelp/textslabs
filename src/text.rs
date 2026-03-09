@@ -416,9 +416,16 @@ impl Text {
         self.shared.window = Some(Arc::downgrade(&window));
     }
 
+    /// Load all the renderer data to the gpu.
+    /// 
+    /// Useful only for custom rendering.
+    pub fn load_to_gpu(&mut self) {
+        self.renderer.load_to_gpu(&mut self.render_data);
+    }
+
     /// Render all prepared text using the provided render pass.
     pub fn render(&mut self, pass: &mut RenderPass) {    
-        self.renderer.load_to_gpu(&mut self.render_data);
+        self.load_to_gpu();
         self.renderer.render(pass, &self.render_data);
     }
 

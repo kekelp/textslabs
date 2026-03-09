@@ -23,45 +23,20 @@ pub(crate) struct TextRenderer {
     pub(crate) srgb: bool,
 }
 
-impl TextRenderer {
+impl Text {
     /// Returns the source of the composable text shader.
     pub fn composable_shader_source() -> &'static str {
         include_str!("shaders/textslabs.slang")
     }
 
-    /// Get the vertex buffer for external rendering
-    pub fn vertex_buffer(&self) -> &Buffer {
-        &self.vertex_buffer
-    }
-
     /// Get the bind group for external rendering.
     pub fn bind_group(&self) -> BindGroup {
-        self.bind_group.clone()
+        self.renderer.bind_group.clone()
     }
 
     /// Get the bind group layout for external rendering.
     pub fn bind_group_layout(&self) -> BindGroupLayout {
-        self.bind_group_layout.clone()
-    }
-
-    /// Get the render pipeline for external rendering
-    pub fn pipeline(&self) -> &RenderPipeline {
-        &self.pipeline
-    }
-
-    /// Get mask texture array for external rendering
-    pub fn mask_texture_array(&self) -> &Texture {
-        &self.mask_texture_array
-    }
-
-    /// Get color texture array for external rendering
-    pub fn color_texture_array(&self) -> &Texture {
-        &self.color_texture_array
-    }
-
-    /// Get the atlas sampler for external rendering
-    pub fn sampler(&self) -> &Sampler {
-        &self.sampler
+        self.renderer.bind_group_layout.clone()
     }
 }
 
