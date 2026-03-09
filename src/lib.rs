@@ -140,6 +140,10 @@ pub use text_box::*;
 mod text_edit;
 pub use text_edit::*;
 
+mod gpu_slab;
+pub use gpu_slab::*;
+
+
 #[cfg(feature = "accessibility")]
 mod accessibility;
 #[cfg(feature = "accessibility")]
