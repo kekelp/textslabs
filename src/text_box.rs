@@ -79,6 +79,12 @@ pub(crate) struct QuadStorage {
     pub base_scroll: (f32, f32),
     /// The scroll offset currently reflected in BoxGpu translation (for incremental delta)
     pub last_scroll: (f32, f32),
+    /// Cached glyph quads for this text box. Generated after layout refresh.
+    /// Depth is stored in BoxGpu, so these quads can be copied directly without patching.
+    pub cached_quads: Vec<GlyphQuad>,
+    /// Cache generation when quads were cached. Compared against RenderData.cache_generation
+    /// to check validity. Set to 0 to invalidate (text change), global generation increments on glyph eviction.
+    pub cache_generation: u64,
 }
 
 
@@ -662,6 +668,7 @@ impl TextBox {
     /// To manipulate the text as a `String`, call `Cow::to_mut()` on the result, or use [`Self::text_mut_string()`]
     pub fn text_mut(&mut self) -> &mut Cow<'static, str> {
         self.needs_relayout = true;
+        self.quad_storage.cache_generation = 0;
         self.shared_mut().text_changed = true;
         &mut self.text
     }
@@ -676,6 +683,7 @@ impl TextBox {
     /// Set the text in the text box.
     pub fn set_text(&mut self, new_text: &str) {
         self.needs_relayout = true;
+        self.quad_storage.cache_generation = 0;
         self.shared_mut().text_changed = true;
 
         match &mut self.text {
@@ -846,6 +854,7 @@ impl TextBox {
         self.style = style.sneak_clone();
         self.style_version = self.style_version();
         self.needs_relayout = true;
+        self.quad_storage.cache_generation = 0;
         self.shared_mut().text_changed = true;
     }
 
@@ -920,6 +929,7 @@ impl TextBox {
     /// Sets the text to a static string reference.
     pub fn set_static(&mut self, text: &'static str) {
         self.needs_relayout = true;
+        self.quad_storage.cache_generation = 0;
         self.text = Cow::Borrowed(text);
     }
 
@@ -931,6 +941,7 @@ impl TextBox {
         self.max_advance = size.0;
         if relayout {
             self.needs_relayout = true;
+            self.quad_storage.cache_generation = 0;
         }
     }
 
@@ -948,6 +959,7 @@ impl TextBox {
         }
         self.alignment = alignment;
         self.needs_relayout = true;
+        self.quad_storage.cache_generation = 0;
         self.shared_mut().text_changed = true;
     }
 
@@ -959,6 +971,7 @@ impl TextBox {
         }
         self.transform.scale = scale;
         self.needs_relayout = true;
+        self.quad_storage.cache_generation = 0;
         self.shared_mut().text_changed = true;
     }
 
@@ -1160,6 +1173,8 @@ impl TextBox {
         if self.needs_relayout || self.style_version_changed() {
             if self.style_version_changed() {
                 self.style_version = self.style_version();
+                // Style changed externally, invalidate cached quads
+                self.quad_storage.cache_generation = 0;
             }
             self.rebuild_layout(None, false);
         }

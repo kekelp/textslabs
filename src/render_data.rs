@@ -26,6 +26,10 @@ pub struct RenderData {
     pub(crate) needs_box_data_sync: bool,
     pub(crate) needs_texture_array_rebuild: bool,
 
+    /// Generation counter for cache invalidation. Incremented when glyphs are evicted.
+    /// QuadStorage compares its cache_generation against this to check validity.
+    pub(crate) glyph_cache_generation: u64,
+
     pub(crate) scale_cx: Option<ScaleContext>,
 }
 
@@ -108,7 +112,7 @@ pub struct BoxGpu {
     pub screen_clip_y: [f32; 2],          // 8 bytes - (min_y, max_y) in screen space
     pub scroll_offset: [f32; 2],          // 8 bytes - scroll offset applied before transform
     pub slab_metadata: u32,
-    pub _padding: u32,
+    pub depth: f32,                       // 4 bytes - z-order for rendering
 }
 
 impl GpuSlabItem for BoxGpu {
@@ -137,10 +141,10 @@ pub struct GlyphQuad {
     pub dim_packed: u32,                  // 4 bytes - pack width,height as u16,u16
     pub uv_origin_packed: u32,            // 4 bytes - pack u,v as u16,u16
     pub color: u32,                       // 4 bytes
-    pub depth: f32,                       // 4 bytes
     pub flags_and_page: u32,              // 4 bytes - flags (24 bits) + page_index (8 bits)
     pub box_index: u32,                   // 4 bytes - index into box_data array
-    pub _padding: u32,                    // 4 bytes - padding for alignment
+    pub _padding1: u32,               // 8 bytes - padding for alignment
+    pub _padding2: u32,               // 8 bytes - padding for alignment
 }
 
 // Helper functions to pack/unpack u16 pairs into u32
@@ -170,7 +174,7 @@ fn unpack_flags_rust(flags_and_page: u32) -> u32 {
     flags_and_page & 0xFFFFFF
 }
 
-fn create_box_data(clip_rect: Option<parley::BoundingBox>, scroll_offset: (f32, f32), transform: Transform2D, screen_clip: Option<(f32, f32, f32, f32)>) -> BoxGpu {
+fn create_box_data(clip_rect: Option<parley::BoundingBox>, scroll_offset: (f32, f32), transform: Transform2D, screen_clip: Option<(f32, f32, f32, f32)>, depth: f32) -> BoxGpu {
     // clip_rect from effective_clip_rect() is already in layout-local coordinates (includes scroll_offset)
     let (clip_rect_x, clip_rect_y) = if let Some(clip) = clip_rect {
         (
@@ -199,11 +203,11 @@ fn create_box_data(clip_rect: Option<parley::BoundingBox>, scroll_offset: (f32, 
         screen_clip_y,
         scroll_offset: [scroll_offset.0, scroll_offset.1],
         slab_metadata: 0,
-        _padding: 0,
+        depth,
     }
 }
 
-fn make_quad(glyph: &GlyphWithContext, stored_glyph: &StoredGlyph, depth: f32, box_index: u32) -> GlyphQuad {
+fn make_quad(glyph: &GlyphWithContext, stored_glyph: &StoredGlyph, box_index: u32) -> GlyphQuad {
     let y = glyph.quantized_pos_y - stored_glyph.placement_top as i32;
     let x = glyph.quantized_pos_x + stored_glyph.placement_left as i32;
 
@@ -221,10 +225,10 @@ fn make_quad(glyph: &GlyphWithContext, stored_glyph: &StoredGlyph, depth: f32, b
         dim_packed: pack_u16_pair(size_x as u32, size_y as u32),
         uv_origin_packed: pack_u16_pair(uv_x as u32, uv_y as u32),
         color,
-        depth,
         flags_and_page: pack_flags_and_page(flags, stored_glyph.page as u32),
         box_index,
-        _padding: 0,
+        _padding1: 0,
+        _padding2: 0,
     };
 }
 
@@ -384,6 +388,7 @@ impl RenderData {
             needs_glyph_sync: true,
             needs_box_data_sync: true,
             needs_texture_array_rebuild: false,
+            glyph_cache_generation: 1, // Start at 1 so that default QuadStorage (generation 0) is invalid
             scale_cx: Some(ScaleContext::new()),
         }
     }
@@ -397,6 +402,7 @@ impl RenderData {
     // separating them would mean that they can't share the same cache and it would make things more complex
     fn evict_old_glyphs(&mut self) {
         self.last_frame_evicted = self.frame;
+        let mut evicted_any = false;
 
         while let Some((_key, value)) = self.glyph_cache.peek_lru() {
 
@@ -414,6 +420,11 @@ impl RenderData {
             }
 
             self.glyph_cache.pop_lru();
+            evicted_any = true;
+        }
+
+        if evicted_any {
+            self.glyph_cache_generation += 1;
         }
     }
 
@@ -451,10 +462,10 @@ impl RenderData {
             dim_packed: pack_u16_pair((x1 - x0) as u32, (y1 - y0) as u32),
             uv_origin_packed: pack_u16_pair(0, 0),
             color,
-            depth: 0.0,
             flags_and_page: pack_flags_and_page(CONTENT_TYPE_DECORATION, 0),
             box_index,
-            _padding: 0,
+            _padding1: 0,
+            _padding2: 0,
         };
         self.glyph_quads.push(glyph_quad);
     }
@@ -563,48 +574,59 @@ impl RenderData {
         text_box.refresh_layout();
 
         let start_index = self.glyph_quads.len();
-        
+
         let clip_rect = text_box.effective_clip_rect();
         let screen_clip = text_box.screen_space_clip_rect;
         let scroll_offset = text_box.scroll_offset();
 
-        // Create BoxGpu for this text box
+        // Update BoxGpu
         let box_index = text_box.quad_storage.box_index;
         *self.box_data.get_mut(box_index) = create_box_data(
             clip_rect,
             scroll_offset,
             text_box.transform(),
-            screen_clip
+            screen_clip,
+            text_box.depth
         );
 
-        // Line culling: clip_rect is already in layout-local coordinates (includes scroll)
-        let (clip_top, clip_bottom) = if let Some(clip) = clip_rect {
-            (clip.y0 as f32, clip.y1 as f32)
-        } else {
-            (0.0, self.params.screen_resolution_height)
-        };
+        // Rebuild cached quads if invalid (generation mismatch means either text changed or glyphs were evicted)
+        if text_box.quad_storage.cache_generation != self.glyph_cache_generation {
+            text_box.quad_storage.cached_quads.clear();
 
-        for line in text_box.layout.lines() {
-            let metrics = line.metrics();
-            let line_y = metrics.baseline;
+            // Line culling: clip_rect is already in layout-local coordinates (includes scroll)
+            let (clip_top, clip_bottom) = if let Some(clip) = clip_rect {
+                (clip.y0 as f32, clip.y1 as f32)
+            } else {
+                (0.0, self.params.screen_resolution_height)
+            };
 
-            // Cull lines with tolerance to allow for scroll optimization
-            let line_top = line_y - metrics.ascent;
-            let line_bottom = line_y + metrics.descent;
+            for line in text_box.layout.lines() {
+                let metrics = line.metrics();
+                let line_y = metrics.baseline;
 
-            if line_bottom < clip_top - SCROLL_TOLERANCE || line_top > clip_bottom + SCROLL_TOLERANCE {
-                continue;
-            }
+                // Cull lines with tolerance to allow for scroll optimization
+                let line_top = line_y - metrics.ascent;
+                let line_bottom = line_y + metrics.descent;
 
-            for item in line.items() {
-                match item {
-                    PositionedLayoutItem::GlyphRun(glyph_run) => {
-                        self.prepare_glyph_run(&glyph_run, text_box.depth, box_index as u32);
+                if line_bottom < clip_top - SCROLL_TOLERANCE || line_top > clip_bottom + SCROLL_TOLERANCE {
+                    continue;
+                }
+
+                for item in line.items() {
+                    match item {
+                        PositionedLayoutItem::GlyphRun(glyph_run) => {
+                            self.prepare_glyph_run_into(&glyph_run, box_index as u32, &mut text_box.quad_storage.cached_quads);
+                        }
+                        PositionedLayoutItem::InlineBox(_inline_box) => {}
                     }
-                    PositionedLayoutItem::InlineBox(_inline_box) => {}
                 }
             }
+
+            text_box.quad_storage.cache_generation = self.glyph_cache_generation;
         }
+
+        // Copy cached quads to main buffer
+        self.glyph_quads.extend_from_slice(&text_box.quad_storage.cached_quads);
 
         self.needs_glyph_sync = true;
         self.needs_box_data_sync = true;
@@ -613,11 +635,13 @@ impl RenderData {
         self.capture_glyph_quad_ranges_after(&mut text_box.quad_storage, scroll_offset, start_index);
     }
 
-    fn prepare_glyph_run(
+    /// Prepare a glyph run and push quads to a target Vec.
+    /// Used for caching quads per text box.
+    fn prepare_glyph_run_into(
         &mut self,
         glyph_run: &GlyphRun<'_, ColorBrush>,
-        depth: f32,
         box_index: u32,
+        buffer: &mut Vec<GlyphQuad>
     ) {
         let mut run_x = glyph_run.offset();
         let run_y = glyph_run.baseline();
@@ -627,7 +651,6 @@ impl RenderData {
 
         let font = run.font();
         let font_size = run.font_size();
-        let font_ref = FontRef::from_index(font.data.as_ref(), font.index as usize).unwrap();
         let font_key = font.data.id();
 
         // partial borrow humiliation ritual
@@ -639,11 +662,12 @@ impl RenderData {
 
             if let Some(stored_glyph) = self.glyph_cache.get(&glyph_ctx.key()) {
                 if let Some(stored_glyph) = stored_glyph {
-                    let quad = make_quad(&glyph_ctx, stored_glyph, depth, box_index);
-                    self.glyph_quads.push(quad);
+                    let quad = make_quad(&glyph_ctx, stored_glyph, box_index);
+                    buffer.push(quad);
                 }
             } else {
                 // Lazily initialize to skip the cost when all glyphs are cached.
+                let font_ref = FontRef::from_index(font.data.as_ref(), font.index as usize).unwrap();
                 if scaler.is_none() {
                     scaler = Some(
                         scale_cx
@@ -654,8 +678,8 @@ impl RenderData {
                             .build()
                     );
                 }
-                if let Some((quad, _stored_glyph)) = self.prepare_glyph(&glyph_ctx, scaler.as_mut().unwrap(), depth, box_index) {
-                    self.glyph_quads.push(quad);
+                if let Some((quad, _stored_glyph)) = self.prepare_glyph(&glyph_ctx, scaler.as_mut().unwrap(), box_index) {
+                    buffer.push(quad);
                 }
             }
 
@@ -726,7 +750,7 @@ impl RenderData {
     }
 
     /// Rasterizes the glyph in a texture atlas and returns a Quad that can be used to render it, or None if the glyph was just empty (like a space).
-    fn prepare_glyph(&mut self, glyph: &GlyphWithContext, scaler: &mut Scaler, depth: f32, box_index: u32) -> Option<(GlyphQuad, StoredGlyph)> {
+    fn prepare_glyph(&mut self, glyph: &GlyphWithContext, scaler: &mut Scaler, box_index: u32) -> Option<(GlyphQuad, StoredGlyph)> {
         let (content, placement) = self._render_glyph(&glyph, scaler);
         let size = placement.size();
 
@@ -744,7 +768,7 @@ impl RenderData {
         // Try to allocate on existing pages
         for page in 0..n_pages {
             if let Some(alloc) = self.pack_rectangle(size, content, page) {
-                return self.store_glyph(glyph, size, &alloc, page, &placement, content, depth, box_index);
+                return self.store_glyph(glyph, size, &alloc, page, &placement, content, box_index);
             }
 
             // Try evicting glyphs from previous frames and retry
@@ -752,7 +776,7 @@ impl RenderData {
                 self.evict_old_glyphs();
 
                 if let Some(alloc) = self.pack_rectangle(size, content, page) {
-                    return self.store_glyph(glyph, size, &alloc, page, &placement, content, depth, box_index);
+                    return self.store_glyph(glyph, size, &alloc, page, &placement, content, box_index);
                 }
             }
         }
@@ -760,7 +784,7 @@ impl RenderData {
         // Create a new page and try to allocate there
         let new_page: usize = self.make_new_page(content);
         if let Some(alloc) = self.pack_rectangle(size, content, new_page) {
-            return self.store_glyph(glyph, size, &alloc, new_page, &placement, content, depth, box_index);
+            return self.store_glyph(glyph, size, &alloc, new_page, &placement, content, box_index);
         }
 
         // Glyph is too large to fit even in a new empty page. It's time to give up.
@@ -779,13 +803,12 @@ impl RenderData {
             page: usize,
             placement: &Placement,
             content_type: Content,
-            depth: f32,
             box_index: u32,
         ) -> Option<(GlyphQuad, StoredGlyph)> {
         self.copy_glyph_to_atlas(size, alloc, page, content_type);
         let stored_glyph = StoredGlyph::create(alloc, placement, page, self.frame, content_type);
         self.glyph_cache.push(glyph.key(), Some(stored_glyph));
-        let quad = make_quad(glyph, &stored_glyph, depth, box_index);
+        let quad = make_quad(glyph, &stored_glyph, box_index);
         Some((quad, stored_glyph))
     }
 

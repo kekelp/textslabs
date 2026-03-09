@@ -1792,8 +1792,11 @@ fn update_scroll(render_data: &mut RenderData, quad_storage: &mut QuadStorage, c
 
     // Use the same tolerance as line culling
     const SCROLL_TOLERANCE: f32 = 200.0;
+    let safe_scroll_tolerance = SCROLL_TOLERANCE - 5.0;
 
-    if distance_x > SCROLL_TOLERANCE || distance_y > SCROLL_TOLERANCE {
+    if distance_x > safe_scroll_tolerance || distance_y > safe_scroll_tolerance {
+        // Invalidate cached quads for this text box since line culling region has changed
+        quad_storage.cache_generation = 0;
         return false; // Too far from base, need to re-prepare with new scroll
     }
 

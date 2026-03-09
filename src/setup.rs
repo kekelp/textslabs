@@ -179,10 +179,10 @@ impl TextRenderer {
                 1 => Uint32,      // dim_packed
                 2 => Uint32,      // uv_origin_packed
                 3 => Uint32,      // color
-                4 => Float32,     // depth
-                5 => Uint32,      // flags_and_page
-                6 => Uint32,      // box_index
-                7 => Uint32,      // _padding
+                4 => Uint32,      // flags_and_page
+                5 => Uint32,      // box_index
+                6 => Uint32,    // _padding1
+                7 => Uint32,    // _padding2
             ],
         };
 
