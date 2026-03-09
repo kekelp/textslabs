@@ -78,6 +78,24 @@ pub struct BoxGpu {
     pub screen_clip_x: [f32; 2],          // 8 bytes - (min_x, max_x) in screen space
     pub screen_clip_y: [f32; 2],          // 8 bytes - (min_y, max_y) in screen space
     pub scroll_offset: [f32; 2],          // 8 bytes - scroll offset applied before transform
+    pub slab_metadata: u32,
+}
+
+impl GpuSlabItem for BoxGpu {
+    fn next_free(&self) -> Option<usize> {
+        if self.slab_metadata == u32::MAX {
+            None
+        } else {
+            Some(self.slab_metadata as usize)
+        }
+    }
+
+    fn set_next_free(&mut self, i: Option<usize>) {
+        match i {
+            Some(i) => self.slab_metadata = i as u32,
+            None => self.slab_metadata = u32::MAX,
+        }
+    }
 }
 
 /// The struct corresponding to the gpu-side representation of a text glyph.
@@ -150,6 +168,7 @@ fn create_box_data(clip_rect: Option<parley::BoundingBox>, scroll_offset: (f32, 
         screen_clip_x,
         screen_clip_y,
         scroll_offset: [scroll_offset.0, scroll_offset.1],
+        slab_metadata: 0,
     }
 }
 
