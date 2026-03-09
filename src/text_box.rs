@@ -42,7 +42,6 @@ pub struct TextBox {
     pub(crate) alignment: Alignment,
     pub(crate) clip_rect: Option<parley::BoundingBox>,
     pub(crate) screen_space_clip_rect: Option<(f32, f32, f32, f32)>, // (min_x, min_y, max_x, max_y) in screen space
-    pub(crate) fadeout_clipping: bool,
     pub(crate) auto_clip: bool,
     pub(crate) scroll_offset: (f32, f32),
     
@@ -136,7 +135,6 @@ impl TextBox {
             alignment: Default::default(),
             clip_rect: None,
             screen_space_clip_rect: None,
-            fadeout_clipping: false,
             auto_clip: false,
             scroll_offset: (0.0, 0.0),
             hidden: false,
@@ -258,11 +256,6 @@ impl TextBox {
     /// Returns the current clip rect of the text box.
     pub fn clip_rect(&self) -> Option<parley::BoundingBox> {
         self.clip_rect
-    }
-    
-    /// Returns `true` if the text box is set to use a fade effect when the contained text overflows its clip rect.
-    pub fn fadeout_clipping(&self) -> bool {
-        self.fadeout_clipping
     }
 
     /// Returns the currently selected text, or `None` if no text is currently selected.

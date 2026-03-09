@@ -1261,12 +1261,7 @@ impl TextEdit {
     pub fn clip_rect(&self) -> Option<parley::BoundingBox> {
         self.text_box.clip_rect()
     }
-    
-    /// Returns `true` if fadeout clipping is enabled.
-    pub fn fadeout_clipping(&self) -> bool {
-        self.text_box.fadeout_clipping()
-    }
-    
+
     /// Returns `true` if automatic clipping is enabled.
     pub fn auto_clip(&self) -> bool {
         self.text_box.auto_clip

@@ -19,12 +19,6 @@ const CONTENT_TYPE_DECORATION: u32 = 2;
 const SCROLL_TOLERANCE: f32 = 200.0;
 
 // Flag bits
-const FADE_ENABLED_BIT: u32 = 4;
-
-fn pack_flags(content_type: u32, fade_enabled: bool) -> u32 {
-    content_type | if fade_enabled { 1 << FADE_ENABLED_BIT } else { 0 }
-}
-
 fn get_content_type(flags: u32) -> u32 {
     flags & 0x0F
 }
@@ -151,7 +145,7 @@ impl ContextlessTextRenderer {
             uv_origin_packed: pack_u16_pair(0, 0),
             color,
             depth: 0.0,
-            flags_and_page: pack_flags_and_page(pack_flags(CONTENT_TYPE_DECORATION, false), 0),
+            flags_and_page: pack_flags_and_page(CONTENT_TYPE_DECORATION, 0),
             box_index,
             _padding: 0,
         };
@@ -260,11 +254,6 @@ fn unpack_flags_rust(flags_and_page: u32) -> u32 {
     flags_and_page & 0xFFFFFF
 }
 
-// Unpack page_index from packed field
-fn unpack_page_index_rust(flags_and_page: u32) -> u32 {
-    (flags_and_page >> 24) & 0xFF
-}
-
 fn create_box_data(clip_rect: Option<parley::BoundingBox>, left: f32, top: f32, transform: Transform2D, screen_clip: Option<(f32, f32, f32, f32)>) -> BoxData {
     let (clip_rect_x, clip_rect_y) = if let Some(clip) = clip_rect {
         (
@@ -313,26 +302,10 @@ fn make_quad(glyph: &GlyphWithContext, stored_glyph: &StoredGlyph, depth: f32, b
         uv_origin_packed: pack_u16_pair(uv_x as u32, uv_y as u32),
         color,
         depth,
-        flags_and_page: pack_flags_and_page(pack_flags(flags, false), stored_glyph.page as u32),
+        flags_and_page: pack_flags_and_page(flags, stored_glyph.page as u32),
         box_index,
         _padding: 0,
     };
-}
-
-fn clip_quad(quad: GlyphQuad, _left: f32, _top: f32, _clip_rect: Option<parley::BoundingBox>, fade: bool) -> Option<GlyphQuad> {
-    let mut quad = quad;
-
-    if fade {
-        // Extract content type and page from existing packed field
-        let existing_flags = unpack_flags_rust(quad.flags_and_page);
-        let page_index = unpack_page_index_rust(quad.flags_and_page);
-        let content_type = existing_flags & 0x0F;
-
-        // Update flags with fade bit, keeping same page
-        quad.flags_and_page = pack_flags_and_page(pack_flags(content_type, fade), page_index);
-    }
-
-    Some(quad)
 }
 
 /// A glyph as stored in a glyph atlas.
@@ -427,8 +400,8 @@ impl TextRenderer {
     }
 
     /// Prepare an individual parley layout for rendering at the specified position.
-    pub fn prepare_layout(&mut self, layout: &Layout<ColorBrush>, left: f32, top: f32, clip_rect: Option<parley::BoundingBox>, fade: bool, depth: f32) {
-        self.text_renderer.prepare_layout(layout, &mut self.scale_cx, left, top, clip_rect, fade, depth, Transform2D::identity(), None);
+    pub fn prepare_layout(&mut self, layout: &Layout<ColorBrush>, left: f32, top: f32, clip_rect: Option<parley::BoundingBox>, depth: f32) {
+        self.text_renderer.prepare_layout(layout, &mut self.scale_cx, left, top, clip_rect, depth, Transform2D::identity(), None);
         self.text_renderer.needs_glyph_sync = true;
         self.text_renderer.needs_box_data_sync = true;
     }
@@ -443,7 +416,6 @@ impl TextRenderer {
 
         let clip_rect = text_box.effective_clip_rect();
         let screen_clip = text_box.screen_space_clip_rect;
-        let fade = text_box.fadeout_clipping();
 
         let content_left = -text_box.scroll_offset().0;
         let content_top = -text_box.scroll_offset().1;
@@ -451,7 +423,7 @@ impl TextRenderer {
         let start_index = self.text_renderer.quads.len();
         let box_index = self.text_renderer.box_data.len() as u32;
 
-        self.text_renderer.prepare_layout(&text_box.layout, &mut self.scale_cx, content_left, content_top, clip_rect, fade, text_box.depth, text_box.transform(), screen_clip);
+        self.text_renderer.prepare_layout(&text_box.layout, &mut self.scale_cx, content_left, content_top, clip_rect, text_box.depth, text_box.transform(), screen_clip);
         self.text_renderer.needs_glyph_sync = true;
         self.text_renderer.needs_box_data_sync = true;
 
@@ -479,7 +451,6 @@ impl TextRenderer {
 
         let clip_rect = text_edit.text_box.effective_clip_rect();
         let screen_clip = text_edit.text_box.screen_space_clip_rect;
-        let fade = text_edit.fadeout_clipping();
 
         let content_left = -text_edit.scroll_offset().0;
         let content_top = -text_edit.scroll_offset().1;
@@ -487,7 +458,7 @@ impl TextRenderer {
         let start_index = self.text_renderer.quads.len();
         let box_index = self.text_renderer.box_data.len() as u32;
 
-        self.text_renderer.prepare_layout(&text_edit.text_box.layout, &mut self.scale_cx, content_left, content_top, clip_rect, fade, text_edit.text_box.depth, text_edit.text_box.transform(), screen_clip);
+        self.text_renderer.prepare_layout(&text_edit.text_box.layout, &mut self.scale_cx, content_left, content_top, clip_rect, text_edit.text_box.depth, text_edit.text_box.transform(), screen_clip);
         self.text_renderer.needs_glyph_sync = true;
         self.text_renderer.needs_box_data_sync = true;
 
@@ -712,7 +683,7 @@ impl ContextlessTextRenderer {
         }
     }
 
-    fn prepare_layout(&mut self, layout: &Layout<ColorBrush>, scale_cx: &mut ScaleContext, left: f32, top: f32, clip_rect: Option<parley::BoundingBox>, fade: bool, depth: f32, transform: Transform2D, screen_clip: Option<(f32, f32, f32, f32)>) {
+    fn prepare_layout(&mut self, layout: &Layout<ColorBrush>, scale_cx: &mut ScaleContext, left: f32, top: f32, clip_rect: Option<parley::BoundingBox>, depth: f32, transform: Transform2D, screen_clip: Option<(f32, f32, f32, f32)>) {
         // Create BoxData for this text box
         let box_index = self.box_data.len() as u32;
         let box_data = create_box_data(clip_rect, left, top, transform, screen_clip);
@@ -739,7 +710,7 @@ impl ContextlessTextRenderer {
             for item in line.items() {
                 match item {
                     PositionedLayoutItem::GlyphRun(glyph_run) => {
-                        self.prepare_glyph_run(&glyph_run, scale_cx, left, top, clip_rect, fade, depth, box_index);
+                        self.prepare_glyph_run(&glyph_run, scale_cx, left, top, depth, box_index);
                     }
                     PositionedLayoutItem::InlineBox(_inline_box) => {}
                 }
@@ -753,8 +724,6 @@ impl ContextlessTextRenderer {
         scale_cx: &mut ScaleContext,
         left: f32,
         top: f32,
-        clip_rect: Option<parley::BoundingBox>,
-        fade: bool,
         depth: f32,
         box_index: u32,
     ) {
@@ -801,9 +770,7 @@ impl ContextlessTextRenderer {
             if let Some(stored_glyph) = self.glyph_cache.get(&glyph_ctx.key()) {
                 if let Some(stored_glyph) = stored_glyph {
                     let quad = make_quad(&glyph_ctx, stored_glyph, depth, box_index);
-                    if let Some(clipped_quad) = clip_quad(quad, left, top, clip_rect, fade) {
-                        self.quads.push(clipped_quad);
-                    }
+                    self.quads.push(quad);
                 }
             } else {
                 // Lazily initialize to skip the cost when all glyphs are cached.
@@ -818,9 +785,7 @@ impl ContextlessTextRenderer {
                     );
                 }
                 if let Some((quad, _stored_glyph)) = self.prepare_glyph(&glyph_ctx, scaler.as_mut().unwrap(), depth, box_index) {
-                    if let Some(clipped_quad) = clip_quad(quad, left, top, clip_rect, fade) {
-                        self.quads.push(clipped_quad);
-                    }
+                    self.quads.push(quad);
                 }
             }
 
