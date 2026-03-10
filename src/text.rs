@@ -903,15 +903,19 @@ impl Text {
             match any_box {
                 AnyBox::TextEdit(i) => {
                     if let Some(text_edit) = self.text_edits.get_mut(*i) {
-                        if ! update_scroll(&mut self.render_data, &mut text_edit.text_box.quad_storage, text_edit.text_box.scroll_offset) {
+                        if text_edit.text_box.scroll_distance_above_tolerance() {
                             return false;
+                        } else {
+                            update_scroll(&mut self.render_data, &mut text_edit.text_box.quad_storage, text_edit.text_box.scroll_offset);
                         }
                     }
                 },
                 AnyBox::TextBox(i) => {
                     if let Some(text_box) = self.text_boxes.get_mut(*i) {
-                        if ! update_scroll(&mut self.render_data, &mut text_box.quad_storage, text_box.scroll_offset) {
+                        if text_box.scroll_distance_above_tolerance() {
                             return false;
+                        } else {
+                            update_scroll(&mut self.render_data, &mut text_box.quad_storage, text_box.scroll_offset);
                         }
                     }
                 },
@@ -1787,19 +1791,6 @@ impl Text {
 /// in which case a full re-prepare is needed to get the correct lines.
 fn update_scroll(render_data: &mut RenderData, quad_storage: &mut QuadStorage, current_scroll: (f32, f32)) -> bool {
     // Check if we've scrolled too far from the base (line culling tolerance)
-    let distance_x = (current_scroll.0 - quad_storage.base_scroll.0).abs();
-    let distance_y = (current_scroll.1 - quad_storage.base_scroll.1).abs();
-
-    // Use the same tolerance as line culling
-    const SCROLL_TOLERANCE: f32 = 200.0;
-    let safe_scroll_tolerance = SCROLL_TOLERANCE - 5.0;
-
-    if distance_x > safe_scroll_tolerance || distance_y > safe_scroll_tolerance {
-        // Invalidate cached quads for this text box since line culling region has changed
-        quad_storage.cache_generation = 0;
-        return false; // Too far from base, need to re-prepare with new scroll
-    }
-
     // Compute delta from last scroll position
     let delta_x = current_scroll.0 - quad_storage.last_scroll.0;
     let delta_y = current_scroll.1 - quad_storage.last_scroll.1;

@@ -130,11 +130,6 @@ pub(crate) fn create_box_data_buffer(device: &Device, size: u64) -> Buffer {
 
 
 impl TextRenderer {
-    /// Create a new TextRenderer with default parameters.
-    pub fn new(device: Device, queue: Queue, format: TextureFormat) -> Self {
-        Self::new_with_params(device, queue, format, None, TextRendererParams::default())
-    }
-
     /// Create a new TextRenderer with the specified parameters.
     pub fn new_with_params(
         device: Device,

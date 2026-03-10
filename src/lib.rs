@@ -144,7 +144,7 @@ mod text_edit;
 pub use text_edit::*;
 
 mod gpu_slab;
-pub use gpu_slab::*;
+pub(crate) use gpu_slab::*;
 
 
 #[cfg(feature = "accessibility")]
@@ -190,8 +190,7 @@ use wgpu::*;
 
 use image::{GrayImage, Luma, Rgba, RgbaImage};
 use parley::{
-    Glyph, GlyphRun,
-    Layout, PositionedLayoutItem,
+    Glyph, GlyphRun, PositionedLayoutItem,
 };
 use std::borrow::Cow;
 use std::hash::BuildHasherDefault;

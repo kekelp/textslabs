@@ -79,8 +79,7 @@ pub(crate) struct QuadStorage {
     pub base_scroll: (f32, f32),
     /// The scroll offset currently reflected in BoxGpu translation (for incremental delta)
     pub last_scroll: (f32, f32),
-    /// Cached glyph quads for this text box. Generated after layout refresh.
-    /// Depth is stored in BoxGpu, so these quads can be copied directly without patching.
+    /// These quads are still quite slow to create, even if the glyph bitmaps are all in the cache. Probably because the parley datastructures are complicated and slow to traverse (I think I remember seeing it spend a lot of time in ".flat_map(|cluster| cluster.glyphs()))") or because of the cache lookups.
     pub cached_quads: Vec<GlyphQuad>,
     /// Cache generation when quads were cached. Compared against RenderData.cache_generation
     /// to check validity. Set to 0 to invalidate (text change), global generation increments on glyph eviction.
@@ -108,6 +107,22 @@ pub(crate) fn original_default_style() -> TextStyle2 {
 }
 
 impl TextBox {
+    pub(crate) fn scroll_distance_above_tolerance(&self) -> bool {
+        // text_edit.text_box.quad_storage, text_edit.text_box.scroll_offset
+        let distance_x = (self.scroll_offset.0 - self.quad_storage.base_scroll.0).abs();
+        let distance_y = (self.scroll_offset.1 - self.quad_storage.base_scroll.1).abs();
+    
+        // Use the same tolerance as line culling
+        const SCROLL_TOLERANCE: f32 = 200.0;
+        let safe_scroll_tolerance = SCROLL_TOLERANCE - 5.0;
+    
+        if distance_x > safe_scroll_tolerance || distance_y > safe_scroll_tolerance {
+            return true;
+        } else {
+            return false;
+        }
+    }
+
     pub(crate) fn new(
         text: impl Into<Cow<'static, str>>,
         pos: (f64, f64),

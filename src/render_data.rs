@@ -559,14 +559,6 @@ impl RenderData {
         self.needs_box_data_sync = true;
     }
 
-    /// Capture quad ranges after text rendering and populate QuadStorage
-    fn capture_glyph_quad_ranges_after(&mut self, quad_storage: &mut QuadStorage, current_offset: (f32, f32), start_index: usize) {
-        let end_index = self.glyph_quads.len();
-        quad_storage.quad_range = Some((start_index, end_index));
-        quad_storage.base_scroll = current_offset;
-        quad_storage.last_scroll = current_offset;
-    }
-
     pub(crate) fn prepare_text_box_layout(&mut self, text_box: &mut TextBox) {
         if text_box.hidden() {
             return;
@@ -622,6 +614,9 @@ impl RenderData {
                 }
             }
 
+            text_box.quad_storage.base_scroll = scroll_offset;
+            text_box.quad_storage.last_scroll = scroll_offset;
+
             text_box.quad_storage.cache_generation = self.glyph_cache_generation;
         }
 
@@ -631,8 +626,12 @@ impl RenderData {
         self.needs_glyph_sync = true;
         self.needs_box_data_sync = true;
 
-        // Update quad storage with new ranges
-        self.capture_glyph_quad_ranges_after(&mut text_box.quad_storage, scroll_offset, start_index);
+        if text_box.scroll_distance_above_tolerance() {
+            text_box.quad_storage.cache_generation = 0;
+        }
+
+        let end_index = self.glyph_quads.len();
+        text_box.quad_storage.quad_range = Some((start_index, end_index));
     }
 
     /// Prepare a glyph run and push quads to a target Vec.
