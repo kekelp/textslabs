@@ -309,7 +309,7 @@ impl winit::application::ApplicationHandler for Application {
                 }
 
                 // Update average statistics every second
-                if state.last_print_time.elapsed() >= Duration::from_secs(1) {
+                if state.last_print_time.elapsed() >= Duration::from_secs_f32(1.5) {
                     let avg_prepare = state.total_prepare_time / state.frame_count;
                     let avg_gpu = state.total_gpu_time / state.frame_count;
                     let avg_frame = state.total_frame_time / state.frame_count;

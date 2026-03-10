@@ -25,6 +25,7 @@ pub struct RenderData {
     pub(crate) needs_glyph_sync: bool,
     pub(crate) needs_box_data_sync: bool,
     pub(crate) needs_texture_array_rebuild: bool,
+    pub(crate) needs_params_sync: bool,
 
     /// Generation counter for cache invalidation. Incremented when glyphs are evicted.
     /// QuadStorage compares its cache_generation against this to check validity.
@@ -378,6 +379,7 @@ impl RenderData {
             needs_glyph_sync: true,
             needs_box_data_sync: true,
             needs_texture_array_rebuild: false,
+            needs_params_sync: true,
             glyph_cache_generation: 1, // Start at 1 so that default QuadStorage (generation 0) is invalid
             scale_cx: Some(ScaleContext::new()),
         }
@@ -385,7 +387,11 @@ impl RenderData {
 
     /// Set whether the surface uses sRGB format.
     pub fn set_srgb(&mut self, srgb: bool) {
-        self.params.srgb = if srgb { 1 } else { 0 };
+        let new_srgb = if srgb { 1 } else { 0 };
+        if self.params.srgb != new_srgb {
+            self.params.srgb = new_srgb;
+            self.needs_params_sync = true;
+        }
     }
 
     // for now, we're evicting both masks and colors at the same time even if only one spills over
@@ -422,7 +428,7 @@ impl RenderData {
         self.last_frame_evicted != current_frame
     }
 
-    fn add_selection_rect(&mut self, rect: parley::BoundingBox, color: u32, clip_rect: Option<parley::BoundingBox>, box_index: u32) {
+    fn make_selection_rect(&mut self, rect: parley::BoundingBox, color: u32, clip_rect: Option<parley::BoundingBox>, box_index: u32) -> Option<GlyphQuad> {
         // Positions in layout-local coordinates
         let mut x0 = rect.x0 as i32;
         let mut x1 = rect.x1 as i32;
@@ -443,11 +449,11 @@ impl RenderData {
 
             // If the rectangle is completely clipped out, don't add it
             if x0 >= x1 || y0 >= y1 {
-                return;
+                return None;
             }
         }
 
-        let glyph_quad = GlyphQuad {
+        return Some(GlyphQuad {
             pos_packed: pack_i32_pair_as_u16(x0, y0),
             dim_packed: pack_u16_pair((x1 - x0) as u32, (y1 - y0) as u32),
             uv_origin_packed: pack_u16_pair(0, 0),
@@ -456,11 +462,11 @@ impl RenderData {
             box_index,
             _padding1: 0,
             _padding2: 0,
-        };
-        self.glyph_quads.push(glyph_quad);
+        });
     }
 
     /// Clear all render data for text and decorations from the renderer.
+    /// Preserves the cursor quad at index 0.
     pub fn clear(&mut self) {
         self.frame += 1;
         self.glyph_quads.clear();
@@ -506,39 +512,13 @@ impl RenderData {
 
         text_edit.refresh_layout();
 
-        self.prepare_text_box_layout(&mut text_edit.text_box);
+        let focused = text_edit.text_box.shared().focused == Some(AnyBox::TextEdit(text_edit.text_box.key));
+        self.prepare_text_box_layout(&mut text_edit.text_box, focused);
         self.needs_glyph_sync = true;
         self.needs_box_data_sync = true;
     }
 
-    /// Prepare decorations (selection and cursor) for a text box.
-    /// Reuses the text box's existing BoxGpu (via quad_storage.box_index) for efficient scroll handling.
-    pub fn prepare_text_box_decorations(&mut self, text_box: &TextBox, show_cursor: bool) {
-        // effective_clip_rect() is already in layout-local coordinates (includes scroll)
-        let clip_rect = text_box.effective_clip_rect();
-
-        let selection_color = 0x33_33_ff_aa;
-        let cursor_color = 0xee_ee_ee_ff;
-
-        // Reuse the text box's BoxGpu instead of creating a new one.
-        // This way, when scroll updates BoxGpu.scroll_offset, decorations move with the text.
-        let box_index = text_box.render_data_info.box_index;
-
-        text_box.selection().geometry_with(&text_box.layout, |rect, _line_i| {
-            self.add_selection_rect(rect, selection_color, clip_rect, box_index as u32);
-        });
-
-        let show_cursor = show_cursor && text_box.selection().is_collapsed();
-        if show_cursor {
-            let size = CURSOR_WIDTH;
-            let cursor_rect = text_box.selection().focus().geometry(&text_box.layout, size);
-            self.add_selection_rect(cursor_rect, cursor_color, clip_rect, box_index as u32);
-        }
-        self.needs_glyph_sync = true;
-        self.needs_box_data_sync = true;
-    }
-
-    pub(crate) fn prepare_text_box_layout(&mut self, text_box: &mut TextBox) {
+    pub(crate) fn prepare_text_box_layout(&mut self, text_box: &mut TextBox, show_cursor: bool) {
         if text_box.hidden() {
             return;
         }
@@ -605,8 +585,21 @@ impl RenderData {
         // Selection rects are extremely fast to rebuild, so we don't bother to cache them and track them.
         let selection_color = 0x33_33_ff_aa;
         text_box.selection().geometry_with(&text_box.layout, |rect, _line_i| {
-            self.add_selection_rect(rect, selection_color, clip_rect, box_index as u32);
+            let rect = self.make_selection_rect(rect, selection_color, clip_rect, box_index as u32);
+            if let Some(rect) = rect {
+                self.glyph_quads.push(rect);
+            }
         });
+
+        let show_cursor = show_cursor && text_box.selection().is_collapsed();
+        if show_cursor {
+            let size = CURSOR_WIDTH;
+            let cursor_rect = text_box.selection().focus().geometry(&text_box.layout, size);
+            let cursor_rect = self.make_selection_rect(cursor_rect, CURSOR_COLOR, clip_rect, box_index as u32);
+            if let Some(cursor_rect) = cursor_rect {
+                self.glyph_quads.push(cursor_rect);
+            }
+        }
 
         self.needs_glyph_sync = true;
         self.needs_box_data_sync = true;

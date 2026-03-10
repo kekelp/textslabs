@@ -96,7 +96,7 @@ pub(crate) struct Shared {
 }
 
 impl Shared {
-    pub(crate) fn update_blink_timer(&mut self) -> bool {
+    pub(crate) fn update_blink_timer(&mut self) {
         if let Some(start_time) = self.cursor_blink_start {
             let elapsed = Instant::now().duration_since(start_time);
             let blink_period = Duration::from_millis(CURSOR_BLINK_TIME_MILLIS);
@@ -108,24 +108,20 @@ impl Shared {
             if changed {
                 self.rerender_cursor = true;
             }
-            return blinked_out;
-        } else {
-            false
         }
     }
 
-    // If the cursor needs to be blinking, reset it. Otherwise, stop it.
     pub(crate) fn reset_cursor_blink(&mut self) {
         if let Some(AnyBox::TextEdit(_)) = self.focused {
             // todo: reorganize some stuff and also check that the selection is collapsed?
             self.cursor_blink_start = Some(Instant::now());
+            self.cursor_blink_animation_currently_visible = true;
             self.rerender_cursor = true;
 
             if let Some(timer) = &self.cursor_blink_waker {
                 timer.start();
             }
-
-        } else {   
+        } else {
             self.cursor_blink_start = None;
             if let Some(waker) = &self.cursor_blink_waker {
                 waker.stop();
@@ -377,11 +373,11 @@ impl Text {
                 styles,
                 default_style_key,
                 rebuild_glyph_quad_buffer: true,
-                rerender_cursor: false,
                 scrolled: true,
                 focused: None,
                 layout_cx: LayoutContext::new(),
                 font_cx: FontContext::new(),
+                rerender_cursor: false,
                 #[cfg(feature = "accessibility")]
                 accesskit_focus_tracker: FocusChange::new(),
                 current_event_number: 1,
@@ -415,10 +411,81 @@ impl Text {
     }
 
     /// Load all the renderer data to the gpu.
-    /// 
+    ///
     /// Useful only for custom rendering.
     pub fn load_to_gpu(&mut self) {
-        self.renderer.load_to_gpu(&mut self.render_data);
+        // Update uniform buffer if needed
+        if self.render_data.needs_params_sync {
+            let bytes: &[u8] = bytemuck::cast_slice(std::slice::from_ref(&self.render_data.params));
+            self.renderer.queue.write_buffer(&self.renderer.params_buffer, 0, bytes);
+            self.render_data.needs_params_sync = false;
+        }
+
+        // Rebuild texture arrays if needed
+        if self.render_data.needs_texture_array_rebuild {
+            self.renderer.rebuild_texture_arrays(&mut self.render_data);
+            self.render_data.needs_texture_array_rebuild = false;
+        } else {
+            self.renderer.update_texture_arrays(&mut self.render_data);
+        }
+
+        // Sync quads buffer if needed
+        if self.render_data.needs_glyph_sync {
+            let required_size = (self.render_data.glyph_quads.len() * std::mem::size_of::<GlyphQuad>()) as u64;
+
+            // Grow shared vertex buffer if needed
+            if self.renderer.vertex_buffer.size() < required_size {
+                let min_size = u64::max(required_size, INITIAL_BUFFER_SIZE);
+                let growth_size = min_size * 3 / 2;
+                let current_growth = self.renderer.vertex_buffer.size() * 3 / 2;
+                let new_size = u64::max(growth_size, current_growth);
+
+                self.renderer.vertex_buffer = create_vertex_buffer(&self.renderer.device, new_size);
+                self.renderer.recreate_bind_group();
+            }
+
+            // Write all quads to vertex buffer
+            if !self.render_data.glyph_quads.is_empty() {
+                let bytes: &[u8] = bytemuck::cast_slice(&self.render_data.glyph_quads);
+                self.renderer.queue.write_buffer(&self.renderer.vertex_buffer, 0, bytes);
+            }
+
+            self.render_data.needs_glyph_sync = false;
+            self.shared.rerender_cursor = false;
+        } else if self.shared.rerender_cursor {
+
+            // Cursor-only sync. todo fix this
+            if !self.render_data.glyph_quads.is_empty() {
+                let bytes: &[u8] = bytemuck::cast_slice(&self.render_data.glyph_quads[0..1]);
+                self.renderer.queue.write_buffer(&self.renderer.vertex_buffer, 0, bytes);
+            }
+            
+            self.shared.rerender_cursor = false;
+        }
+
+        // Sync box_data buffer if needed
+        if self.render_data.needs_box_data_sync {
+            let box_data_required_size = (self.render_data.box_data.len() * std::mem::size_of::<BoxGpu>()) as u64;
+
+            // Grow box_data buffer if needed
+            if self.renderer.box_data_buffer.size() < box_data_required_size {
+                let min_size = u64::max(box_data_required_size, 1024 * std::mem::size_of::<BoxGpu>() as u64);
+                let growth_size = min_size * 3 / 2;
+                let current_growth = self.renderer.box_data_buffer.size() * 3 / 2;
+                let new_size = u64::max(growth_size, current_growth);
+
+                self.renderer.box_data_buffer = create_box_data_buffer(&self.renderer.device, new_size);
+                self.renderer.recreate_bind_group();
+            }
+
+            // Write all box_data to buffer
+            if self.render_data.box_data.len() != 0 {
+                let bytes: &[u8] = bytemuck::cast_slice(&self.render_data.box_data.as_slice());
+                self.renderer.queue.write_buffer(&self.renderer.box_data_buffer, 0, bytes);
+            }
+
+            self.render_data.needs_box_data_sync = false;
+        }
     }
 
     /// Render all prepared text using the provided render pass.
@@ -735,7 +802,6 @@ impl Text {
             // Even if there are no windows, we should reset the change flags
             // so they don't stay stuck at true
             self.shared.rebuild_glyph_quad_buffer = false;
-            self.shared.rerender_cursor = false;
             return;
         };
 
@@ -789,11 +855,19 @@ impl Text {
                 if !text_box.hidden() && text_box.last_frame_touched == current_frame {
                     let should_render = text_box.window_id.is_none() || text_box.window_id == Some(window_id);
                     if should_render {
-                        self.render_data.prepare_text_box_layout(&mut text_box);
+                        self.render_data.prepare_text_box_layout(&mut text_box, false);
                     }
                 }
             }
         }
+
+        // let show_cursor = self.shared.cursor_blink_animation_currently_visible;
+        // if show_cursor {
+        //     self.render_data.glyph_quads[0].color = CURSOR_COLOR;            
+        // } else {
+        //     self.render_data.glyph_quads[0].color = 0x00_00_00_00;
+        // }
+
 
         // Multi-window: mark prepared and check if all windows done.
         let should_clear_flags = {
@@ -1210,6 +1284,7 @@ impl Text {
                     let did_scroll = self.handle_text_edit_scroll_event(&handle, event, window);
                     if did_scroll {
                         self.scrolled_moved_indices.push(AnyBox::TextEdit(i));
+                        self.shared.rerender_cursor = true;
                         self.shared.scrolled = true;
                     }
                     return did_scroll;
@@ -1278,7 +1353,7 @@ impl Text {
     /// 
     /// Games and applications that rerender continuously can call `Window::request_redraw()` unconditionally after every `RedrawRequested` event, without checking this method.
     pub fn needs_rerender(&mut self) -> bool {
-        return self.shared.rebuild_glyph_quad_buffer || self.shared.scrolled || !self.scrolled_moved_indices.is_empty();
+        return self.shared.rebuild_glyph_quad_buffer || self.shared.rerender_cursor || self.shared.scrolled || !self.scrolled_moved_indices.is_empty();
     }
 
     /// Get a mutable reference to a text box wrapped with its style.

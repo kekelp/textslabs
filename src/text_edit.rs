@@ -12,6 +12,8 @@ use winit::{
 use accesskit::{Node, NodeId, Rect as AccessRect, Role, TreeUpdate};
 
 pub(crate) const CURSOR_WIDTH: f32 = 3.0;
+pub (crate) const CURSOR_COLOR: u32 = 0xee_ee_ee_ff;
+
 
 use crate::*;
 
@@ -1522,7 +1524,7 @@ impl TextEdit {
 
     /// Sets focus to this text edit.
     pub fn set_focus(&mut self) {
-        self.text_box.shared_mut().focused = Some(crate::AnyBox::TextEdit(self.text_box.key));
+        self.text_box.shared_mut().focused = Some(AnyBox::TextEdit(self.text_box.key));
     }
 }
 
