@@ -51,11 +51,6 @@ const CONTENT_TYPE_DECORATION: u32 = 2;
 // - Once scrolling exceeds the tolerance, we reprepare everything with the new scroll offset
 const SCROLL_TOLERANCE: f32 = 200.0;
 
-// Flag bits
-fn get_content_type(flags: u32) -> u32 {
-    flags & 0x0F
-}
-
 /// Key for building a glyph cache
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(crate) struct GlyphKey {
@@ -167,11 +162,6 @@ fn pack_i32_pair_as_u16(a: i32, b: i32) -> u32 {
 // Pack flags (24 bits) and page_index (8 bits) into u32
 fn pack_flags_and_page(flags: u32, page_index: u32) -> u32 {
     (flags & 0xFFFFFF) | ((page_index & 0xFF) << 24)
-}
-
-// Unpack flags from packed field
-fn unpack_flags_rust(flags_and_page: u32) -> u32 {
-    flags_and_page & 0xFFFFFF
 }
 
 fn create_box_data(clip_rect: Option<parley::BoundingBox>, scroll_offset: (f32, f32), transform: Transform2D, screen_clip: Option<(f32, f32, f32, f32)>, depth: f32) -> BoxGpu {
@@ -474,17 +464,6 @@ impl RenderData {
     pub fn clear(&mut self) {
         self.frame += 1;
         self.glyph_quads.clear();
-        self.clear_decorations();
-    }
-
-    /// Clear the render data for decorations.
-    pub fn clear_decorations(&mut self) {
-        // Since decorations are now mixed with regular quads,
-        // we need to filter them out by content type
-        self.glyph_quads.retain(|quad| {
-            get_content_type(unpack_flags_rust(quad.flags_and_page)) != CONTENT_TYPE_DECORATION
-        });
-        self.needs_glyph_sync = true;
     }
 
     /// Update the screen resolution in the render data.

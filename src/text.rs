@@ -69,8 +69,7 @@ pub(crate) struct Shared {
     pub styles: SlotMap<DefaultKey, StyleInner>,
     // todo use the newtype
     pub default_style_key: DefaultKey,
-    pub text_changed: bool,
-    pub decorations_changed: bool,
+    pub rebuild_glyphs: bool,
     pub scrolled: bool,
     pub focused: Option<AnyBox>,
 
@@ -78,7 +77,7 @@ pub(crate) struct Shared {
     pub layout_cx: LayoutContext<ColorBrush>,
     pub font_cx: FontContext,
 
-    pub decorations_range: (usize, usize),
+    pub rerender_cursor: bool,
 
     #[cfg(feature = "accessibility")]
     pub accesskit_tree_update: TreeUpdate,
@@ -107,7 +106,7 @@ impl Shared {
             self.cursor_blink_animation_currently_visible = blinked_out;
 
             if changed {
-                self.decorations_changed = true;
+                self.rerender_cursor = true;
             }
             return blinked_out;
         } else {
@@ -120,7 +119,7 @@ impl Shared {
         if let Some(AnyBox::TextEdit(_)) = self.focused {
             // todo: reorganize some stuff and also check that the selection is collapsed?
             self.cursor_blink_start = Some(Instant::now());
-            self.decorations_changed = true;
+            self.rerender_cursor = true;
 
             if let Some(timer) = &self.cursor_blink_waker {
                 timer.start();
@@ -375,11 +374,10 @@ impl Text {
 
             shared: Box::new(Shared {
                 windows: Vec::with_capacity(1),
-                decorations_range: (0, 0),
                 styles,
                 default_style_key,
-                text_changed: true,
-                decorations_changed: true,
+                rebuild_glyphs: true,
+                rerender_cursor: false,
                 scrolled: true,
                 focused: None,
                 layout_cx: LayoutContext::new(),
@@ -452,7 +450,7 @@ impl Text {
         text_box.last_frame_touched = self.current_visibility_frame;
         text_box.style_version = self.shared.styles[text_box.style.key].version;
         let key = self.text_boxes.insert(text_box);
-        self.shared.text_changed = true;
+        self.shared.rebuild_glyphs = true;
         let handle = TextBoxHandle { key };
         // Fill in the local copy of the key.
         self.get_text_box_mut(&handle).key = key;
@@ -475,7 +473,7 @@ impl Text {
         text_edit.text_box.last_frame_touched = self.current_visibility_frame;
         text_edit.text_box.style_version = self.shared.styles[text_edit.text_box.style.key].version;
         let key = self.text_edits.insert(text_edit);
-        self.shared.text_changed = true;
+        self.shared.rebuild_glyphs = true;
         let handle = TextEditHandle { key };
         // Fill in the local copy of the key.
         self.get_text_edit_mut(&handle).text_box.key = key;
@@ -494,7 +492,7 @@ impl Text {
         text_box.style_version = self.shared.styles[text_box.style.key].version;
         text_box.window_id = Some(window_id);
         let key = self.text_boxes.insert(text_box);
-        self.shared.text_changed = true;
+        self.shared.rebuild_glyphs = true;
         let handle = TextBoxHandle { key };
         // Fill in the local copy of the key.
         self.get_text_box_mut(&handle).key = key;
@@ -514,7 +512,7 @@ impl Text {
         text_edit.text_box.style_version = self.shared.styles[text_edit.text_box.style.key].version;
         text_edit.text_box.window_id = Some(window_id);
         let key = self.text_edits.insert(text_edit);
-        self.shared.text_changed = true;
+        self.shared.rebuild_glyphs = true;
         let handle = TextEditHandle { key };
         // Fill in the local copy of the key.
         self.get_text_edit_mut(&handle).text_box.key = key;
@@ -573,7 +571,7 @@ impl Text {
     /// Returns a mutable reference to the text style.
     pub fn get_text_style_mut(&mut self, handle: &StyleHandle) -> &mut TextStyle2 {
         self.shared.styles[handle.key].version = self.new_style_version();
-        self.shared.text_changed = true;
+        self.shared.rebuild_glyphs = true;
         &mut self.shared.styles[handle.key].text_style
     }
 
@@ -585,7 +583,7 @@ impl Text {
     /// Returns a mutable reference to the text edit style.
     pub fn get_text_edit_style_mut(&mut self, handle: &StyleHandle) -> &mut TextEditStyle {
         self.shared.styles[handle.key].version = self.new_style_version();
-        self.shared.text_changed = true;
+        self.shared.rebuild_glyphs = true;
         &mut self.shared.styles[handle.key].text_edit_style
     }
 
@@ -598,7 +596,7 @@ impl Text {
     pub fn get_default_text_style_mut(&mut self) -> &mut TextStyle2 {
         let default_style_key = self.shared.default_style_key;
         self.shared.styles[default_style_key].version = self.new_style_version();
-        self.shared.text_changed = true;
+        self.shared.rebuild_glyphs = true;
         &mut self.shared.styles[default_style_key].text_style
     }
 
@@ -611,7 +609,7 @@ impl Text {
     pub fn get_default_text_edit_style_mut(&mut self) -> &mut TextEditStyle {
         let default_style_key = self.shared.default_style_key;
         self.shared.styles[default_style_key].version = self.new_style_version();
-        self.shared.text_changed = true;
+        self.shared.rebuild_glyphs = true;
         &mut self.shared.styles[default_style_key].text_edit_style
     }
 
@@ -652,7 +650,7 @@ impl Text {
     /// 
     /// `handle` is the handle that was returned when first creating the text box with [`Text::add_text_box()`].
     pub fn remove_text_box(&mut self, handle: TextBoxHandle) {
-        self.shared.text_changed = true;
+        self.shared.rebuild_glyphs = true;
         if let Some(AnyBox::TextBox(key)) = self.shared.focused {
             if key == handle.key {
                 self.shared.focused = None;
@@ -680,7 +678,7 @@ impl Text {
     /// 
     /// `handle` is the handle that was returned when first creating the text edit with [`Text::add_text_edit()`] or similar functions.
     pub fn remove_text_edit(&mut self, handle: TextEditHandle) {
-        self.shared.text_changed = true;
+        self.shared.rebuild_glyphs = true;
         if let Some(AnyBox::TextEdit(i)) = self.shared.focused {
             if i == handle.key {
                 self.shared.focused = None;
@@ -736,75 +734,12 @@ impl Text {
         let Some((window_id, window_size)) = res else {
             // Even if there are no windows, we should reset the change flags
             // so they don't stay stuck at true
-            self.shared.text_changed = false;
-            self.shared.decorations_changed = false;
+            self.shared.rebuild_glyphs = false;
+            self.shared.rerender_cursor = false;
             return;
         };
 
         self.prepare_all_impl(window_id, window_size);
-    }
-
-    /// Prepare decorations
-    pub fn prepare_decorations(&mut self) -> (usize, usize) {
-        let res = self.shared.windows.first().map(|w| (w.window_id, w.dimensions));
-
-        let Some((window_id, _)) = res else {
-            return (0, 0);
-        };
-
-        return self.prepare_decorations_for_window(window_id);
-    }
-
-    /// Prepare decorations for a window
-    pub fn prepare_decorations_for_window(&mut self, window_id: WindowId) -> (usize, usize) {
-        let show_cursor = self.shared.cursor_blink_animation_currently_visible;
-
-        // Decorations share BoxGpu with text, so they only need re-preparing when
-        // text or selection changes - not on scroll (BoxGpu update handles that).
-        if self.shared.decorations_changed || self.shared.text_changed {
-            let start_index = self.render_data.glyph_quads().len();
-            if let Some(focused) = self.shared.focused {
-                // For multi-window, only prepare decorations if the focused element belongs to this window
-                let focused_belongs_to_window = match focused {
-                    AnyBox::TextEdit(i) => {
-                        if let Some(text_edit) = self.text_edits.get(i) {
-                            text_edit.text_box.window_id.is_none() || text_edit.text_box.window_id == Some(window_id)
-                        } else {
-                            false
-                        }
-                    },
-                    AnyBox::TextBox(i) => {
-                        if let Some(text_box) = self.text_boxes.get(i) {
-                            text_box.window_id.is_none() || text_box.window_id == Some(window_id)
-                        } else {
-                            false
-                        }
-                    },
-                };
-
-                if focused_belongs_to_window {
-                    match focused {
-                        AnyBox::TextEdit(i) => {
-                            let text_edit = &self.text_edits[i];
-                            self.render_data.prepare_text_box_decorations(&text_edit.text_box, show_cursor);
-                        },
-                        AnyBox::TextBox(i) => {
-                            let text_box = &self.text_boxes[i];
-                            self.render_data.prepare_text_box_decorations(text_box, false);
-                        },
-                    }
-                }
-            }
-            let end_index = self.render_data.glyph_quads().len();
-            self.shared.decorations_range = (start_index, end_index);
-        }
-
-        return self.shared.decorations_range;
-    }
-
-    /// Get the range of quads corresponding to the text decorations (editing cursor and selection rectangles)
-    pub fn decorations_range(&self) -> (usize, usize) {
-        return self.shared.decorations_range;
     }
 
     pub(crate) fn prepare_all_impl(&mut self, window_id: WindowId, window_size: (f32, f32)) {
@@ -812,39 +747,34 @@ impl Text {
         self.render_data.update_resolution(window_size.0, window_size.1);
 
         // todo: not sure if this works correctly with multi-window.
-        if !self.shared.text_changed && self.using_frame_based_visibility {
+        if !self.shared.rebuild_glyphs && self.using_frame_based_visibility {
             // see if any text boxes were just hidden
             for (_i, text_edit) in self.text_edits.iter_mut() {
                 if text_edit.text_box.last_frame_touched == self.current_visibility_frame - 1 {
-                    self.shared.text_changed = true;
+                    self.shared.rebuild_glyphs = true;
                 }
             }
             for (_i, text_box) in self.text_boxes.iter_mut() {
                 if text_box.last_frame_touched == self.current_visibility_frame - 1 {
-                    self.shared.text_changed = true;
+                    self.shared.rebuild_glyphs = true;
                 }
             }
         }
 
-        if self.shared.text_changed {
+        if self.shared.rebuild_glyphs {
             // Full clear and re-prepare everything
             self.render_data.clear();
-        } else if self.shared.decorations_changed && self.scrolled_moved_indices.is_empty() {
-            // Only decorations changed (selection, cursor) - clear decoration quads only
-            self.render_data.clear_decorations();
         } else if !self.scrolled_moved_indices.is_empty() {
             // Scroll only - just update BoxGpu, no clearing needed.
-            // Decorations share BoxGpu with text, so they move together.
-
             if !self.handle_scroll_fast_path() {
                 // Fast path failed (tolerance exceeded), fall back to full prepare
                 self.render_data.clear();
-                self.shared.text_changed = true;
+                self.shared.rebuild_glyphs = true;
             }
         }
 
         // Prepare text layout for all text boxes/edits (only if text_changed)
-        if self.shared.text_changed {
+        if self.shared.rebuild_glyphs {
             let current_frame = self.current_visibility_frame;
             for (_key, text_edit) in self.text_edits.iter_mut() {
                 if !text_edit.text_box.hidden() && text_edit.text_box.last_frame_touched == current_frame {
@@ -865,11 +795,6 @@ impl Text {
             }
         }
 
-        // Prepare decorations only if text or decorations changed (not for scroll-only)
-        if self.shared.text_changed || self.shared.decorations_changed {
-            self.prepare_decorations_for_window(window_id);
-        }
-
         // Multi-window: mark prepared and check if all windows done.
         let should_clear_flags = {
             if let Some(window_info) = self.shared.windows.iter_mut().find(|info| info.window_id == window_id) {
@@ -881,8 +806,7 @@ impl Text {
         if should_clear_flags {
             self.clear_finished_scroll_animations();
 
-            self.shared.text_changed = false;
-            self.shared.decorations_changed = false;
+            self.shared.rebuild_glyphs = false;
             self.using_frame_based_visibility = false;
 
             // Reset all windows to unprepared for next frame
@@ -970,8 +894,9 @@ impl Text {
                 self.shared.reset_cursor_blink();
             } else {
                 self.shared.cursor_blink_animation_currently_visible = false;
-                self.shared.decorations_changed = true;
+                // Should rerender to hide the selection rectangles
                 self.shared.stop_cursor_blink();
+                self.shared.rerender_cursor = true;
             }
         }
 
@@ -1227,7 +1152,7 @@ impl Text {
 
         if focus_changed {
             // todo: could skip some rerenders here if the old focus wasn't editable and had collapsed selection.
-            self.shared.decorations_changed = true;
+            self.shared.rebuild_glyphs = true;
             self.shared.reset_cursor_blink();
         }
     }
@@ -1284,7 +1209,6 @@ impl Text {
                     let handle = TextEditHandle { key: i };
                     let did_scroll = self.handle_text_edit_scroll_event(&handle, event, window);
                     if did_scroll {
-                        self.shared.decorations_changed = true;
                         self.scrolled_moved_indices.push(AnyBox::TextEdit(i));
                         self.shared.scrolled = true;
                     }
@@ -1305,10 +1229,10 @@ impl Text {
                 let handle = TextEditHandle { key: i };
                 let consumed = self.get_text_edit_mut(&handle).handle_event_editable(event, window, &input_state);
 
-                if self.shared.text_changed {
+                if self.shared.rebuild_glyphs {
                     self.shared.reset_cursor_blink();
                 }
-                if !self.shared.text_changed && self.shared.scrolled {
+                if !self.shared.rebuild_glyphs && self.shared.scrolled {
                     self.scrolled_moved_indices.push(AnyBox::TextEdit(i));
                 }
                 consumed
@@ -1317,10 +1241,7 @@ impl Text {
                 let handle = TextBoxHandle { key: i };
                 let consumed = self.get_text_box_mut(&handle).handle_event(event, window, &input_state);
 
-                if self.shared.decorations_changed {
-                    self.shared.decorations_changed = true;
-                }
-                if !self.shared.text_changed && self.shared.scrolled {
+                if !self.shared.rebuild_glyphs && self.shared.scrolled {
                     self.scrolled_moved_indices.push(AnyBox::TextBox(i));
                 }
                 consumed
@@ -1345,16 +1266,6 @@ impl Text {
 
     }
 
-    /// Returns `true` if any text was changed in the last frame.
-    pub fn any_text_changed(&self) -> bool {
-        self.shared.text_changed
-    }
-
-    /// Returns `true` if text decorations changed in the last frame.
-    pub fn decorations_changed(&self) -> bool {
-        self.shared.decorations_changed
-    }
-
     /// Returns `true` if scrolling occurred in the last frame.
     pub fn scrolled(&self) -> bool {
         self.shared.scrolled
@@ -1367,7 +1278,7 @@ impl Text {
     /// 
     /// Games and applications that rerender continuously can call `Window::request_redraw()` unconditionally after every `RedrawRequested` event, without checking this method.
     pub fn needs_rerender(&mut self) -> bool {
-        return self.shared.text_changed || self.shared.decorations_changed || self.shared.scrolled || !self.scrolled_moved_indices.is_empty();
+        return self.shared.rebuild_glyphs || self.shared.scrolled || !self.scrolled_moved_indices.is_empty();
     }
 
     /// Get a mutable reference to a text box wrapped with its style.
