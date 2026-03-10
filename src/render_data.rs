@@ -602,6 +602,12 @@ impl RenderData {
         // Copy cached quads to main buffer
         self.glyph_quads.extend_from_slice(&text_box.render_data_info.cached_quads);
 
+        // Selection rects are extremely fast to rebuild, so we don't bother to cache them and track them.
+        let selection_color = 0x33_33_ff_aa;
+        text_box.selection().geometry_with(&text_box.layout, |rect, _line_i| {
+            self.add_selection_rect(rect, selection_color, clip_rect, box_index as u32);
+        });
+
         self.needs_glyph_sync = true;
         self.needs_box_data_sync = true;
 

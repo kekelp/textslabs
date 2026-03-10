@@ -257,7 +257,7 @@ impl TextEdit {
                                         if let Some(text) = self.text_box.selected_text() {
                                             cb.set_text(text.to_owned()).ok();
                                             self.delete_selection();
-                                            self.text_box.shared_mut().rebuild_glyphs = true;
+                                            self.text_box.shared_mut().rebuild_glyph_quad_buffer = true;
                                         }
                                     });
                                 }
@@ -265,16 +265,16 @@ impl TextEdit {
                                     with_clipboard(|cb| {
                                         let text = cb.get_text().unwrap_or_default();
                                         self.insert_or_replace_selection(&text);
-                                        self.text_box.shared_mut().rebuild_glyphs = true;
+                                        self.text_box.shared_mut().rebuild_glyph_quad_buffer = true;
                                     });
                                 }
                                 "z" => {
                                     if shift {
                                         self.redo();
-                                        self.text_box.shared_mut().rebuild_glyphs = true;
+                                        self.text_box.shared_mut().rebuild_glyph_quad_buffer = true;
                                     } else {
                                         self.undo();
-                                        self.text_box.shared_mut().rebuild_glyphs = true;
+                                        self.text_box.shared_mut().rebuild_glyph_quad_buffer = true;
                                     }
                                 }
                                 _ => (),
@@ -346,7 +346,7 @@ impl TextEdit {
                             } else {
                                 self.delete();
                             }
-                            self.text_box.shared_mut().rebuild_glyphs = true;
+                            self.text_box.shared_mut().rebuild_glyph_quad_buffer = true;
                         }
                     }
                     Key::Named(NamedKey::Backspace) => {
@@ -356,7 +356,7 @@ impl TextEdit {
                             } else {
                                 self.backdelete();
                             }
-                            self.text_box.shared_mut().rebuild_glyphs = true;
+                            self.text_box.shared_mut().rebuild_glyph_quad_buffer = true;
                         }
                     }
                     Key::Named(NamedKey::Enter) => {
@@ -369,19 +369,19 @@ impl TextEdit {
                         
                         if newline_mode_matches && ! self.single_line {
                             self.insert_or_replace_selection("\n");
-                            self.text_box.shared_mut().rebuild_glyphs = true;
+                            self.text_box.shared_mut().rebuild_glyph_quad_buffer = true;
                         }
                     }
                     Key::Named(NamedKey::Space) => {
                         if ! action_mod {
                             self.insert_or_replace_selection(" ");
-                            self.text_box.shared_mut().rebuild_glyphs = true;
+                            self.text_box.shared_mut().rebuild_glyph_quad_buffer = true;
                         }
                     }
                     Key::Character(s) => {
                         if ! action_mod {
                             self.insert_or_replace_selection(&s);
-                            self.text_box.shared_mut().rebuild_glyphs = true;
+                            self.text_box.shared_mut().rebuild_glyph_quad_buffer = true;
                         }
                     }
                     _ => (),
@@ -424,7 +424,7 @@ impl TextEdit {
             WindowEvent::Ime(Ime::Disabled) => {
                 consumed = true;
                 self.clear_compose();
-                self.text_box.shared_mut().rebuild_glyphs = true;
+                self.text_box.shared_mut().rebuild_glyph_quad_buffer = true;
             }
             WindowEvent::Ime(Ime::Commit(text)) => {
                 consumed = true;
@@ -432,11 +432,11 @@ impl TextEdit {
                     self.clear_placeholder()
                 }
                 self.insert_or_replace_selection(&text);
-                self.text_box.shared_mut().rebuild_glyphs = true;
+                self.text_box.shared_mut().rebuild_glyph_quad_buffer = true;
             }
             WindowEvent::Ime(Ime::Preedit(text, cursor)) => {
                 consumed = true;
-                self.text_box.shared_mut().rebuild_glyphs = true;
+                self.text_box.shared_mut().rebuild_glyph_quad_buffer = true;
                 if self.showing_placeholder {
                     self.clear_placeholder()
                 }
@@ -456,7 +456,7 @@ impl TextEdit {
         let select_rects_changed = selection_rects_changed(initial_selection, self.text_box.selection(), !self.disabled);
 
         if select_rects_changed {
-            self.text_box.render_data_info.selection_rects_changed = true;
+            self.text_box.shared_mut().rebuild_glyph_quad_buffer = true;
         }
 
         if initial_show_cursor != new_show_cursor {
@@ -469,7 +469,7 @@ impl TextEdit {
 
         // Mark that we need to update scroll before rendering.
         // All these functions that rely on a fresh layout are deferred before a real render, otherwise when events come in too fast they cause too many unneeded layout rebuilds.
-        if select_rects_changed || self.text_box.shared_mut().rebuild_glyphs {
+        if select_rects_changed || self.text_box.shared_mut().rebuild_glyph_quad_buffer {
             self.needs_scroll_update = true;
         }
 
@@ -529,13 +529,13 @@ impl TextEdit {
     pub fn replace_selection(&mut self, string: &str) {
         if ! self.is_composing() {
             self.insert_or_replace_selection(string);
-            self.text_box.shared_mut().rebuild_glyphs = true;
+            self.text_box.shared_mut().rebuild_glyph_quad_buffer = true;
         }
     }
 
     pub(crate) fn clear_placeholder(&mut self) {
         clear_placeholder_partial_borrows!(self);
-        self.text_box.shared_mut().rebuild_glyphs = true;
+        self.text_box.shared_mut().rebuild_glyph_quad_buffer = true;
     }
 
     pub(crate) fn restore_placeholder_if_any(&mut self) {
@@ -550,7 +550,7 @@ impl TextEdit {
                 self.text_box.text_mut_string().push_str(&placeholder);
                 self.showing_placeholder = true;
                 self.refresh_layout();
-                self.text_box.shared_mut().rebuild_glyphs = true;
+                self.text_box.shared_mut().rebuild_glyph_quad_buffer = true;
             }
         }
     }
@@ -703,7 +703,7 @@ impl TextEdit {
         // a caret at the start of the preedit text.
 
         self.refresh_layout();
-        self.text_box.shared_mut().rebuild_glyphs = true;
+        self.text_box.shared_mut().rebuild_glyph_quad_buffer = true;
 
         let cursor = cursor.unwrap_or((0, 0));
         self.text_box.set_selection(Selection::new(
@@ -731,7 +731,7 @@ impl TextEdit {
 
             self.refresh_layout();
             self.text_box.selection = Cursor::from_byte_index(&self.text_box.layout, index, affinity).into();
-            self.text_box.shared_mut().rebuild_glyphs = true;
+            self.text_box.shared_mut().rebuild_glyph_quad_buffer = true;
         }
     }
 
@@ -1474,7 +1474,7 @@ impl TextEdit {
             self.text_box.needs_relayout = true;
             self.showing_placeholder = true;
             self.text_box.reset_selection();
-            self.text_box.shared_mut().rebuild_glyphs = true;
+            self.text_box.shared_mut().rebuild_glyph_quad_buffer = true;
         }
     }
 
@@ -1483,7 +1483,7 @@ impl TextEdit {
         let removed = remove_newlines_inplace(self.text_box.text_mut_string());
         if removed {
             self.text_box.needs_relayout = true;
-            self.text_box.shared_mut().rebuild_glyphs = true;
+            self.text_box.shared_mut().rebuild_glyph_quad_buffer = true;
         }
     }
 

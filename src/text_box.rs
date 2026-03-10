@@ -83,9 +83,6 @@ pub(crate) struct RenderDataInfo {
     /// Cache generation when quads were cached. Compared against RenderData.cache_generation
     /// to check validity. Set to 0 to invalidate (text change), global generation increments on glyph eviction.
     pub cache_generation: u64,
-
-    pub selection_rects_start: usize,
-    pub selection_rects_changed: bool,
 }
 
 
@@ -434,7 +431,7 @@ impl TextBox {
         }
 
         if selection_rects_changed(initial_selection, self.selection, false) {
-            self.render_data_info.selection_rects_changed = true;
+            self.shared_mut().rebuild_glyph_quad_buffer = true;
         }
 
         return consumed;
@@ -662,7 +659,7 @@ impl TextBox {
     pub fn text_mut(&mut self) -> &mut Cow<'static, str> {
         self.needs_relayout = true;
         self.render_data_info.cache_generation = 0;
-        self.shared_mut().rebuild_glyphs = true;
+        self.shared_mut().rebuild_glyph_quad_buffer = true;
         &mut self.text
     }
 
@@ -677,7 +674,7 @@ impl TextBox {
     pub fn set_text(&mut self, new_text: &str) {
         self.needs_relayout = true;
         self.render_data_info.cache_generation = 0;
-        self.shared_mut().rebuild_glyphs = true;
+        self.shared_mut().rebuild_glyph_quad_buffer = true;
 
         match &mut self.text {
             Cow::Owned(s) => {
@@ -715,7 +712,7 @@ impl TextBox {
             return;
         }
         self.transform.translation = new_translation;
-        self.shared_mut().rebuild_glyphs = true;
+        self.shared_mut().rebuild_glyph_quad_buffer = true;
     }
 
     /// Sets the transform of the text box.
@@ -729,7 +726,7 @@ impl TextBox {
         self.transform.translation = transform.translation;
         self.transform.rotation = transform.rotation;
         self.transform.scale = transform.scale;
-        self.shared_mut().rebuild_glyphs = true;
+        self.shared_mut().rebuild_glyph_quad_buffer = true;
     }
 
     /// Sets the transform of the text box without updating the retained transform.
@@ -743,7 +740,7 @@ impl TextBox {
         self.transform.translation = transform.translation;
         self.transform.rotation = transform.rotation;
         self.transform.scale = transform.scale;
-        self.shared_mut().rebuild_glyphs = true;
+        self.shared_mut().rebuild_glyph_quad_buffer = true;
     }
 
     /// Returns the current transform of the text box.
@@ -761,7 +758,7 @@ impl TextBox {
             return;
         }
         self.transform.translation = (x, y);
-        self.shared_mut().rebuild_glyphs = true;
+        self.shared_mut().rebuild_glyph_quad_buffer = true;
     }
 
     /// Sets the rotation of the text box in radians.
@@ -770,7 +767,7 @@ impl TextBox {
             return;
         }
         self.transform.rotation = radians;
-        self.shared_mut().rebuild_glyphs = true;
+        self.shared_mut().rebuild_glyph_quad_buffer = true;
     }
 
     /// Hides or unhides the text box.
@@ -782,7 +779,7 @@ impl TextBox {
         if hidden {
             self.reset_selection();
         }
-        self.shared_mut().rebuild_glyphs = true;
+        self.shared_mut().rebuild_glyph_quad_buffer = true;
     }
 
     /// Sets the depth (z-order) of the text box.
@@ -791,7 +788,7 @@ impl TextBox {
             return;
         }
         self.depth = depth;
-        self.shared_mut().rebuild_glyphs = true;
+        self.shared_mut().rebuild_glyph_quad_buffer = true;
     }
 
     /// Sets the clipping rectangle for the text box.
@@ -802,7 +799,7 @@ impl TextBox {
             return;
         }
         self.clip_rect = clip_rect;
-        self.shared_mut().rebuild_glyphs = true;
+        self.shared_mut().rebuild_glyph_quad_buffer = true;
     }
 
     /// Sets a screen-space clip rect (min_x, min_y, max_x, max_y).
@@ -813,7 +810,7 @@ impl TextBox {
             return;
         }
         self.screen_space_clip_rect = clip_rect;
-        self.shared_mut().rebuild_glyphs = true;
+        self.shared_mut().rebuild_glyph_quad_buffer = true;
     }
 
     /// Sets an explicit hitbox for hit detection in local space (min_x, min_y, max_x, max_y).
@@ -836,7 +833,7 @@ impl TextBox {
             return;
         }
         self.scroll_offset = offset;
-        self.shared_mut().rebuild_glyphs = true;
+        self.shared_mut().rebuild_glyph_quad_buffer = true;
     }
 
     /// Sets the style for the text box.
@@ -848,7 +845,7 @@ impl TextBox {
         self.style_version = self.style_version();
         self.needs_relayout = true;
         self.render_data_info.cache_generation = 0;
-        self.shared_mut().rebuild_glyphs = true;
+        self.shared_mut().rebuild_glyph_quad_buffer = true;
     }
 
     pub(crate) fn style_version(&self) -> u64 {
@@ -953,7 +950,7 @@ impl TextBox {
         self.alignment = alignment;
         self.needs_relayout = true;
         self.render_data_info.cache_generation = 0;
-        self.shared_mut().rebuild_glyphs = true;
+        self.shared_mut().rebuild_glyph_quad_buffer = true;
     }
 
     // todo: scale factor was meant to be a different thing?
@@ -965,7 +962,7 @@ impl TextBox {
         self.transform.scale = scale;
         self.needs_relayout = true;
         self.render_data_info.cache_generation = 0;
-        self.shared_mut().rebuild_glyphs = true;
+        self.shared_mut().rebuild_glyph_quad_buffer = true;
     }
 
     // #[cfg(feature = "accesskit")]
