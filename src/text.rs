@@ -447,7 +447,7 @@ impl Text {
         let mut text_box = TextBox::new(text, pos, size, depth, self.shared.default_style_key, shared_backref);
 
         let box_data_i = self.render_data.box_data.insert(BoxGpu::zeroed());
-        text_box.quad_storage.box_index = box_data_i;
+        text_box.render_data_info.box_index = box_data_i;
 
         text_box.last_frame_touched = self.current_visibility_frame;
         text_box.style_version = self.shared.styles[text_box.style.key].version;
@@ -470,7 +470,7 @@ impl Text {
         let mut text_edit = TextEdit::new(text, pos, size, depth, self.shared.default_style_key, shared_backref);
 
         let box_data_i = self.render_data.box_data.insert(BoxGpu::zeroed());
-        text_edit.text_box.quad_storage.box_index = box_data_i;
+        text_edit.text_box.render_data_info.box_index = box_data_i;
 
         text_edit.text_box.last_frame_touched = self.current_visibility_frame;
         text_edit.text_box.style_version = self.shared.styles[text_edit.text_box.style.key].version;
@@ -669,7 +669,7 @@ impl Text {
         
         let text_box = self.text_boxes.remove(handle.key).unwrap();
         
-        let box_data_i = text_box.quad_storage.box_index;
+        let box_data_i = text_box.render_data_info.box_index;
         self.render_data.box_data.remove(box_data_i);
 
         std::mem::forget(handle);
@@ -697,7 +697,7 @@ impl Text {
         
         let text_edit = self.text_edits.remove(handle.key).unwrap();
 
-        let box_data_i = text_edit.text_box.quad_storage.box_index;
+        let box_data_i = text_edit.text_box.render_data_info.box_index;
         self.render_data.box_data.remove(box_data_i);
 
         std::mem::forget(handle);
@@ -903,19 +903,19 @@ impl Text {
             match any_box {
                 AnyBox::TextEdit(i) => {
                     if let Some(text_edit) = self.text_edits.get_mut(*i) {
-                        if text_edit.text_box.scroll_distance_above_tolerance() {
+                        if text_edit.text_box.is_scroll_distance_above_tolerance() {
                             return false;
                         } else {
-                            update_scroll(&mut self.render_data, &mut text_edit.text_box.quad_storage, text_edit.text_box.scroll_offset);
+                            update_scroll(&mut self.render_data, &mut text_edit.text_box.render_data_info, text_edit.text_box.scroll_offset);
                         }
                     }
                 },
                 AnyBox::TextBox(i) => {
                     if let Some(text_box) = self.text_boxes.get_mut(*i) {
-                        if text_box.scroll_distance_above_tolerance() {
+                        if text_box.is_scroll_distance_above_tolerance() {
                             return false;
                         } else {
-                            update_scroll(&mut self.render_data, &mut text_box.quad_storage, text_box.scroll_offset);
+                            update_scroll(&mut self.render_data, &mut text_box.render_data_info, text_box.scroll_offset);
                         }
                     }
                 },
@@ -1789,7 +1789,7 @@ impl Text {
 /// Update scroll by adjusting BoxGpu translation instead of modifying quad positions.
 /// Returns false if scroll has exceeded the tolerance from the base position (line culling boundary),
 /// in which case a full re-prepare is needed to get the correct lines.
-fn update_scroll(render_data: &mut RenderData, quad_storage: &mut QuadStorage, current_scroll: (f32, f32)) -> bool {
+fn update_scroll(render_data: &mut RenderData, quad_storage: &mut RenderDataInfo, current_scroll: (f32, f32)) -> bool {
     // Check if we've scrolled too far from the base (line culling tolerance)
     // Compute delta from last scroll position
     let delta_x = current_scroll.0 - quad_storage.last_scroll.0;

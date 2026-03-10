@@ -54,8 +54,7 @@ pub struct TextBox {
     // Multi-window support
     pub(crate) window_id: Option<winit::window::WindowId>,
     
-    /// Tracks quad storage for fast scrolling
-    pub(crate) quad_storage: QuadStorage,
+    pub(crate) render_data_info: RenderDataInfo,
 
     /// Optional explicit hitbox in local space (min_x, min_y, max_x, max_y).
     /// If set, hit_full_rect and hit_bounding_box will use this instead of the default behavior.
@@ -68,11 +67,11 @@ pub struct TextBox {
     pub(crate) key: DefaultKey,
 }
 
-/// Remembers the location of the glyph quads corresponding to the text in this text box, in order to allow fast scrolling without relayouting.
+/// Metadata and cache for the render data of a text box
 #[derive(Debug, Clone, Default)]
-pub(crate) struct QuadStorage {
+pub(crate) struct RenderDataInfo {
     /// Range into the text renderer quads. If None, it doesn't mean that there are no quads, but rather that the text box was never prepared.
-    pub quad_range: Option<(usize, usize)>,
+    pub glyph_quad_range: Option<(usize, usize)>,
     /// Index into the text renderer's box_data array for this text box
     pub box_index: usize,
     /// The scroll offset when quads were prepared (for tolerance check)
@@ -107,10 +106,9 @@ pub(crate) fn original_default_style() -> TextStyle2 {
 }
 
 impl TextBox {
-    pub(crate) fn scroll_distance_above_tolerance(&self) -> bool {
-        // text_edit.text_box.quad_storage, text_edit.text_box.scroll_offset
-        let distance_x = (self.scroll_offset.0 - self.quad_storage.base_scroll.0).abs();
-        let distance_y = (self.scroll_offset.1 - self.quad_storage.base_scroll.1).abs();
+    pub(crate) fn is_scroll_distance_above_tolerance(&self) -> bool {
+        let distance_x = (self.scroll_offset.0 - self.render_data_info.base_scroll.0).abs();
+        let distance_y = (self.scroll_offset.1 - self.render_data_info.base_scroll.1).abs();
     
         // Use the same tolerance as line culling
         const SCROLL_TOLERANCE: f32 = 200.0;
@@ -162,7 +160,7 @@ impl TextBox {
             last_frame_touched: 0,
             can_hide: false,
             window_id: None,
-            quad_storage: QuadStorage::default(),
+            render_data_info: RenderDataInfo::default(),
             explicit_hitbox: None,
             shared_backref,
             key: DefaultKey::null() // Remember to fill it in later, I guess.
@@ -316,8 +314,8 @@ impl TextBox {
     }
 
     pub(crate) fn quad_range_impl(&self, edit: bool) -> QuadRanges {
-        debug_assert!(self.quad_storage.quad_range.is_some(), "Quad range called before this text box was prepared.");
-        let glyph_range = self.quad_storage.quad_range.unwrap_or_else(|| (0,0));
+        debug_assert!(self.render_data_info.glyph_quad_range.is_some(), "Quad range called before this text box was prepared.");
+        let glyph_range = self.render_data_info.glyph_quad_range.unwrap_or_else(|| (0,0));
         let is_focused = match self.shared().focused {
             Some(AnyBox::TextBox(f)) if !edit => f == self.key,
             Some(AnyBox::TextEdit(f)) if edit => f == self.key,
@@ -683,7 +681,7 @@ impl TextBox {
     /// To manipulate the text as a `String`, call `Cow::to_mut()` on the result, or use [`Self::text_mut_string()`]
     pub fn text_mut(&mut self) -> &mut Cow<'static, str> {
         self.needs_relayout = true;
-        self.quad_storage.cache_generation = 0;
+        self.render_data_info.cache_generation = 0;
         self.shared_mut().text_changed = true;
         &mut self.text
     }
@@ -698,7 +696,7 @@ impl TextBox {
     /// Set the text in the text box.
     pub fn set_text(&mut self, new_text: &str) {
         self.needs_relayout = true;
-        self.quad_storage.cache_generation = 0;
+        self.render_data_info.cache_generation = 0;
         self.shared_mut().text_changed = true;
 
         match &mut self.text {
@@ -869,7 +867,7 @@ impl TextBox {
         self.style = style.sneak_clone();
         self.style_version = self.style_version();
         self.needs_relayout = true;
-        self.quad_storage.cache_generation = 0;
+        self.render_data_info.cache_generation = 0;
         self.shared_mut().text_changed = true;
     }
 
@@ -944,7 +942,7 @@ impl TextBox {
     /// Sets the text to a static string reference.
     pub fn set_static(&mut self, text: &'static str) {
         self.needs_relayout = true;
-        self.quad_storage.cache_generation = 0;
+        self.render_data_info.cache_generation = 0;
         self.text = Cow::Borrowed(text);
     }
 
@@ -956,7 +954,7 @@ impl TextBox {
         self.max_advance = size.0;
         if relayout {
             self.needs_relayout = true;
-            self.quad_storage.cache_generation = 0;
+            self.render_data_info.cache_generation = 0;
         }
     }
 
@@ -974,7 +972,7 @@ impl TextBox {
         }
         self.alignment = alignment;
         self.needs_relayout = true;
-        self.quad_storage.cache_generation = 0;
+        self.render_data_info.cache_generation = 0;
         self.shared_mut().text_changed = true;
     }
 
@@ -986,7 +984,7 @@ impl TextBox {
         }
         self.transform.scale = scale;
         self.needs_relayout = true;
-        self.quad_storage.cache_generation = 0;
+        self.render_data_info.cache_generation = 0;
         self.shared_mut().text_changed = true;
     }
 
@@ -1189,7 +1187,7 @@ impl TextBox {
             if self.style_version_changed() {
                 self.style_version = self.style_version();
                 // Style changed externally, invalidate cached quads
-                self.quad_storage.cache_generation = 0;
+                self.render_data_info.cache_generation = 0;
             }
             self.rebuild_layout(None, false);
         }

@@ -543,7 +543,7 @@ impl RenderData {
 
         // Reuse the text box's BoxGpu instead of creating a new one.
         // This way, when scroll updates BoxGpu.scroll_offset, decorations move with the text.
-        let box_index = text_box.quad_storage.box_index;
+        let box_index = text_box.render_data_info.box_index;
 
         text_box.selection().geometry_with(&text_box.layout, |rect, _line_i| {
             self.add_selection_rect(rect, selection_color, clip_rect, box_index as u32);
@@ -572,7 +572,7 @@ impl RenderData {
         let scroll_offset = text_box.scroll_offset();
 
         // Update BoxGpu
-        let box_index = text_box.quad_storage.box_index;
+        let box_index = text_box.render_data_info.box_index;
         *self.box_data.get_mut(box_index) = create_box_data(
             clip_rect,
             scroll_offset,
@@ -582,8 +582,8 @@ impl RenderData {
         );
 
         // Rebuild cached quads if invalid (generation mismatch means either text changed or glyphs were evicted)
-        if text_box.quad_storage.cache_generation != self.glyph_cache_generation {
-            text_box.quad_storage.cached_quads.clear();
+        if text_box.render_data_info.cache_generation != self.glyph_cache_generation {
+            text_box.render_data_info.cached_quads.clear();
 
             // Line culling: clip_rect is already in layout-local coordinates (includes scroll)
             let (clip_top, clip_bottom) = if let Some(clip) = clip_rect {
@@ -607,31 +607,31 @@ impl RenderData {
                 for item in line.items() {
                     match item {
                         PositionedLayoutItem::GlyphRun(glyph_run) => {
-                            self.prepare_glyph_run_into(&glyph_run, box_index as u32, &mut text_box.quad_storage.cached_quads);
+                            self.prepare_glyph_run_into(&glyph_run, box_index as u32, &mut text_box.render_data_info.cached_quads);
                         }
                         PositionedLayoutItem::InlineBox(_inline_box) => {}
                     }
                 }
             }
 
-            text_box.quad_storage.base_scroll = scroll_offset;
-            text_box.quad_storage.last_scroll = scroll_offset;
+            text_box.render_data_info.base_scroll = scroll_offset;
+            text_box.render_data_info.last_scroll = scroll_offset;
 
-            text_box.quad_storage.cache_generation = self.glyph_cache_generation;
+            text_box.render_data_info.cache_generation = self.glyph_cache_generation;
         }
 
         // Copy cached quads to main buffer
-        self.glyph_quads.extend_from_slice(&text_box.quad_storage.cached_quads);
+        self.glyph_quads.extend_from_slice(&text_box.render_data_info.cached_quads);
 
         self.needs_glyph_sync = true;
         self.needs_box_data_sync = true;
 
-        if text_box.scroll_distance_above_tolerance() {
-            text_box.quad_storage.cache_generation = 0;
+        if text_box.is_scroll_distance_above_tolerance() {
+            text_box.render_data_info.cache_generation = 0;
         }
 
         let end_index = self.glyph_quads.len();
-        text_box.quad_storage.quad_range = Some((start_index, end_index));
+        text_box.render_data_info.glyph_quad_range = Some((start_index, end_index));
     }
 
     /// Prepare a glyph run and push quads to a target Vec.
