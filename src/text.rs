@@ -453,13 +453,20 @@ impl Text {
             self.render_data.needs_glyph_sync = false;
             self.shared.rerender_cursor = false;
         } else if self.shared.rerender_cursor {
+            // Cursor-blink-only sync: just update the cursor quad's color
+            if let Some(cursor_index) = self.render_data.cursor_quad_index {
+                let color = if self.shared.cursor_blink_animation_currently_visible {
+                    CURSOR_COLOR
+                } else {
+                    0x00_00_00_00
+                };
+                self.render_data.glyph_quads[cursor_index].color = color;
 
-            // Cursor-only sync. todo fix this
-            if !self.render_data.glyph_quads.is_empty() {
-                let bytes: &[u8] = bytemuck::cast_slice(&self.render_data.glyph_quads[0..1]);
-                self.renderer.queue.write_buffer(&self.renderer.vertex_buffer, 0, bytes);
+                let bytes: &[u8] = bytemuck::cast_slice(&self.render_data.glyph_quads[cursor_index..cursor_index + 1]);
+                let offset = (cursor_index * std::mem::size_of::<GlyphQuad>()) as u64;
+                self.renderer.queue.write_buffer(&self.renderer.vertex_buffer, offset, bytes);
             }
-            
+
             self.shared.rerender_cursor = false;
         }
 
@@ -860,14 +867,6 @@ impl Text {
                 }
             }
         }
-
-        // let show_cursor = self.shared.cursor_blink_animation_currently_visible;
-        // if show_cursor {
-        //     self.render_data.glyph_quads[0].color = CURSOR_COLOR;            
-        // } else {
-        //     self.render_data.glyph_quads[0].color = 0x00_00_00_00;
-        // }
-
 
         // Multi-window: mark prepared and check if all windows done.
         let should_clear_flags = {

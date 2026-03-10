@@ -27,6 +27,9 @@ pub struct RenderData {
     pub(crate) needs_texture_array_rebuild: bool,
     pub(crate) needs_params_sync: bool,
 
+    /// Index of the cursor quad in glyph_quads, if any. Used for cursor-blink-only updates.
+    pub(crate) cursor_quad_index: Option<usize>,
+
     /// Generation counter for cache invalidation. Incremented when glyphs are evicted.
     /// QuadStorage compares its cache_generation against this to check validity.
     pub(crate) glyph_cache_generation: u64,
@@ -198,7 +201,7 @@ fn create_box_data(clip_rect: Option<parley::BoundingBox>, scroll_offset: (f32, 
     }
 }
 
-fn make_quad(glyph: &GlyphWithContext, stored_glyph: &StoredGlyph, box_index: u32) -> GlyphQuad {
+fn make_glyph_quad(glyph: &GlyphWithContext, stored_glyph: &StoredGlyph, box_index: u32) -> GlyphQuad {
     let y = glyph.quantized_pos_y - stored_glyph.placement_top as i32;
     let x = glyph.quantized_pos_x + stored_glyph.placement_left as i32;
 
@@ -380,6 +383,7 @@ impl RenderData {
             needs_box_data_sync: true,
             needs_texture_array_rebuild: false,
             needs_params_sync: true,
+            cursor_quad_index: None,
             glyph_cache_generation: 1, // Start at 1 so that default QuadStorage (generation 0) is invalid
             scale_cx: Some(ScaleContext::new()),
         }
@@ -428,30 +432,11 @@ impl RenderData {
         self.last_frame_evicted != current_frame
     }
 
-    fn make_selection_rect(&mut self, rect: parley::BoundingBox, color: u32, clip_rect: Option<parley::BoundingBox>, box_index: u32) -> Option<GlyphQuad> {
-        // Positions in layout-local coordinates
-        let mut x0 = rect.x0 as i32;
-        let mut x1 = rect.x1 as i32;
-        let mut y0 = rect.y0 as i32;
-        let mut y1 = rect.y1 as i32;
-
-        // Apply clipping if clip_rect is provided
-        if let Some(clip) = clip_rect {
-            let clip_x0 = clip.x0 as i32;
-            let clip_x1 = clip.x1 as i32;
-            let clip_y0 = clip.y0 as i32;
-            let clip_y1 = clip.y1 as i32;
-
-            x0 = x0.max(clip_x0);
-            x1 = x1.min(clip_x1);
-            y0 = y0.max(clip_y0);
-            y1 = y1.min(clip_y1);
-
-            // If the rectangle is completely clipped out, don't add it
-            if x0 >= x1 || y0 >= y1 {
-                return None;
-            }
-        }
+    fn make_selection_rect(&mut self, rect: parley::BoundingBox, color: u32, box_index: u32) -> Option<GlyphQuad> {
+        let x0 = rect.x0 as i32;
+        let x1 = rect.x1 as i32;
+        let y0 = rect.y0 as i32;
+        let y1 = rect.y1 as i32;
 
         return Some(GlyphQuad {
             pos_packed: pack_i32_pair_as_u16(x0, y0),
@@ -466,10 +451,10 @@ impl RenderData {
     }
 
     /// Clear all render data for text and decorations from the renderer.
-    /// Preserves the cursor quad at index 0.
     pub fn clear(&mut self) {
         self.frame += 1;
         self.glyph_quads.clear();
+        self.cursor_quad_index = None;
     }
 
     /// Update the screen resolution in the render data.
@@ -585,7 +570,7 @@ impl RenderData {
         // Selection rects are extremely fast to rebuild, so we don't bother to cache them and track them.
         let selection_color = 0x33_33_ff_aa;
         text_box.selection().geometry_with(&text_box.layout, |rect, _line_i| {
-            let rect = self.make_selection_rect(rect, selection_color, clip_rect, box_index as u32);
+            let rect = self.make_selection_rect(rect, selection_color, box_index as u32);
             if let Some(rect) = rect {
                 self.glyph_quads.push(rect);
             }
@@ -595,8 +580,9 @@ impl RenderData {
         if show_cursor {
             let size = CURSOR_WIDTH;
             let cursor_rect = text_box.selection().focus().geometry(&text_box.layout, size);
-            let cursor_rect = self.make_selection_rect(cursor_rect, CURSOR_COLOR, clip_rect, box_index as u32);
+            let cursor_rect = self.make_selection_rect(cursor_rect, CURSOR_COLOR, box_index as u32);
             if let Some(cursor_rect) = cursor_rect {
+                self.cursor_quad_index = Some(self.glyph_quads.len());
                 self.glyph_quads.push(cursor_rect);
             }
         }
@@ -639,7 +625,7 @@ impl RenderData {
 
             if let Some(stored_glyph) = self.glyph_cache.get(&glyph_ctx.key()) {
                 if let Some(stored_glyph) = stored_glyph {
-                    let quad = make_quad(&glyph_ctx, stored_glyph, box_index);
+                    let quad = make_glyph_quad(&glyph_ctx, stored_glyph, box_index);
                     buffer.push(quad);
                 }
             } else {
@@ -785,7 +771,7 @@ impl RenderData {
         self.copy_glyph_to_atlas(size, alloc, page, content_type);
         let stored_glyph = StoredGlyph::create(alloc, placement, page, self.frame, content_type);
         self.glyph_cache.push(glyph.key(), Some(stored_glyph));
-        let quad = make_quad(glyph, &stored_glyph, box_index);
+        let quad = make_glyph_quad(glyph, &stored_glyph, box_index);
         Some((quad, stored_glyph))
     }
 
