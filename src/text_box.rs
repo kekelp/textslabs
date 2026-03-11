@@ -69,6 +69,9 @@ pub struct TextBox {
     /// For cross-box selection: the next text box in the sequence.
     /// When selecting past the end of this box, selection continues into the next box.
     pub(crate) next_box: Option<DefaultKey>,
+    /// For cross-box selection: the previous text box in the sequence.
+    /// When selecting before the start of this box, selection continues into the previous box.
+    pub(crate) prev_box: Option<DefaultKey>,
 }
 
 /// Metadata and cache for the render data of a text box
@@ -176,6 +179,7 @@ impl TextBox {
             shared_backref,
             key: DefaultKey::null(), // Remember to fill it in later, I guess.
             next_box: None,
+            prev_box: None,
         }
     }
 

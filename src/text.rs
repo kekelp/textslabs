@@ -18,6 +18,13 @@ use parley::{FontContext, LayoutContext};
 const MULTICLICK_DELAY: f64 = 0.4;
 const MULTICLICK_TOLERANCE_SQUARED: f64 = 26.0;
 
+/// Direction for cross-box selection extension.
+#[derive(Debug, Clone, Copy)]
+enum SelectionDirection {
+    Forward,
+    Backward,
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct WindowInfo {
     pub(crate) window_id: WindowId,
@@ -1335,7 +1342,6 @@ impl Text {
                 if let WindowEvent::CursorMoved { .. } = event {
                     if input_state.mouse.pointer_down {
                         self.handle_cross_box_selection_extend(i);
-                        self.cleanup_abandoned_multi_box_selections(i);
                     }
                 }
 
@@ -1346,121 +1352,123 @@ impl Text {
 
     /// Handle extending selection across linked text boxes when dragging.
     fn handle_cross_box_selection_extend(&mut self, focused_key: DefaultKey) {
+        // Reset all extended selections first, they'll be recreated as needed
+        for &key in &self.shared.multi_box_selection {
+            if key != focused_key {
+                self.text_boxes[key].selection = parley::Selection::default();
+            }
+        }
+        self.shared.multi_box_selection.retain(|&key| key == focused_key);
+
+        let did_extend_forward = self.extend_selection_in_direction(focused_key, SelectionDirection::Forward);
+        let did_extend_backward = self.extend_selection_in_direction(focused_key, SelectionDirection::Backward);
+
+        if did_extend_forward || did_extend_backward {
+            self.shared.rebuild_glyph_quad_buffer = true;
+        }
+    }
+
+    /// Extend selection in a given direction (forward to next_box, backward to prev_box).
+    /// Returns true if any extension happened.
+    fn extend_selection_in_direction(&mut self, focused_key: DefaultKey, direction: SelectionDirection) -> bool {
         let cursor_pos = self.input_state.mouse.cursor_pos;
 
         let mut current_key = focused_key;
         let mut did_extend = false;
 
         loop {
-            // Check if cursor is past the end of current box
-            let is_past_end = self.text_boxes[current_key].is_cursor_past_end(cursor_pos);
+            // Check if cursor is past the boundary of current box
+            let is_past_boundary = match direction {
+                SelectionDirection::Forward => self.text_boxes[current_key].is_cursor_past_end(cursor_pos),
+                SelectionDirection::Backward => self.text_boxes[current_key].is_cursor_before_start(cursor_pos),
+            };
 
-            if !is_past_end {
+            if !is_past_boundary {
                 break;
             }
 
-            let next_key = self.text_boxes[current_key].next_box;
+            let linked_key = match direction {
+                SelectionDirection::Forward => self.text_boxes[current_key].next_box,
+                SelectionDirection::Backward => self.text_boxes[current_key].prev_box,
+            };
 
             let copied_selection_anchor_base;
 
-            // Extend current box's selection to the end (full selection)
+            // Extend current box's selection to the boundary
             {
                 let current_box = &mut self.text_boxes[current_key];
                 copied_selection_anchor_base = current_box.selection.anchor_base();
-                current_box.selection.extend_selection_to_point(&current_box.layout, f32::MAX, f32::MAX);
+                let (extend_x, extend_y) = match direction {
+                    SelectionDirection::Forward => (f32::MAX, f32::MAX),
+                    SelectionDirection::Backward => (0.0, 0.0),
+                };
+                current_box.selection.extend_selection_to_point(&current_box.layout, extend_x, extend_y);
             }
             did_extend = true;
 
-            let Some(next_key) = next_key else {
+            let Some(linked_key) = linked_key else {
                 break;
             };
 
-            // Check if cursor actually hits the next box
-            let cursor_hits_next = self.text_boxes[next_key].hit_full_rect(cursor_pos);
+            // Check if cursor actually hits the linked box
+            let cursor_hits_linked = self.text_boxes[linked_key].hit_full_rect(cursor_pos);
 
-            if cursor_hits_next {
-                // Add next box to multi_box_selection and set partial selection
-                if !self.shared.multi_box_selection.contains(&next_key) {
-                    self.shared.multi_box_selection.push(next_key);
+            if cursor_hits_linked {
+                // Add linked box to multi_box_selection and set partial selection
+                if !self.shared.multi_box_selection.contains(&linked_key) {
+                    self.shared.multi_box_selection.push(linked_key);
                 }
 
-                let next_box = &mut self.text_boxes[next_key];
-                let inv_transform = next_box.transform().inverse().unwrap_or(Transform2D::identity());
+                let linked_box = &mut self.text_boxes[linked_key];
+                let inv_transform = linked_box.transform().inverse().unwrap_or(Transform2D::identity());
                 let local_pos = inv_transform.transform_point(euclid::Point2D::new(cursor_pos.0 as f32, cursor_pos.1 as f32));
                 let local_cursor = (
-                    local_pos.x + next_box.scroll_offset.0,
-                    local_pos.y + next_box.scroll_offset.1,
+                    local_pos.x + linked_box.scroll_offset.0,
+                    local_pos.y + linked_box.scroll_offset.1,
                 );
+
+                // Anchor point: start for forward, end for backward
+                let (anchor_x, anchor_y) = match direction {
+                    SelectionDirection::Forward => (0.0, 0.0),
+                    SelectionDirection::Backward => (f32::MAX, f32::MAX),
+                };
 
                 match copied_selection_anchor_base {
                     parley::AnchorBase::Word(_, _) => {
-                        next_box.selection.select_word_at_point(&next_box.layout, 0.0, 0.0);
+                        linked_box.selection.select_word_at_point(&linked_box.layout, anchor_x, anchor_y);
                     }
                     parley::AnchorBase::Line(_, _) => {
-                        next_box.selection.select_line_at_point(&next_box.layout, 0.0, 0.0);
+                        linked_box.selection.select_line_at_point(&linked_box.layout, anchor_x, anchor_y);
                     }
                     _ => {
-                        next_box.selection.move_to_point(&next_box.layout, 0.0, 0.0);
+                        linked_box.selection.move_to_point(&linked_box.layout, anchor_x, anchor_y);
                     }
                 }
-                next_box.selection.extend_selection_to_point(&next_box.layout, local_cursor.0, local_cursor.1);
+                linked_box.selection.extend_selection_to_point(&linked_box.layout, local_cursor.0, local_cursor.1);
                 break;
             }
 
-            // Cursor doesn't hit next box, but we're past current box
-            // Check if cursor is also past the next box (it might be in a gap further down)
-            let is_past_next = self.text_boxes[next_key].is_cursor_past_end(cursor_pos);
+            // Cursor doesn't hit linked box, but we're past current box
+            // Check if cursor is also past the linked box (it might be in a gap further along)
+            let is_past_linked = match direction {
+                SelectionDirection::Forward => self.text_boxes[linked_key].is_cursor_past_end(cursor_pos),
+                SelectionDirection::Backward => self.text_boxes[linked_key].is_cursor_before_start(cursor_pos),
+            };
 
-            if is_past_next {
-                // Add next box to multi_box_selection since we'll extend it in next iteration
-                if !self.shared.multi_box_selection.contains(&next_key) {
-                    self.shared.multi_box_selection.push(next_key);
+            if is_past_linked {
+                // Add linked box to multi_box_selection since we'll extend it in next iteration
+                if !self.shared.multi_box_selection.contains(&linked_key) {
+                    self.shared.multi_box_selection.push(linked_key);
                 }
-                current_key = next_key;
+                current_key = linked_key;
             } else {
-                // Cursor is in the gap right after current box but not past next box
+                // Cursor is in the gap but not past linked box
                 // Don't extend further
                 break;
             }
         }
 
-        if did_extend {
-            self.shared.rebuild_glyph_quad_buffer = true;
-        }
-    }
-
-    /// Clean up selections in boxes that the cursor has left during multi-box selection.
-    /// If the cursor is no longer in a box and its selection doesn't extend to the end,
-    /// clear that box's selection and remove it from multi_box_selection.
-    fn cleanup_abandoned_multi_box_selections(&mut self, focused_key: DefaultKey) {
-        let cursor_pos = self.input_state.mouse.cursor_pos;
-        let text_boxes = &mut self.text_boxes;
-        let mut rebuild = false;
-    
-        self.shared.multi_box_selection.retain(|&key| {
-            if key == focused_key {
-                return true;
-            }
-    
-            let text_box = &mut text_boxes[key];
-    
-            if !text_box.hit_full_rect(cursor_pos) {
-                let selection_range = text_box.selection.text_range();
-                let text_len = text_box.text.len();
-    
-                if selection_range.end < text_len {
-                    text_box.selection = parley::Selection::default();
-                    rebuild = true;
-                    return false;
-                }
-            }
-    
-            true
-        });
-    
-        if rebuild {
-            self.shared.rebuild_glyph_quad_buffer = true;
-        }
+        did_extend
     }
 
     /// Set the disabled state of a text edit box.
@@ -1527,9 +1535,11 @@ impl Text {
     /// Link two text boxes for cross-box selection.
     ///
     /// When selecting past the end of `first`, the selection will continue into `second`.
+    /// When selecting before the start of `second`, the selection will continue into `first`.
     /// This only affects non-editable text boxes (TextBox, not TextEdit).
     pub fn link_text_boxes(&mut self, first: &TextBoxHandle, second: &TextBoxHandle) {
         self.text_boxes[first.key].next_box = Some(second.key);
+        self.text_boxes[second.key].prev_box = Some(first.key);
     }
 
     /// Add a scroll animation for a text edit
