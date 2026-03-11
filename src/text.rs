@@ -62,16 +62,17 @@ pub struct Text {
     pub(crate) accesskit_id_to_text_handle_map: HashMap<NodeId, AnyBox>,
 }
 
-/// Data that TextBoxMut and similar things need to have a reference to. Kept all together so that TextBoxMut and similar things can hold a single pointer to all of it.
-/// 
-// A cooler way to do this would be to make the TextBoxMut be TextBoxMut { i: u32, text: &mut Text }. So you have access to the whole Text struct unconditionally, and you don't have to separate things this way. And to get the actual text box, you do self.text.text_boxes[i] every time. But we're trying this way this time
+/// Data that TextBoxMut and similar things need to have a reference to.
 pub(crate) struct Shared {
     pub styles: SlotMap<DefaultKey, StyleInner>,
-    // todo use the newtype
     pub default_style_key: DefaultKey,
     pub rebuild_glyph_quad_buffer: bool,
     pub scrolled: bool,
     pub focused: Option<AnyBox>,
+
+    /// Text boxes that are part of the current multi-box selection.
+    /// When non-empty, selection rects should be drawn for all boxes in this list.
+    pub multi_box_selection: Vec<DefaultKey>,
 
     pub windows: Vec<WindowInfo>,
     pub layout_cx: LayoutContext<ColorBrush>,
@@ -375,6 +376,7 @@ impl Text {
                 rebuild_glyph_quad_buffer: true,
                 scrolled: true,
                 focused: None,
+                multi_box_selection: Vec::new(),
                 layout_cx: LayoutContext::new(),
                 font_cx: FontContext::new(),
                 rerender_cursor: false,
@@ -858,11 +860,12 @@ impl Text {
                 }
             }
 
-            for (_key, mut text_box) in self.text_boxes.iter_mut() {
+            for (key, mut text_box) in self.text_boxes.iter_mut() {
                 if !text_box.hidden() && text_box.last_frame_touched == current_frame {
                     let should_render = text_box.window_id.is_none() || text_box.window_id == Some(window_id);
                     if should_render {
-                        self.render_data.prepare_text_box_layout(&mut text_box, false);
+                        let show_selection = self.shared.multi_box_selection.contains(&key);
+                        self.render_data.prepare_text_box_layout(&mut text_box, false, show_selection);
                     }
                 }
             }
@@ -1200,6 +1203,14 @@ impl Text {
         if focus_changed {
             if let Some(old_focus) = self.shared.focused {
                 self.remove_focus(old_focus);
+            }
+
+            // Clear multi-box selection when focus changes
+            self.shared.multi_box_selection.clear();
+
+            // If the new focus is a TextBox, add it to multi_box_selection
+            if let Some(AnyBox::TextBox(key)) = new_focus {
+                self.shared.multi_box_selection.push(key);
             }
 
             #[cfg(feature = "accessibility")]

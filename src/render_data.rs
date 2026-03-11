@@ -498,12 +498,12 @@ impl RenderData {
         text_edit.refresh_layout();
 
         let focused = text_edit.text_box.shared().focused == Some(AnyBox::TextEdit(text_edit.text_box.key));
-        self.prepare_text_box_layout(&mut text_edit.text_box, focused);
+        self.prepare_text_box_layout(&mut text_edit.text_box, focused, focused);
         self.needs_glyph_sync = true;
         self.needs_box_data_sync = true;
     }
 
-    pub(crate) fn prepare_text_box_layout(&mut self, text_box: &mut TextBox, show_cursor: bool) {
+    pub(crate) fn prepare_text_box_layout(&mut self, text_box: &mut TextBox, show_cursor: bool, show_selection: bool) {
         if text_box.hidden() {
             return;
         }
@@ -568,13 +568,15 @@ impl RenderData {
         self.glyph_quads.extend_from_slice(&text_box.render_data_info.cached_glyph_quads);
 
         // Selection rects are extremely fast to rebuild, so we don't bother to cache them and track them.
-        let selection_color = 0x33_33_ff_aa;
-        text_box.selection().geometry_with(&text_box.layout, |rect, _line_i| {
-            let rect = self.make_selection_rect(rect, selection_color, box_index as u32);
-            if let Some(rect) = rect {
-                self.glyph_quads.push(rect);
-            }
-        });
+        if show_selection {
+            let selection_color = 0x33_33_ff_aa;
+            text_box.selection().geometry_with(&text_box.layout, |rect, _line_i| {
+                let rect = self.make_selection_rect(rect, selection_color, box_index as u32);
+                if let Some(rect) = rect {
+                    self.glyph_quads.push(rect);
+                }
+            });
+        }
 
         let show_cursor = show_cursor && text_box.selection().is_collapsed();
         if show_cursor {

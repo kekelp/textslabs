@@ -2,7 +2,7 @@ use std::sync::Arc;
 use winit::{event::WindowEvent, event_loop::EventLoop, window::Window};
 use wgpu::*;
 use textslabs::*;
-use textslabs::parley::{TextStyle};
+use textslabs::parley::TextStyle;
 
 fn main() {
     let event_loop = EventLoop::new().unwrap();
