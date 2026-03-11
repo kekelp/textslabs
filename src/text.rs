@@ -1373,6 +1373,19 @@ impl Text {
     fn extend_selection_in_direction(&mut self, focused_key: DefaultKey, direction: SelectionDirection) -> bool {
         let cursor_pos = self.input_state.mouse.cursor_pos;
 
+        let anchor_point;
+        let extend_point;
+        match direction {
+            SelectionDirection::Forward => {
+                anchor_point = (0.0, 0.0);
+                extend_point = (f32::MAX, f32::MAX);
+            },
+            SelectionDirection::Backward => {
+                anchor_point = (f32::MAX, f32::MAX);
+                extend_point = (0.0, 0.0);
+            },
+        };
+
         let mut current_key = focused_key;
         let mut did_extend = false;
 
@@ -1398,11 +1411,13 @@ impl Text {
             {
                 let current_box = &mut self.text_boxes[current_key];
                 copied_selection_anchor_base = current_box.selection.anchor_base();
-                let (extend_x, extend_y) = match direction {
-                    SelectionDirection::Forward => (f32::MAX, f32::MAX),
-                    SelectionDirection::Backward => (0.0, 0.0),
-                };
-                current_box.selection.extend_selection_to_point(&current_box.layout, extend_x, extend_y);
+
+                // For non-focused boxes (which were reset), set anchor at opposite boundary first
+                if current_key != focused_key {
+                    current_box.selection.move_to_point(&current_box.layout, anchor_point.0, anchor_point.1);
+                }
+
+                current_box.selection.extend_selection_to_point(&current_box.layout, extend_point.0, extend_point.1);
             }
             did_extend = true;
 
@@ -1427,21 +1442,15 @@ impl Text {
                     local_pos.y + linked_box.scroll_offset.1,
                 );
 
-                // Anchor point: start for forward, end for backward
-                let (anchor_x, anchor_y) = match direction {
-                    SelectionDirection::Forward => (0.0, 0.0),
-                    SelectionDirection::Backward => (f32::MAX, f32::MAX),
-                };
-
                 match copied_selection_anchor_base {
                     parley::AnchorBase::Word(_, _) => {
-                        linked_box.selection.select_word_at_point(&linked_box.layout, anchor_x, anchor_y);
+                        linked_box.selection.select_word_at_point(&linked_box.layout, anchor_point.0, anchor_point.1);
                     }
                     parley::AnchorBase::Line(_, _) => {
-                        linked_box.selection.select_line_at_point(&linked_box.layout, anchor_x, anchor_y);
+                        linked_box.selection.select_line_at_point(&linked_box.layout, anchor_point.0, anchor_point.1);
                     }
                     _ => {
-                        linked_box.selection.move_to_point(&linked_box.layout, anchor_x, anchor_y);
+                        linked_box.selection.move_to_point(&linked_box.layout, anchor_point.0, anchor_point.1);
                     }
                 }
                 linked_box.selection.extend_selection_to_point(&linked_box.layout, local_cursor.0, local_cursor.1);

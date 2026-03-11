@@ -99,14 +99,23 @@ impl State {
         text.get_text_box_mut(&chain2_box1).set_style(&style_small_green);
 
         let chain2_box2 = text.add_text_box(
-            "Second chain, second box.",
+            "Second chain, second box. ",
             (320.0, 400.0),
             (250.0, 50.0),
             0.0
         );
         text.get_text_box_mut(&chain2_box2).set_style(&style_small_pink);
 
+        let chain2_box3 = text.add_text_box(
+            "Second chain, third box.",
+            (590.0, 400.0),
+            (250.0, 50.0),
+            0.0
+        );
+        text.get_text_box_mut(&chain2_box3).set_style(&style_small_green);
+
         text.link_text_boxes(&chain2_box1, &chain2_box2);
+        text.link_text_boxes(&chain2_box2, &chain2_box3);
 
         Self { device, queue, surface, surface_config, window, text, }
     }
