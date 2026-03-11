@@ -68,7 +68,7 @@ pub struct TextBox {
 }
 
 /// Metadata and cache for the render data of a text box
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub(crate) struct RenderDataInfo {
     /// Range into the text renderer quads. If None, it doesn't mean that there are no quads, but rather that the text box was never prepared.
     pub glyph_quad_range: Option<(usize, usize)>,
@@ -79,7 +79,7 @@ pub(crate) struct RenderDataInfo {
     /// The scroll offset currently reflected in BoxGpu translation (for incremental delta)
     pub last_scroll: (f32, f32),
     /// These quads are still quite slow to create, even if the glyph bitmaps are all in the cache. Probably because the parley datastructures are complicated and slow to traverse (I think I remember seeing it spend a lot of time in ".flat_map(|cluster| cluster.glyphs()))") or because of the cache lookups.
-    pub cached_quads: Vec<GlyphQuad>,
+    pub cached_glyph_quads: Vec<GlyphQuad>,
     /// Cache generation when quads were cached. Compared against RenderData.cache_generation
     /// to check validity. Set to 0 to invalidate (text change), global generation increments on glyph eviction.
     pub cache_generation: u64,
@@ -160,7 +160,14 @@ impl TextBox {
             last_frame_touched: 0,
             can_hide: false,
             window_id: None,
-            render_data_info: RenderDataInfo::default(),
+            render_data_info: RenderDataInfo {
+                glyph_quad_range: None,
+                box_index: 0,
+                base_scroll: (0.0, 0.0),
+                last_scroll: (0.0, 0.0),
+                cached_glyph_quads: Vec::with_capacity(10),
+                cache_generation: 0,
+            },
             explicit_hitbox: None,
             shared_backref,
             key: DefaultKey::null() // Remember to fill it in later, I guess.

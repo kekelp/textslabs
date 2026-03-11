@@ -527,7 +527,7 @@ impl RenderData {
 
         // Rebuild cached quads if invalid (generation mismatch means either text changed or glyphs were evicted)
         if text_box.render_data_info.cache_generation != self.glyph_cache_generation {
-            text_box.render_data_info.cached_quads.clear();
+            text_box.render_data_info.cached_glyph_quads.clear();
 
             // Line culling: clip_rect is already in layout-local coordinates (includes scroll)
             let (clip_top, clip_bottom) = if let Some(clip) = clip_rect {
@@ -551,7 +551,7 @@ impl RenderData {
                 for item in line.items() {
                     match item {
                         PositionedLayoutItem::GlyphRun(glyph_run) => {
-                            self.prepare_glyph_run_into(&glyph_run, box_index as u32, &mut text_box.render_data_info.cached_quads);
+                            self.prepare_glyph_run_into(&glyph_run, box_index as u32, &mut text_box.render_data_info.cached_glyph_quads);
                         }
                         PositionedLayoutItem::InlineBox(_inline_box) => {}
                     }
@@ -565,7 +565,7 @@ impl RenderData {
         }
 
         // Copy cached quads to main buffer
-        self.glyph_quads.extend_from_slice(&text_box.render_data_info.cached_quads);
+        self.glyph_quads.extend_from_slice(&text_box.render_data_info.cached_glyph_quads);
 
         // Selection rects are extremely fast to rebuild, so we don't bother to cache them and track them.
         let selection_color = 0x33_33_ff_aa;
