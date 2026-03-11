@@ -1384,6 +1384,14 @@ impl Text {
         return self.text_boxes.get_mut(handle.key);
     }
 
+    /// Link two text boxes for cross-box selection.
+    ///
+    /// When selecting past the end of `first`, the selection will continue into `second`.
+    /// This only affects non-editable text boxes (TextBox, not TextEdit).
+    pub fn link_text_boxes(&mut self, first: &TextBoxHandle, second: &TextBoxHandle) {
+        self.text_boxes[first.key].next_box = Some(second.key);
+    }
+
     /// Add a scroll animation for a text edit
     pub(crate) fn add_scroll_animation(&mut self, handle: &TextEditHandle, start_offset: f32, target_offset: f32, duration: std::time::Duration, direction: ScrollDirection) {
         // Remove any existing animation for this handle and direction

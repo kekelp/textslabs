@@ -65,6 +65,10 @@ pub struct TextBox {
     /// Copy of the key that this textbox corresponds to. (or the parent text_edit_box! That's a bit messy).
     /// todo: try to get rid of this.
     pub(crate) key: DefaultKey,
+
+    /// For cross-box selection: the next text box in the sequence.
+    /// When selecting past the end of this box, selection continues into the next box.
+    pub(crate) next_box: Option<DefaultKey>,
 }
 
 /// Metadata and cache for the render data of a text box
@@ -170,7 +174,8 @@ impl TextBox {
             },
             explicit_hitbox: None,
             shared_backref,
-            key: DefaultKey::null() // Remember to fill it in later, I guess.
+            key: DefaultKey::null(), // Remember to fill it in later, I guess.
+            next_box: None,
         }
     }
 
