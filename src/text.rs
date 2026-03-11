@@ -13,7 +13,7 @@ use std::time::{Duration, Instant};
 use winit::{event::{Modifiers, MouseButton, WindowEvent}, window::Window};
 use std::sync::{Arc, Weak};
 use winit::window::WindowId;
-use parley::{Cursor, FontContext, LayoutContext};
+use parley::{FontContext, LayoutContext};
 
 const MULTICLICK_DELAY: f64 = 0.4;
 const MULTICLICK_TOLERANCE_SQUARED: f64 = 26.0;

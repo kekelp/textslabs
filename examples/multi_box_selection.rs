@@ -89,19 +89,19 @@ impl State {
         text.link_text_boxes(&box1, &box2);
         text.link_text_boxes(&box2, &box3);
 
-        // Add a second chain of boxes to test multiple independent chains
+        // Add a second chain of boxes to test multiple independent chains (horizontal, below main chain)
         let chain2_box1 = text.add_text_box(
             "Second chain, first box. ",
-            (500.0, 50.0),
-            (300.0, 50.0),
+            (50.0, 400.0),
+            (250.0, 50.0),
             0.0
         );
         text.get_text_box_mut(&chain2_box1).set_style(&style_small_green);
 
         let chain2_box2 = text.add_text_box(
             "Second chain, second box.",
-            (500.0, 110.0),
-            (300.0, 50.0),
+            (320.0, 400.0),
+            (250.0, 50.0),
             0.0
         );
         text.get_text_box_mut(&chain2_box2).set_style(&style_small_pink);
@@ -120,6 +120,7 @@ impl winit::application::ApplicationHandler for Application {
             let window = Arc::new(event_loop.create_window(
                 Window::default_attributes()
                     .with_title("Multi-Box Selection Example")
+                    .with_inner_size(winit::dpi::LogicalSize::new(900, 550))
             ).unwrap());
             window.set_ime_allowed(true);
             self.state = Some(State::new(window));
