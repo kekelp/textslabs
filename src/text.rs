@@ -1,4 +1,5 @@
 use crate::*;
+use crate::text_box::SelectionExt;
 #[cfg(feature = "accessibility")]
 use accesskit::{NodeId, TreeUpdate};
 use slotmap::{SlotMap, DefaultKey};
@@ -12,7 +13,7 @@ use std::time::{Duration, Instant};
 use winit::{event::{Modifiers, MouseButton, WindowEvent}, window::Window};
 use std::sync::{Arc, Weak};
 use winit::window::WindowId;
-use parley::{FontContext, LayoutContext};
+use parley::{Cursor, FontContext, LayoutContext};
 
 const MULTICLICK_DELAY: f64 = 0.4;
 const MULTICLICK_TOLERANCE_SQUARED: f64 = 26.0;
@@ -1329,8 +1330,136 @@ impl Text {
                 if !self.shared.rebuild_glyph_quad_buffer && self.shared.scrolled {
                     self.scrolled_moved_indices.push(AnyBox::TextBox(i));
                 }
+
+                // Handle cross-box selection extension for linked boxes
+                if let WindowEvent::CursorMoved { .. } = event {
+                    if input_state.mouse.pointer_down {
+                        self.handle_cross_box_selection_extend(i);
+                        self.cleanup_abandoned_multi_box_selections(i);
+                    }
+                }
+
                 consumed
             },
+        }
+    }
+
+    /// Handle extending selection across linked text boxes when dragging.
+    fn handle_cross_box_selection_extend(&mut self, focused_key: DefaultKey) {
+        let cursor_pos = self.input_state.mouse.cursor_pos;
+
+        let mut current_key = focused_key;
+        let mut did_extend = false;
+
+        loop {
+            // Check if cursor is past the end of current box
+            let is_past_end = self.text_boxes[current_key].is_cursor_past_end(cursor_pos);
+
+            if !is_past_end {
+                break;
+            }
+
+            let next_key = self.text_boxes[current_key].next_box;
+
+            let copied_selection_anchor_base;
+
+            // Extend current box's selection to the end (full selection)
+            {
+                let current_box = &mut self.text_boxes[current_key];
+                copied_selection_anchor_base = current_box.selection.anchor_base();
+                current_box.selection.extend_selection_to_point(&current_box.layout, f32::MAX, f32::MAX);
+            }
+            did_extend = true;
+
+            let Some(next_key) = next_key else {
+                break;
+            };
+
+            // Check if cursor actually hits the next box
+            let cursor_hits_next = self.text_boxes[next_key].hit_full_rect(cursor_pos);
+
+            if cursor_hits_next {
+                // Add next box to multi_box_selection and set partial selection
+                if !self.shared.multi_box_selection.contains(&next_key) {
+                    self.shared.multi_box_selection.push(next_key);
+                }
+
+                let next_box = &mut self.text_boxes[next_key];
+                let inv_transform = next_box.transform().inverse().unwrap_or(Transform2D::identity());
+                let local_pos = inv_transform.transform_point(euclid::Point2D::new(cursor_pos.0 as f32, cursor_pos.1 as f32));
+                let local_cursor = (
+                    local_pos.x + next_box.scroll_offset.0,
+                    local_pos.y + next_box.scroll_offset.1,
+                );
+
+                match copied_selection_anchor_base {
+                    parley::AnchorBase::Word(_, _) => {
+                        next_box.selection.select_word_at_point(&next_box.layout, 0.0, 0.0);
+                    }
+                    parley::AnchorBase::Line(_, _) => {
+                        next_box.selection.select_line_at_point(&next_box.layout, 0.0, 0.0);
+                    }
+                    _ => {
+                        next_box.selection.move_to_point(&next_box.layout, 0.0, 0.0);
+                    }
+                }
+                next_box.selection.extend_selection_to_point(&next_box.layout, local_cursor.0, local_cursor.1);
+                break;
+            }
+
+            // Cursor doesn't hit next box, but we're past current box
+            // Check if cursor is also past the next box (it might be in a gap further down)
+            let is_past_next = self.text_boxes[next_key].is_cursor_past_end(cursor_pos);
+
+            if is_past_next {
+                // Add next box to multi_box_selection since we'll extend it in next iteration
+                if !self.shared.multi_box_selection.contains(&next_key) {
+                    self.shared.multi_box_selection.push(next_key);
+                }
+                current_key = next_key;
+            } else {
+                // Cursor is in the gap right after current box but not past next box
+                // Don't extend further
+                break;
+            }
+        }
+
+        if did_extend {
+            self.shared.rebuild_glyph_quad_buffer = true;
+        }
+    }
+
+    /// Clean up selections in boxes that the cursor has left during multi-box selection.
+    /// If the cursor is no longer in a box and its selection doesn't extend to the end,
+    /// clear that box's selection and remove it from multi_box_selection.
+    fn cleanup_abandoned_multi_box_selections(&mut self, focused_key: DefaultKey) {
+        let cursor_pos = self.input_state.mouse.cursor_pos;
+        let text_boxes = &mut self.text_boxes;
+        let mut rebuild = false;
+    
+        self.shared.multi_box_selection.retain(|&key| {
+            if key == focused_key {
+                return true;
+            }
+    
+            let text_box = &mut text_boxes[key];
+    
+            if !text_box.hit_full_rect(cursor_pos) {
+                let selection_range = text_box.selection.text_range();
+                let text_len = text_box.text.len();
+    
+                if selection_range.end < text_len {
+                    text_box.selection = parley::Selection::default();
+                    rebuild = true;
+                    return false;
+                }
+            }
+    
+            true
+        });
+    
+        if rebuild {
+            self.shared.rebuild_glyph_quad_buffer = true;
         }
     }
 

@@ -203,7 +203,50 @@ impl TextBox {
             && offset.1 < self.height as f64;
 
         return hit;
-    }    
+    }
+
+    /// Check if a screen-space cursor position is past the end of this text box.
+    /// Used for determining when to extend selection to the next linked box.
+    /// Returns true if the cursor is below the box, or on the last line and past the right edge.
+    pub(crate) fn is_cursor_past_end(&self, cursor_pos: (f64, f64)) -> bool {
+        let inv_transform = self.transform().inverse().unwrap_or(Transform2D::identity());
+        let local_pos = inv_transform.transform_point(euclid::Point2D::new(cursor_pos.0 as f32, cursor_pos.1 as f32));
+
+        // Past the bottom of the box
+        if local_pos.y > self.height {
+            return true;
+        }
+
+        // On or past the last line and past the right edge
+        let text_height = self.layout.height();
+        let last_line_y = text_height - self.layout.lines().last().map(|l| l.metrics().line_height).unwrap_or(0.0);
+        if local_pos.y >= last_line_y && local_pos.x > self.layout.full_width() {
+            return true;
+        }
+
+        false
+    }
+
+    /// Check if a screen-space cursor position is before the start of this text box.
+    /// Used for determining when to extend selection to the previous linked box.
+    /// Returns true if the cursor is above the box, or on the first line and before the left edge.
+    pub(crate) fn is_cursor_before_start(&self, cursor_pos: (f64, f64)) -> bool {
+        let inv_transform = self.transform().inverse().unwrap_or(Transform2D::identity());
+        let local_pos = inv_transform.transform_point(euclid::Point2D::new(cursor_pos.0 as f32, cursor_pos.1 as f32));
+
+        // Before the top of the box
+        if local_pos.y < 0.0 {
+            return true;
+        }
+
+        // On the first line and before the left edge
+        let first_line_height = self.layout.lines().next().map(|l| l.metrics().line_height).unwrap_or(self.height);
+        if local_pos.y < first_line_height && local_pos.x < 0.0 {
+            return true;
+        }
+
+        false
+    }
 }
 
 #[cfg(feature = "accessibility")]
@@ -1240,7 +1283,7 @@ impl Ext1 for TextBox {
 }
 
 
-trait SelectionExt {
+pub(crate) trait SelectionExt {
     fn move_to_point(&mut self, layout: &Layout<ColorBrush>, x: f32, y: f32);
     fn select_word_at_point(&mut self, layout: &Layout<ColorBrush>, x: f32, y: f32);
     fn select_line_at_point(&mut self, layout: &Layout<ColorBrush>, x: f32, y: f32);

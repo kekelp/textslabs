@@ -71,7 +71,7 @@ impl State {
 
         let box2 = text.add_text_box(
             "This is the second text box, linked after the first. Selection should continue here. ",
-            (50.0, 120.0),
+            (50.0, 180.0),
             (400.0, 60.0),
             0.0
         );
@@ -79,7 +79,7 @@ impl State {
 
         let box3 = text.add_text_box(
             "And this is the third text box. The chain continues through all three boxes.",
-            (50.0, 200.0),
+            (50.0, 280.0),
             (400.0, 60.0),
             0.0
         );
