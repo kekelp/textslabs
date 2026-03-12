@@ -264,11 +264,14 @@ impl TextEdit {
                                     });
                                 }
                                 "v" if !shift => {
-                                    with_clipboard(|cb| {
-                                        let text = cb.get_text().unwrap_or_default();
-                                        self.insert_or_replace_selection(&text);
-                                        self.text_box.shared_mut().rebuild_glyph_quad_buffer = true;
-                                    });
+                                    if !self.text_box.shared().pasted_this_frame {
+                                        self.text_box.shared_mut().pasted_this_frame = true;
+                                        with_clipboard(|cb| {
+                                            let text = cb.get_text().unwrap_or_default();
+                                            self.insert_or_replace_selection(&text);
+                                            self.text_box.shared_mut().rebuild_glyph_quad_buffer = true;
+                                        });
+                                    }
                                 }
                                 "z" => {
                                     if shift {

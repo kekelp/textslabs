@@ -92,6 +92,9 @@ pub(crate) struct Shared {
 
     pub rerender_cursor: bool,
 
+    // Throttle paste to once per frame to avoid layout rebuild spam.
+    pub pasted_this_frame: bool,
+
     #[cfg(feature = "accessibility")]
     pub accesskit_tree_update: TreeUpdate,
     #[cfg(feature = "accessibility")]
@@ -394,6 +397,7 @@ impl Text {
                 layout_cx: LayoutContext::new(),
                 font_cx: FontContext::new(),
                 rerender_cursor: false,
+                pasted_this_frame: false,
                 #[cfg(feature = "accessibility")]
                 accesskit_focus_tracker: FocusChange::new(),
                 current_event_number: 1,
@@ -853,6 +857,7 @@ impl Text {
             self.render_data.stats = RenderStats::default();
         }
 
+        self.shared.pasted_this_frame = false;
         self.render_data.update_resolution(window_size.0, window_size.1);
 
         // todo: not sure if this works correctly with multi-window.
