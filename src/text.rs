@@ -10,7 +10,8 @@ use std::ptr::NonNull;
 use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
-use winit::{event::{Modifiers, MouseButton, WindowEvent}, window::Window};
+use winit::{event::{Modifiers, MouseButton, WindowEvent}, keyboard::Key, window::Window};
+use winit::platform::modifier_supplement::KeyEventExtModifierSupplement;
 use std::sync::{Arc, Weak};
 use winit::window::WindowId;
 use parley::{FontContext, LayoutContext};
@@ -68,6 +69,9 @@ pub struct Text {
 
     #[cfg(feature = "accessibility")]
     pub(crate) accesskit_id_to_text_handle_map: HashMap<NodeId, AnyBox>,
+
+    /// Internal buffer for collecting selected text across multiple boxes.
+    selected_text_buffer: String,
 }
 
 /// Data that TextBoxMut and similar things need to have a reference to.
@@ -376,6 +380,8 @@ impl Text {
 
             #[cfg(feature = "accessibility")]
             accesskit_id_to_text_handle_map: HashMap::with_capacity(50),
+
+            selected_text_buffer: String::with_capacity(25),
 
             shared: Box::new(Shared {
                 windows: Vec::with_capacity(1),
@@ -1314,6 +1320,40 @@ impl Text {
     }
 
     fn handle_focused_event(&mut self, focused: AnyBox, event: &WindowEvent, window: &Window) -> bool {
+        if let WindowEvent::KeyboardInput { event, .. } = event {
+            if event.state.is_pressed() {
+                let mods_state = self.input_state.modifiers.state();
+                let action_mod = if cfg!(target_os = "macos") {
+                    mods_state.super_key()
+                } else {
+                    mods_state.control_key()
+                };
+                let shift = mods_state.shift_key();
+
+                if action_mod && !shift {
+                    if let Key::Character(c) = event.key_without_modifiers() {
+                        if c.as_str() == "c" {
+                            match focused {
+                                AnyBox::TextBox(_) => {
+                                    if let Some(text) = self.selected_text() {
+                                        with_clipboard(|cb| { cb.set_text(text).ok(); });
+                                    }
+                                }
+                                AnyBox::TextEdit(i) => {
+                                    if let Some(te) = self.text_edits.get(i) {
+                                        if let Some(text) = te.text_box.selected_text() {
+                                            with_clipboard(|cb| { cb.set_text(text).ok(); });
+                                        }
+                                    }
+                                }
+                            }
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+
         // todo: copying this for now, but maybe it can go into Shared
         let input_state = self.input_state.clone();
 
@@ -1549,6 +1589,44 @@ impl Text {
     pub fn link_text_boxes(&mut self, first: &TextBoxHandle, second: &TextBoxHandle) {
         self.text_boxes[first.key].next_box = Some(second.key);
         self.text_boxes[second.key].prev_box = Some(first.key);
+    }
+
+    /// Returns an iterator over selected text from all text boxes in the current multi-box selection.
+    pub fn selected_text_iter(&self) -> impl Iterator<Item = &str> {
+        self.shared.multi_box_selection.iter().filter_map(|&key| {
+            self.text_boxes.get(key).and_then(|tb| tb.selected_text())
+        })
+    }
+
+    /// Convenience function that returns the selected text from all text boxes in the current cross-box selection as a single contiguous string, inserting a space between each segment, or `None` if nothing is selected.
+    ///
+    /// If only one box is selected, a reference to the selected text is returned directly without any copying.
+    /// Otherwise, the text is copied into an internal buffer.
+    /// 
+    /// Use [`Text::selected_text_iter()`] to get a zero-cost iterator over the different segments.
+    pub fn selected_text(&mut self) -> Option<&str> {
+        if self.shared.multi_box_selection.len() == 1 {
+            let key = self.shared.multi_box_selection[0];
+            return self.text_boxes.get(key).and_then(|tb| tb.selected_text());
+        }
+
+        self.selected_text_buffer.clear();
+        for &key in &self.shared.multi_box_selection {
+            if let Some(tb) = self.text_boxes.get(key) {
+                if let Some(text) = tb.selected_text() {
+                    if !self.selected_text_buffer.is_empty() && !self.selected_text_buffer.ends_with(' ') {
+                        self.selected_text_buffer.push(' ');
+                    }
+                    self.selected_text_buffer.push_str(text);
+                }
+            }
+        }
+
+        if self.selected_text_buffer.is_empty() {
+            None
+        } else {
+            Some(&self.selected_text_buffer)
+        }
     }
 
     /// Add a scroll animation for a text edit

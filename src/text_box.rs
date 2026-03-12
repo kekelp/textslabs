@@ -681,14 +681,6 @@ impl TextBox {
                     match event.key_without_modifiers() {
                         Key::Character(c) => {
                             match c.as_str() {
-                                "c" if !shift => {
-                                    with_clipboard(|cb| {
-                                        if let Some(text) = self.selected_text() {
-                                            cb.set_text(text.to_owned()).ok();
-                                        }
-                                    });
-                                    consumed = true;
-                                }
                                 "a" => {
                                     self.select_all();
                                     consumed = true;

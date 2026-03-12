@@ -62,7 +62,7 @@ impl State {
 
         // Create a sequence of linked text boxes that form a paragraph split across multiple boxes
         let box1 = text.add_text_box(
-            "This is the first text box. It contains some text that you can select. ",
+            "This is the first text box. It contains some text that you can select.",
             (50.0, 50.0),
             (400.0, 60.0),
             0.0
@@ -70,7 +70,7 @@ impl State {
         text.get_text_box_mut(&box1).set_style(&style_large_white);
 
         let box2 = text.add_text_box(
-            "This is the second text box, linked after the first. Selection should continue here. ",
+            "This is the second text box, linked after the first. Selection should continue here.",
             (50.0, 180.0),
             (400.0, 60.0),
             0.0
