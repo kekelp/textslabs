@@ -488,8 +488,11 @@ impl RenderData {
 
     /// Update the screen resolution in the render data.
     pub fn update_resolution(&mut self, width: f32, height: f32) {
-        self.params.screen_resolution_width = width;
-        self.params.screen_resolution_height = height;
+        if self.params.screen_resolution_width != width || self.params.screen_resolution_height != height {
+            self.params.screen_resolution_width = width;
+            self.params.screen_resolution_height = height;
+            self.needs_params_sync = true;
+        }
     }
 
     /// Get the glyph quads buffer for external rendering
