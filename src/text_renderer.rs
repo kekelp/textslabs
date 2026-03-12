@@ -78,6 +78,7 @@ impl TextRenderer {
     pub(crate) fn update_texture_arrays(&mut self, render_data: &mut RenderData) {
         for (i, page) in render_data.mask_atlas_pages.iter_mut().enumerate() {
             if page.needs_upload {
+                let raw = page.image.as_raw();
                 self.queue.write_texture(
                     wgpu::TexelCopyTextureInfo {
                         texture: &self.mask_texture_array,
@@ -85,7 +86,7 @@ impl TextRenderer {
                         origin: wgpu::Origin3d { x: 0, y: 0, z: i as u32 },
                         aspect: wgpu::TextureAspect::All,
                     },
-                    &page.image.as_raw(),
+                    raw,
                     wgpu::TexelCopyBufferLayout {
                         offset: 0,
                         bytes_per_row: Some(page.image.width()),
@@ -97,6 +98,10 @@ impl TextRenderer {
                         depth_or_array_layers: 1,
                     },
                 );
+                #[cfg(debug_assertions)]
+                {
+                    render_data.stats.gpu_bytes += raw.len() as u64;
+                }
                 page.needs_upload = false;
             }
         }
@@ -104,6 +109,7 @@ impl TextRenderer {
         // Update only dirty color texture array pages
         for (i, page) in render_data.color_atlas_pages.iter_mut().enumerate() {
             if page.needs_upload {
+                let raw = page.image.as_raw();
                 self.queue.write_texture(
                     wgpu::TexelCopyTextureInfo {
                         texture: &self.color_texture_array,
@@ -111,7 +117,7 @@ impl TextRenderer {
                         origin: wgpu::Origin3d { x: 0, y: 0, z: i as u32 },
                         aspect: wgpu::TextureAspect::All,
                     },
-                    &page.image.as_raw(),
+                    raw,
                     wgpu::TexelCopyBufferLayout {
                         offset: 0,
                         bytes_per_row: Some(page.image.width() * 4),
@@ -123,6 +129,10 @@ impl TextRenderer {
                         depth_or_array_layers: 1,
                     },
                 );
+                #[cfg(debug_assertions)]
+                {
+                    render_data.stats.gpu_bytes += raw.len() as u64;
+                }
                 page.needs_upload = false;
             }
         }

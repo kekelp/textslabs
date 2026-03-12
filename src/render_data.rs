@@ -1,5 +1,24 @@
 use crate::*;
 
+/// Statistics about work done during a render cycle.
+///
+/// Call [`Text::render_stats()`] after `prepare_all()` and `load_to_gpu()` to see
+/// what work was done and whether the optimizations are working.
+///
+/// Only available in debug builds.
+#[cfg(debug_assertions)]
+#[derive(Debug, Clone, Default)]
+pub struct RenderStats {
+    /// Number of glyphs rasterized (cache misses that needed CPU rasterization work).
+    pub glyphs_rasterized: u32,
+
+    /// Number of glyph quads built and added to the buffer.
+    pub glyph_quads_built: u32,
+
+    /// Total bytes written to GPU (buffers + textures).
+    pub gpu_bytes: u64,
+}
+
 /// CPU-side rendering data for text preparation.
 ///
 /// This struct holds all the data needed to prepare text for rendering,
@@ -35,6 +54,9 @@ pub struct RenderData {
     pub(crate) glyph_cache_generation: u64,
 
     pub(crate) scale_cx: Option<ScaleContext>,
+
+    #[cfg(debug_assertions)]
+    pub(crate) stats: RenderStats,
 }
 
 // Content type constants
@@ -386,6 +408,7 @@ impl RenderData {
             cursor_quad_index: None,
             glyph_cache_generation: 1, // Start at 1 so that default QuadStorage (generation 0) is invalid
             scale_cx: Some(ScaleContext::new()),
+            stats: RenderStats::default(),
         }
     }
 
@@ -457,6 +480,12 @@ impl RenderData {
         self.cursor_quad_index = None;
     }
 
+    /// Get the render stats from the last frame. Only available in debug builds.
+    #[cfg(debug_assertions)]
+    pub fn stats(&self) -> &RenderStats {
+        &self.stats
+    }
+
     /// Update the screen resolution in the render data.
     pub fn update_resolution(&mut self, width: f32, height: f32) {
         self.params.screen_resolution_width = width;
@@ -499,8 +528,6 @@ impl RenderData {
 
         let focused = text_edit.text_box.shared().focused == Some(AnyBox::TextEdit(text_edit.text_box.key));
         self.prepare_text_box_layout(&mut text_edit.text_box, focused, focused);
-        self.needs_glyph_sync = true;
-        self.needs_box_data_sync = true;
     }
 
     pub(crate) fn prepare_text_box_layout(&mut self, text_box: &mut TextBox, show_cursor: bool, show_selection: bool) {
@@ -645,6 +672,9 @@ impl RenderData {
                 }
                 if let Some((quad, _stored_glyph)) = self.prepare_glyph(&glyph_ctx, scaler.as_mut().unwrap(), box_index) {
                     buffer.push(quad);
+                    #[cfg(debug_assertions)] {
+                        self.stats.glyph_quads_built += 1;
+                    }
                 }
             }
 
@@ -705,7 +735,7 @@ impl RenderData {
 
     /// Render a glyph into the `self.tmp_swash_image` buffer
     // this is going to have to return the Content (color/mask) as well
-    fn _render_glyph(&mut self, glyph: &GlyphWithContext, scaler: &mut Scaler) -> (Content, Placement) {
+    fn render_glyph(&mut self, glyph: &GlyphWithContext, scaler: &mut Scaler) -> (Content, Placement) {
         self.tmp_image.clear();
         Render::new(SOURCES)
             .format(Format::Alpha)
@@ -716,7 +746,10 @@ impl RenderData {
 
     /// Rasterizes the glyph in a texture atlas and returns a Quad that can be used to render it, or None if the glyph was just empty (like a space).
     fn prepare_glyph(&mut self, glyph: &GlyphWithContext, scaler: &mut Scaler, box_index: u32) -> Option<(GlyphQuad, StoredGlyph)> {
-        let (content, placement) = self._render_glyph(&glyph, scaler);
+        let (content, placement) = self.render_glyph(&glyph, scaler);
+        #[cfg(debug_assertions)] {
+            self.stats.glyphs_rasterized += 1;
+        }
         let size = placement.size();
 
         // For some glyphs there's no image to store, like spaces.

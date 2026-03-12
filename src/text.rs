@@ -464,6 +464,9 @@ impl Text {
             if !self.render_data.glyph_quads.is_empty() {
                 let bytes: &[u8] = bytemuck::cast_slice(&self.render_data.glyph_quads);
                 self.renderer.queue.write_buffer(&self.renderer.vertex_buffer, 0, bytes);
+                #[cfg(debug_assertions)] {
+                    self.render_data.stats.gpu_bytes += bytes.len() as u64;
+                }
             }
 
             self.render_data.needs_glyph_sync = false;
@@ -505,6 +508,9 @@ impl Text {
             if self.render_data.box_data.len() != 0 {
                 let bytes: &[u8] = bytemuck::cast_slice(&self.render_data.box_data.as_slice());
                 self.renderer.queue.write_buffer(&self.renderer.box_data_buffer, 0, bytes);
+                #[cfg(debug_assertions)] {
+                    self.render_data.stats.gpu_bytes += bytes.len() as u64;
+                }
             }
 
             self.render_data.needs_box_data_sync = false;
@@ -512,9 +518,20 @@ impl Text {
     }
 
     /// Render all prepared text using the provided render pass.
-    pub fn render(&mut self, pass: &mut RenderPass) {    
+    pub fn render(&mut self, pass: &mut RenderPass) {
         self.load_to_gpu();
         self.renderer.render(pass, &self.render_data);
+    }
+
+    /// Get render statistics from the last frame.
+    ///
+    /// Call this after `prepare_all()` and `load_to_gpu()` (or `render()`) to see
+    /// what work was done and whether the optimizations are working.
+    ///
+    /// Only available in debug builds.
+    #[cfg(debug_assertions)]
+    pub fn render_stats(&self) -> &RenderStats {
+        self.render_data.stats()
     }
 
     pub(crate) fn new_style_version(&mut self) -> u64 {
@@ -832,6 +849,9 @@ impl Text {
     }
 
     pub(crate) fn prepare_all_impl(&mut self, window_id: WindowId, window_size: (f32, f32)) {
+        #[cfg(debug_assertions)] {
+            self.render_data.stats = RenderStats::default();
+        }
 
         self.render_data.update_resolution(window_size.0, window_size.1);
 
@@ -935,7 +955,6 @@ impl Text {
                 },
             }
         }
-        self.render_data.needs_box_data_sync = true;
         true
     }
 

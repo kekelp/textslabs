@@ -382,6 +382,9 @@ impl winit::application::ApplicationHandler for Application {
                     state.text.render(&mut pass);
                 }
 
+                #[cfg(debug_assertions)]
+                println!("{:?} {:?}", Instant::now(), state.text.render_stats());
+
                 state.gpu_profiler.end_query(&mut encoder, query);
                 state.gpu_profiler.resolve_queries(&mut encoder);
 
