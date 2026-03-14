@@ -2945,6 +2945,7 @@ version = "0.1.0"
 dependencies = [
  "accesskit",
  "accesskit_winit",
+ "ahash",
  "arboard",
  "bytemuck",
  "etagere",

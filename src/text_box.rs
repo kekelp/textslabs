@@ -13,8 +13,34 @@ use parley::{Affinity, Alignment, Selection};
 
 use crate::*;
 use slotmap::{DefaultKey, Key as SlotMapKeyTrait};
+use std::hash::{Hash, Hasher};
+use ahash::AHasher;
 
 const X_TOLERANCE: f64 = 35.0;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum TextIdentity {
+    Hash(u64),
+    Pointer(*const str),
+}
+
+impl TextIdentity {
+    /// Create a hash identity from a string
+    pub fn from_hash(text: &str) -> Self {
+        let mut hasher = AHasher::default();
+        text.hash(&mut hasher);
+        TextIdentity::Hash(hasher.finish())
+    }
+
+    /// Create a pointer identity from a static string
+    pub fn from_static(text: &'static str) -> Self {
+        TextIdentity::Pointer(text as *const str)
+    }
+
+    pub fn from_ptr(text: &str) -> Self {
+        TextIdentity::Pointer(text as *const str)
+    }
+}
 
 /// A text box stored inside a [`Text`] struct.
 /// 
@@ -23,6 +49,7 @@ const X_TOLERANCE: f64 = 35.0;
 /// Then, pass the handle to [`Text::get_text_box_mut()`] to get a reference to it.
 pub struct TextBox {
     pub(crate) text: Cow<'static, str>,
+    pub(crate) text_identity: Option<TextIdentity>,
     pub(crate) style: StyleHandle,
     pub(crate) style_version: u64,
     pub(crate) layout: Layout<ColorBrush>,
@@ -143,6 +170,7 @@ impl TextBox {
         };
         Self {
             text: text.into(),
+            text_identity: None,
             style_version: 0,
             layout: Layout::new(),
             #[cfg(feature = "accessibility")]
@@ -707,10 +735,13 @@ impl TextBox {
     /// This returns a `Cow<'static, str>`, which can be set to a `String` or to `'static str`
     /// 
     /// To manipulate the text as a `String`, call `Cow::to_mut()` on the result, or use [`Self::text_mut_string()`]
+    /// 
+    /// After this method is called, the [`TextBox`] will assume that its text has changed. If you have to call this method many times with the same text every time, as when building a declarative or immediate mode interface, consider using a method like [`Self::set_text_hashed()`].
     pub fn text_mut(&mut self) -> &mut Cow<'static, str> {
         self.needs_relayout = true;
         self.render_data_info.cache_generation = 0;
         self.shared_mut().rebuild_glyph_quad_buffer = true;
+        self.text_identity = None;
         &mut self.text
     }
 
@@ -722,7 +753,37 @@ impl TextBox {
     }
 
     /// Set the text in the text box.
+    /// 
+    /// If `new_text` is a `&`static` string, use [`Self::set_static_text()`].
+    ///  
+    /// After this method is called, the [`TextBox`] will assume that its text has changed. If you have to call this method many times with the same text every time, as when building a declarative or immediate mode interface, consider using a method like [`Self::set_text_hashed()`].
     pub fn set_text(&mut self, new_text: &str) {
+        self.needs_relayout = true;
+        self.render_data_info.cache_generation = 0;
+        self.shared_mut().rebuild_glyph_quad_buffer = true;
+        self.text_identity = None;
+
+        match &mut self.text {
+            Cow::Owned(s) => {
+                s.clear();
+                s.push_str(new_text);
+            }
+            Cow::Borrowed(_) => {
+                // We can't store &str references with arbitrary lifetimes, so if a text box that's currently holding a 'static str receives a non-'static string, we have to allocate a new string buffer.
+                self.text = Cow::Owned(new_text.to_string());
+            }
+        }
+    }
+
+    /// Set the text in the text box.
+    /// 
+    /// This function will also hash the text and store a hash identity. If it is called again with the same text, it will detect that the text is unchanged and avoid doing an unnecessary relayout. This can be useful for building a declarative interface.
+    pub fn set_text_hashed(&mut self, new_text: &str) {
+        let new_identity = TextIdentity::from_hash(new_text);
+        if self.text_identity == Some(new_identity) {
+            return;
+        }
+        self.text_identity = Some(new_identity);
         self.needs_relayout = true;
         self.render_data_info.cache_generation = 0;
         self.shared_mut().rebuild_glyph_quad_buffer = true;
@@ -736,6 +797,58 @@ impl TextBox {
                 self.text = Cow::Owned(new_text.to_string());
             }
         }
+    }
+
+    /// Sets the text in the text box, storing the value of the `text` pointer for comparison.
+    /// 
+    /// This function is similar to [`Self::set_static_text_with_pointer_check()`], but without an explicit `&'static` bound. It should only be used when `new_text` is an immutable string that won't be changed during its lifetime.
+    /// 
+    /// If this invariant holds, then the pointer allows this function to detect whether the text is changed or not if is called again with the same text, and potentially avoid doing an unnecessary relayout. This can be useful for building a declarative interface.
+    pub fn set_text_with_pointer_check(&mut self, new_text: &str) {
+        let new_identity = TextIdentity::from_ptr(new_text);
+        if self.text_identity == Some(new_identity) {
+            return;
+        }
+        self.text_identity = Some(new_identity);
+        self.needs_relayout = true;
+        self.render_data_info.cache_generation = 0;
+        self.shared_mut().rebuild_glyph_quad_buffer = true;
+
+        match &mut self.text {
+            Cow::Owned(s) => {
+                s.clear();
+                s.push_str(new_text);
+            }
+            Cow::Borrowed(_) => {
+                self.text = Cow::Owned(new_text.to_string());
+            }
+        }
+    }
+
+    /// Sets the text to a static string reference.
+    pub fn set_static_text(&mut self, text: &'static str) {
+        self.needs_relayout = true;
+        self.render_data_info.cache_generation = 0;
+        self.shared_mut().rebuild_glyph_quad_buffer = true;
+        self.text_identity = None;
+        self.text = Cow::Borrowed(text);
+    }
+
+    /// Sets the text to a static string reference, storing the value of the `text` pointer for comparison.
+    /// 
+    /// If this function is called again with the same text, it will detect that the text is unchanged and avoid doing an unnecessary relayout. This can be useful for building a declarative interface.
+    /// 
+    /// This function assumes that an `&'static str` never change, and therefore it's safe to use pointer equality to compare them. If this is not the case, due to interior mutability or unsafe code, this function should not be used.
+    pub fn set_static_text_with_pointer_check(&mut self, text: &'static str) {
+        let new_identity = TextIdentity::from_static(text);
+        if self.text_identity == Some(new_identity) {
+            return;
+        }
+        self.text_identity = Some(new_identity);
+        self.needs_relayout = true;
+        self.render_data_info.cache_generation = 0;
+        self.shared_mut().rebuild_glyph_quad_buffer = true;
+        self.text = Cow::Borrowed(text);
     }
 
     #[cfg(feature = "accessibility")]
@@ -967,12 +1080,6 @@ impl TextBox {
         self.selection = self.selection.refresh(&self.layout);
     }
 
-    /// Sets the text to a static string reference.
-    pub fn set_static(&mut self, text: &'static str) {
-        self.needs_relayout = true;
-        self.render_data_info.cache_generation = 0;
-        self.text = Cow::Borrowed(text);
-    }
 
     /// Sets the size of the text box.
     pub fn set_size(&mut self, size: (f32, f32)) {
