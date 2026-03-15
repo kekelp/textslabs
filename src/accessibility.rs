@@ -13,7 +13,6 @@ pub(crate) fn next_node_id() -> NodeId {
     NodeId(NEXT.fetch_add(1, Ordering::Relaxed))
 }
 
-/// Accessibility support for Textslabs
 impl Text {
     /// Handle accessibility action requests using the AccessKit node ID mapping
     /// 

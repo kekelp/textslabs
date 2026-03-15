@@ -157,12 +157,12 @@ impl TextRenderer {
         let fragment_spirv = include_bytes!("../slangc_output/text.frag.spv");
 
         let vertex_shader = device.create_shader_module(ShaderModuleDescriptor {
-            label: Some("textslabs vertex shader"),
+            label: Some("keru_text vertex shader"),
             source: wgpu::util::make_spirv(vertex_spirv),
         });
 
         let fragment_shader = device.create_shader_module(ShaderModuleDescriptor {
-            label: Some("textslabs fragment shader"),
+            label: Some("keru_text fragment shader"),
             source: wgpu::util::make_spirv(fragment_spirv),
         });
 
@@ -210,7 +210,7 @@ impl TextRenderer {
         });
 
         let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
-            label: Some("textslabs pipeline"),
+            label: Some("keru_text pipeline"),
             layout: Some(&pipeline_layout),
             vertex: VertexState {
                 module: &vertex_shader,

@@ -1,6 +1,6 @@
 // This example shows how to handle events in cases where text boxes might be occluded by other objects, using the process described in the crate-level docs.
 
-use textslabs::*;
+use keru_text::*;
 use std::{sync::Arc, time::Duration};
 use wgpu::*;
 use winit::{

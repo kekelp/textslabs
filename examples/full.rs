@@ -1,5 +1,5 @@
-use textslabs::*;
-use textslabs::parley::*;
+use keru_text::*;
+use keru_text::parley::*;
 use std::{borrow::Cow, f32::consts::PI, sync::Arc};
 use wgpu::*;
 use winit::{

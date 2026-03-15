@@ -24,22 +24,10 @@ pub(crate) enum TextIdentity {
     Pointer(*const str),
 }
 
-impl TextIdentity {
-    /// Create a hash identity from a string
-    pub fn from_hash(text: &str) -> Self {
-        let mut hasher = AHasher::default();
-        text.hash(&mut hasher);
-        TextIdentity::Hash(hasher.finish())
-    }
-
-    /// Create a pointer identity from a static string
-    pub fn from_static(text: &'static str) -> Self {
-        TextIdentity::Pointer(text as *const str)
-    }
-
-    pub fn from_ptr(text: &str) -> Self {
-        TextIdentity::Pointer(text as *const str)
-    }
+pub(crate) fn hash_text(text: &str) -> u64 {
+    let mut hasher = AHasher::default();
+    text.hash(&mut hasher);
+    return hasher.finish();
 }
 
 /// A text box stored inside a [`Text`] struct.
@@ -779,7 +767,8 @@ impl TextBox {
     /// 
     /// This function will also hash the text and store a hash identity. If it is called again with the same text, it will detect that the text is unchanged and avoid doing an unnecessary relayout. This can be useful for building a declarative interface.
     pub fn set_text_hashed(&mut self, new_text: &str) {
-        let new_identity = TextIdentity::from_hash(new_text);
+        let text_hash = hash_text(new_text);
+        let new_identity = TextIdentity::Hash(text_hash);
         if self.text_identity == Some(new_identity) {
             return;
         }
@@ -804,8 +793,10 @@ impl TextBox {
     /// This function is similar to [`Self::set_static_text_with_pointer_check()`], but without an explicit `&'static` bound. It should only be used when `new_text` is an immutable string that won't be changed during its lifetime.
     /// 
     /// If this invariant holds, then the pointer allows this function to detect whether the text is changed or not if is called again with the same text, and potentially avoid doing an unnecessary relayout. This can be useful for building a declarative interface.
+    /// 
+    /// See also [`Self::set_text_hashed()`].
     pub fn set_text_with_pointer_check(&mut self, new_text: &str) {
-        let new_identity = TextIdentity::from_ptr(new_text);
+        let new_identity = TextIdentity::Pointer(new_text as *const str);
         if self.text_identity == Some(new_identity) {
             return;
         }
@@ -840,7 +831,7 @@ impl TextBox {
     /// 
     /// This function assumes that an `&'static str` never change, and therefore it's safe to use pointer equality to compare them. If this is not the case, due to interior mutability or unsafe code, this function should not be used.
     pub fn set_static_text_with_pointer_check(&mut self, text: &'static str) {
-        let new_identity = TextIdentity::from_static(text);
+        let new_identity = TextIdentity::Pointer(text as *const str);
         if self.text_identity == Some(new_identity) {
             return;
         }

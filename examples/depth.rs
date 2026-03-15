@@ -1,4 +1,4 @@
-use textslabs::*;
+use keru_text::*;
 use std::sync::Arc;
 use wgpu::*;
 use wgpu::util::DeviceExt;

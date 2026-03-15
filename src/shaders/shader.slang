@@ -1,4 +1,4 @@
-import textslabs;
+import keru_text;
 
 struct VertexOutput {
     GlyphQuad quad;
@@ -18,7 +18,7 @@ struct VertexOutput {
     text_vertex(
         instanceIndex,
         vertexIndex,
-        textslabs.params.resolution,
+        text.params.resolution,
         output.position,
         output.uv
     );

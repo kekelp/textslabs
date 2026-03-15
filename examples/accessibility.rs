@@ -1,4 +1,4 @@
-use textslabs::*;
+use keru_text::*;
 use std::{sync::Arc, time::Duration, error::Error};
 use wgpu::*;
 use winit::{
@@ -68,7 +68,7 @@ impl State {
         text.get_text_edit_mut(&text_edit_handle).set_placeholder("Type here".to_string());
         
         let info_text_handle = text.add_text_box(
-            "This is a Textslabs accessibility demo. To navigate, try using the platform screen reader's keyboard shortcuts (e.g. Caps Lock + arrow keys on Windows by default).".to_string(),
+            "This is an accessibility demo. To navigate, try using the platform screen reader's keyboard shortcuts (e.g. Caps Lock + arrow keys on Windows by default).".to_string(),
             (50.0, 200.0), (400.0, 100.0), 0.0
         );
         text.set_text_box_accesskit_id(&info_text_handle, INFO_TEXT_ID);

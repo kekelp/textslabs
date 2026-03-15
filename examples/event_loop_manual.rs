@@ -4,7 +4,7 @@
 //
 // If you're building an application that never pauses its winit event loop, like a game, you can disregard all the wakeup mechanisms entirely. See the `full.rs` example.
 
-use textslabs::*;
+use keru_text::*;
 use std::sync::Arc;
 use wgpu::*;
 use winit::{

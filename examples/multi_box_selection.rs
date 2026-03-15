@@ -1,8 +1,7 @@
 use std::sync::Arc;
 use winit::{event::WindowEvent, event_loop::EventLoop, window::Window};
 use wgpu::*;
-use textslabs::*;
-use textslabs::parley::TextStyle;
+use keru_text::*;
 
 fn main() {
     let event_loop = EventLoop::new().unwrap();
@@ -30,31 +29,31 @@ impl State {
         let mut text = Text::new(&device, &queue, surface_config.format);
 
         // Create styles with different sizes and colors
-        let style_large_white = text.add_style(TextStyle {
+        let style_large_white = text.add_style(TextStyle2 {
             font_size: 22.0,
             brush: ColorBrush([255, 255, 255, 255]),
             ..Default::default()
         }, None);
 
-        let style_medium_cyan = text.add_style(TextStyle {
+        let style_medium_cyan = text.add_style(TextStyle2 {
             font_size: 18.0,
             brush: ColorBrush([100, 220, 255, 255]),
             ..Default::default()
         }, None);
 
-        let style_medium_yellow = text.add_style(TextStyle {
+        let style_medium_yellow = text.add_style(TextStyle2 {
             font_size: 18.0,
             brush: ColorBrush([255, 220, 100, 255]),
             ..Default::default()
         }, None);
 
-        let style_small_green = text.add_style(TextStyle {
+        let style_small_green = text.add_style(TextStyle2 {
             font_size: 16.0,
             brush: ColorBrush([150, 255, 150, 255]),
             ..Default::default()
         }, None);
 
-        let style_small_pink = text.add_style(TextStyle {
+        let style_small_pink = text.add_style(TextStyle2 {
             font_size: 16.0,
             brush: ColorBrush([255, 150, 200, 255]),
             ..Default::default()

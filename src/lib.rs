@@ -1,12 +1,12 @@
 #![warn(missing_docs)]
 
-//! `textslabs` is an experimental high level text library, with the goal to allow any winit/wgpu program to have full-featured text and text editing with minimal integration effort.
+//! `keru_text` is an experimental high level text library, with the goal to allow any winit/wgpu program to have full-featured text and text editing with minimal integration effort.
 //! 
 //! 
 //! # Usage
 //! 
 //! ```no_run
-//! # use textslabs::*;
+//! # use keru_text::*;
 //! // Create the Text struct and the Text renderer:
 //! let mut text = Text::new();
 //! # let device: wgpu::Device = unimplemented!();
@@ -58,7 +58,7 @@
 //! 
 //! ## Accessibility
 //! 
-//! This library supports accessibility, but integrating it requires a bit more coordination with `winit` and with the GUI code outside of this library. In particular, `textslabs` doesn't have any concept of a tree. See the `accessibility.rs` example in the repository for a basic example.
+//! This library supports accessibility, but integrating it requires a bit more coordination with `winit` and with the GUI code outside of this library. In particular, `keru_text` doesn't have any concept of a tree. See the `accessibility.rs` example in the repository for a basic example.
 //! 
 //! ## Interaction
 //! 
@@ -81,7 +81,7 @@
 //! There is an optional declarative interface for hiding text boxes:
 //! 
 //! ```no_run
-//! # use textslabs::*;
+//! # use keru_text::*;
 //! # let mut text = Text::new();
 //! // Each frame, advance an internal frame counter,
 //! // and implicitly mark all text boxes as "outdated"
@@ -122,7 +122,7 @@
 //! 
 //! # Open Issues
 //! 
-//! There is an open issue in the design of the library: the math for scrolling and smooth scrolling animations in overflowing text edit boxes is hardcoded in the library. This means that a GUI library using `textslabs` might have inconsistent scrolling behavior between the `textslabs` text edit boxes and the GUI library's generic scrollable containers.
+//! There is an open issue in the design of the library: the math for scrolling and smooth scrolling animations in overflowing text edit boxes is hardcoded in the library. This means that a GUI library using `keru_text` might have inconsistent scrolling behavior between the `keru_text` text edit boxes and the GUI library's generic scrollable containers.
 
 
 mod setup;

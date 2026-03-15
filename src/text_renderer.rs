@@ -26,7 +26,7 @@ pub(crate) struct TextRenderer {
 impl Text {
     /// Returns the source of the composable text shader.
     pub fn composable_shader_source() -> &'static str {
-        include_str!("shaders/textslabs.slang")
+        include_str!("shaders/keru_text.slang")
     }
 
     /// Get the bind group for external rendering.

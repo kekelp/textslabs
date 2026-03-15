@@ -1,8 +1,8 @@
 use std::{sync::Arc, time::{Duration, Instant}};
 use winit::{event::{ElementState, WindowEvent}, event_loop::EventLoop, keyboard::ModifiersState, window::Window};
 use wgpu::*;
-use textslabs::*;
-use textslabs::parley::TextStyle;
+use keru_text::*;
+use keru_text::parley::TextStyle;
 use wgpu_profiler::{GpuProfiler, GpuProfilerSettings};
 use std::fmt::Write;
 

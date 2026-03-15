@@ -1912,7 +1912,7 @@ impl Text {
     /// 
     /// # Example
     /// ```ignored
-    /// # use textslabs::*;
+    /// # use keru_text::*;
     /// # use parley::FontFamily;
     /// # let text = Text::new();
     /// let family_name = text.load_font(include_bytes!("../MyFont.ttf"))

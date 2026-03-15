@@ -28,7 +28,7 @@ struct Params {
     uint _padding;
 }
 
-struct TextSlabs {
+struct Text {
     Texture2DArray<float4> mask_atlas_texture;
     Texture2DArray<float4> color_atlas_texture;
     SamplerState atlas_sampler;
@@ -37,7 +37,7 @@ struct TextSlabs {
     StructuredBuffer<BoxGpu> box_data;
 }
 
-ParameterBlock<TextSlabs> textslabs;
+ParameterBlock<Text> text;
 
 float2 split_i16(uint u) {
     int a = int(u & 0x0000ffffu);
@@ -115,8 +115,8 @@ void text_vertex(
     out float4 position,
     out float2 uv
 ) {
-    GlyphQuad quad = textslabs.quads[instanceIndex];
-    BoxGpu box = textslabs.box_data[quad.box_index];
+    GlyphQuad quad = text.quads[instanceIndex];
+    BoxGpu box = text.box_data[quad.box_index];
 
     float2 uv01 = float2(
         vertexIndex & 1u,
@@ -151,7 +151,7 @@ void text_vertex(
     // Calculate UV coordinates for texture atlas
     float2 uv_origin = split(quad.uv_origin_packed);
     uint atlas_width, atlas_height, atlas_elements;
-    textslabs.mask_atlas_texture.GetDimensions(atlas_width, atlas_height, atlas_elements);
+    text.mask_atlas_texture.GetDimensions(atlas_width, atlas_height, atlas_elements);
     float2 atlas_size = float2(float(atlas_width), float(atlas_height));
     uv = (uv_origin + clip_result.uv_offset + clip_result.dimensions * uv01) / atlas_size;
 }
@@ -159,7 +159,7 @@ void text_vertex(
 float4 text_fragment_pure(GlyphQuad quad, float2 uv, float4 frag_coord): SV_Target {
     // Apply screen-space clipping using built-in fragment position
     // frag_coord.xy is in pixel coordinates (screen space)
-    BoxGpu box = textslabs.box_data[quad.box_index];
+    BoxGpu box = text.box_data[quad.box_index];
     if (frag_coord.x < box.screen_clip_x.x || frag_coord.x > box.screen_clip_x.y ||
         frag_coord.y < box.screen_clip_y.x || frag_coord.y > box.screen_clip_y.y) {
         discard;
@@ -171,16 +171,16 @@ float4 text_fragment_pure(GlyphQuad quad, float2 uv, float4 frag_coord): SV_Targ
 
     if (content_type == 1) {
         // Color bitmap text
-        float4 tex_color = textslabs.color_atlas_texture.SampleLevel(
-            textslabs.atlas_sampler,
+        float4 tex_color = text.color_atlas_texture.SampleLevel(
+            text.atlas_sampler,
             float3(uv, float(page_index)),
             0.0
         );
         return float4(color.rgb * tex_color.rgb, color.a * tex_color.a);
     } else if (content_type == 0) {
         // Mask text
-        float glyph_alpha = textslabs.mask_atlas_texture.SampleLevel(
-            textslabs.atlas_sampler,
+        float glyph_alpha = text.mask_atlas_texture.SampleLevel(
+            text.atlas_sampler,
             float3(uv, float(page_index)),
             0.0
         ).r;
@@ -192,6 +192,6 @@ float4 text_fragment_pure(GlyphQuad quad, float2 uv, float4 frag_coord): SV_Targ
 }
 
 float4 text_fragment(uint primitiveIndex, float2 uv, float4 frag_coord: SV_Position): SV_Target {
-    GlyphQuad quad = textslabs.quads[primitiveIndex];
+    GlyphQuad quad = text.quads[primitiveIndex];
     return text_fragment_pure(quad, uv, frag_coord);
 }
