@@ -15,7 +15,8 @@ strip = "debuginfo"
 opt-level = 3
 
 [dependencies]
-parley = { git = "https://github.com/kekelp/parley"}
+# Enable the fontconfig-dlopen feature so that the library can be built without system dependencies.
+parley = { git = "https://github.com/kekelp/parley", features = ["fontconfig-dlopen"] }
 wgpu = { version = "27", default-features = true, features = ["spirv"] }
 etagere = "0.2.10"
 lru = { version = "0.12.1", default-features = false }
@@ -33,8 +34,6 @@ arboard = "3.5.0"
 slotmap = "1.0"
 smallvec = "1.13"
 ahash = "0.8.12"
-# Enable the fontconfig-dlopen feature so that the library can be used without system dependencies.
-fontique = { version = "*", features = ["fontconfig-dlopen"] }
 
 [dev-dependencies]
 pollster = "0.4.0"
