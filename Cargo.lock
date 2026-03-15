@@ -1069,6 +1069,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "fontique"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "30bbc252c93499b6d3635d692f892a637db0dbb130ce9b32bf20b28e0dcc470b"
+dependencies = [
+ "bytemuck",
+ "hashbrown 0.16.1",
+ "icu_locale_core",
+ "linebender_resource_handle",
+ "memmap2",
+ "objc2 0.6.3",
+ "objc2-core-foundation",
+ "objc2-core-text",
+ "objc2-foundation 0.3.2",
+ "read-fonts",
+ "roxmltree",
+ "smallvec",
+ "windows 0.58.0",
+ "windows-core 0.58.0",
+ "yeslogic-fontconfig-sys",
+]
+
+[[package]]
 name = "foreign-types"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1486,6 +1509,7 @@ dependencies = [
  "bytemuck",
  "etagere",
  "euclid",
+ "fontique 0.7.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "image",
  "lazy_static",
  "lru",
@@ -2250,7 +2274,7 @@ name = "parley"
 version = "0.7.0"
 dependencies = [
  "accesskit",
- "fontique",
+ "fontique 0.7.0",
  "harfrust",
  "hashbrown 0.16.1",
  "linebender_resource_handle",
