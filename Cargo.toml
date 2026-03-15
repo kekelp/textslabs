@@ -4,9 +4,10 @@ version = "0.1.0"
 edition = "2024"
 
 [features]
-default = []
+default = ["fontconfig-dlopen"]
 panic_on_handle_drop = []
 accessibility = ["dep:accesskit", "dep:accesskit_winit", "parley/accesskit"]
+fontconfig-dlopen = ["parley/fontconfig-dlopen"]
 
 [profile.dev]
 opt-level = 1
@@ -15,8 +16,7 @@ strip = "debuginfo"
 opt-level = 3
 
 [dependencies]
-# Enable the fontconfig-dlopen feature so that the library can be built without system dependencies.
-parley = { git = "https://github.com/kekelp/parley", features = ["fontconfig-dlopen"] }
+parley = { git = "https://github.com/kekelp/parley" }
 wgpu = { version = "27", default-features = true, features = ["spirv"] }
 etagere = "0.2.10"
 lru = { version = "0.12.1", default-features = false }

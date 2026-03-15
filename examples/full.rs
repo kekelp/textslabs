@@ -1,6 +1,6 @@
 use keru_text::*;
 use keru_text::parley::*;
-use std::{borrow::Cow, f32::consts::PI, sync::Arc};
+use std::{f32::consts::PI, sync::Arc};
 use wgpu::*;
 use winit::{
     dpi::LogicalSize,
@@ -56,7 +56,7 @@ impl State {
         let big_text_style_handle = text.add_style(TextStyle {
             font_size: 64.0,
             brush: ColorBrush(white),
-            font_stack: FontStack::Single(FontFamily::Named(Cow::Borrowed("sans-serif"))),
+            font_family: FontFamily::named("sans-serif"),
             overflow_wrap: OverflowWrap::Anywhere,
             ..Default::default()
         }, None);
@@ -68,14 +68,14 @@ impl State {
         let custom_font_style_handle = text.add_style(TextStyle {
             font_size: 22.0,
             brush: ColorBrush([0, 255, 150, 255]),
-            font_stack: FontStack::Single(FontFamily::Named(font_name.into())),
+            font_family: FontFamily::Single(FontFamilyName::Named(font_name.into())),
             overflow_wrap: OverflowWrap::Anywhere,
             ..Default::default()
         }, None);
 
         let monospace_style_handle = text.add_style(TextStyle {
             font_size: 22.0,
-            font_stack: FontStack::Source("monospace".into()),
+            font_family: FontFamily::Source("monospace".into()),
             brush: ColorBrush([30, 60, 255, 255]),
             overflow_wrap: OverflowWrap::Anywhere,
             ..Default::default()
